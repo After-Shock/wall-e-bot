@@ -15,6 +15,7 @@ import { CacheService } from '../services/CacheService.js';
 import { LevelingService } from '../services/LevelingService.js';
 import { ModerationService } from '../services/ModerationService.js';
 import { AutoModService } from '../services/AutoModService.js';
+import { SchedulerService } from '../services/SchedulerService.js';
 import { logger } from '../utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,7 @@ export class WallEClient extends Client {
   public leveling!: LevelingService;
   public moderation!: ModerationService;
   public automod!: AutoModService;
+  public scheduler!: SchedulerService;
 
   constructor() {
     super({
@@ -70,6 +72,7 @@ export class WallEClient extends Client {
     this.leveling = new LevelingService(this);
     this.moderation = new ModerationService(this);
     this.automod = new AutoModService(this);
+    this.scheduler = new SchedulerService(this);
 
     // Load commands and events
     await this.loadCommands();

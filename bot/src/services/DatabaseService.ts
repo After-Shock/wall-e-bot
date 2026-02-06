@@ -5,7 +5,7 @@ import type { GuildConfig, GuildMember } from '@wall-e/shared';
 const { Pool } = pg;
 
 export class DatabaseService {
-  private pool!: pg.Pool;
+  public pool!: pg.Pool;
 
   async connect() {
     this.pool = new Pool({
