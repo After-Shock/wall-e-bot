@@ -71,8 +71,9 @@ manager.on('shardCreate', (shard) => {
     console.log(`🔄 Shard ${shard.id} reconnecting...`);
   });
 
-  shard.on('death', (process) => {
-    console.error(`💀 Shard ${shard.id} died (exit code: ${process.exitCode})`);
+  shard.on('death', (childProcess) => {
+    const exitCode = 'exitCode' in childProcess ? childProcess.exitCode : 'unknown';
+    console.error(`💀 Shard ${shard.id} died (exit code: ${exitCode})`);
   });
 
   shard.on('error', (error) => {
@@ -90,8 +91,7 @@ manager.on('shardCreate', (shard) => {
  */
 export async function broadcastToShards(message: unknown): Promise<void> {
   await manager.broadcastEval((client, context) => {
-    // @ts-expect-error - Custom event
-    client.emit('shardMessage', context.message);
+    client.emit('shardMessage' as any, context.message);
   }, { context: { message } });
 }
 
@@ -151,9 +151,9 @@ async function shutdown(signal: string) {
     Array.from(manager.shards.values()).map(async (shard) => {
       try {
         await shard.eval((client) => {
-          // @ts-expect-error - Custom shutdown method
-          if (typeof client.shutdown === 'function') {
-            return client.shutdown();
+          const anyClient = client as any;
+          if (typeof anyClient.shutdown === 'function') {
+            return anyClient.shutdown();
           }
         });
       } catch {

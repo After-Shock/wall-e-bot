@@ -6,8 +6,8 @@ WORKDIR /app/dashboard/frontend
 # Copy package files
 COPY dashboard/frontend/package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (using npm install for dev since workspaces don't have lock files)
+RUN npm install
 
 # Copy source
 COPY dashboard/frontend ./
@@ -22,7 +22,7 @@ FROM node:20-alpine AS build
 WORKDIR /app/dashboard/frontend
 
 COPY dashboard/frontend/package*.json ./
-RUN npm ci
+RUN npm install
 
 COPY dashboard/frontend ./
 

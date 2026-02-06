@@ -15,8 +15,6 @@
 #
 # =============================================================================
 
-version: '3.8'
-
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL Database (Development)
@@ -63,6 +61,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.bot
+      target: development
     container_name: wall-e-bot
     depends_on:
       postgres:
@@ -89,6 +88,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
+      target: development
     container_name: wall-e-backend
     depends_on:
       postgres:
@@ -119,11 +119,13 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
+      target: development
     container_name: wall-e-frontend
     ports:
-      - "3000:3000"  # Vite dev server port
+      - "3002:3000"  # Map to 3002 externally to avoid conflicts
     environment:
       VITE_API_URL: http://localhost:3001
+      VITE_DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
     env_file:
       - ../.env
     volumes:

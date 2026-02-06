@@ -8,8 +8,8 @@ COPY package*.json ./
 COPY dashboard/backend/package*.json ./dashboard/backend/
 COPY shared/package*.json ./shared/
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (using npm install since workspaces don't have individual lock files)
+RUN npm install
 
 # Copy source
 COPY shared ./shared
@@ -33,17 +33,20 @@ COPY package*.json ./
 COPY dashboard/backend/package*.json ./dashboard/backend/
 COPY shared/package*.json ./shared/
 
-# Install production dependencies only
-RUN npm ci --omit=dev
+# Install ALL dependencies first (need devDeps for build)
+RUN npm install
 
 # Copy source
 COPY shared ./shared
 COPY dashboard/backend ./dashboard/backend
 COPY tsconfig.base.json ./
 
-# Build
+# Build TypeScript
 RUN npm run build -w shared
 RUN npm run build -w dashboard/backend
+
+# Prune devDependencies after build
+RUN npm prune --omit=dev
 
 WORKDIR /app/dashboard/backend
 

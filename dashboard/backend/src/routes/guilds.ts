@@ -1,28 +1,39 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { requireAuth, requireGuildAccess, AuthenticatedRequest } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const guildsRouter = Router();
 
+interface DiscordGuild {
+  id: string;
+  name: string;
+  icon: string | null;
+  owner: boolean;
+  permissions: string;
+}
+
 // Get user's guilds
-guildsRouter.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
+guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
+  const authReq = req as AuthenticatedRequest;
   try {
     // Fetch user's guilds from Discord API
     const response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
       headers: {
-        Authorization: `Bearer ${req.user!.accessToken}`,
+        Authorization: `Bearer ${authReq.user!.accessToken}`,
       },
     });
 
     if (!response.ok) {
-      return res.status(response.status).json({ error: 'Failed to fetch guilds' });
+      res.status(response.status).json({ error: 'Failed to fetch guilds' });
+      return;
     }
 
-    const guilds = await response.json();
+    const guilds = await response.json() as DiscordGuild[];
     
     // Filter to guilds where user has MANAGE_GUILD or is owner
-    const manageableGuilds = guilds.filter((guild: any) => {
+    const manageableGuilds = guilds.filter((guild) => {
       const permissions = BigInt(guild.permissions);
       const MANAGE_GUILD = BigInt(0x20);
       const ADMINISTRATOR = BigInt(0x8);
@@ -30,13 +41,13 @@ guildsRouter.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
     });
 
     // Store guilds in session for permission checking
-    (req.user as any).guilds = guilds;
+    (authReq.user as any).guilds = guilds;
 
     // Get bot's guilds to check where bot is present
     const botGuildsResult = await db.query('SELECT guild_id FROM guild_configs');
     const botGuildIds = new Set(botGuildsResult.rows.map(r => r.guild_id));
 
-    const guildsWithBotStatus = manageableGuilds.map((guild: any) => ({
+    const guildsWithBotStatus = manageableGuilds.map((guild) => ({
       id: guild.id,
       name: guild.name,
       icon: guild.icon,
@@ -49,10 +60,10 @@ guildsRouter.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
     logger.error('Error fetching guilds:', error);
     res.status(500).json({ error: 'Failed to fetch guilds' });
   }
-});
+}));
 
 // Get guild config
-guildsRouter.get('/:guildId', requireAuth, requireGuildAccess, async (req: AuthenticatedRequest, res) => {
+guildsRouter.get('/:guildId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     
@@ -62,7 +73,8 @@ guildsRouter.get('/:guildId', requireAuth, requireGuildAccess, async (req: Authe
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Guild not found' });
+      res.status(404).json({ error: 'Guild not found' });
+      return;
     }
 
     res.json(result.rows[0]);
@@ -70,10 +82,10 @@ guildsRouter.get('/:guildId', requireAuth, requireGuildAccess, async (req: Authe
     logger.error('Error fetching guild config:', error);
     res.status(500).json({ error: 'Failed to fetch guild config' });
   }
-});
+}));
 
 // Update guild config
-guildsRouter.patch('/:guildId', requireAuth, requireGuildAccess, async (req: AuthenticatedRequest, res) => {
+guildsRouter.patch('/:guildId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     const updates = req.body;
@@ -90,10 +102,10 @@ guildsRouter.patch('/:guildId', requireAuth, requireGuildAccess, async (req: Aut
     logger.error('Error updating guild config:', error);
     res.status(500).json({ error: 'Failed to update guild config' });
   }
-});
+}));
 
 // Get guild leaderboard
-guildsRouter.get('/:guildId/leaderboard', requireAuth, async (req: AuthenticatedRequest, res) => {
+guildsRouter.get('/:guildId/leaderboard', requireAuth, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     const page = parseInt(req.query.page as string) || 1;
@@ -124,10 +136,10 @@ guildsRouter.get('/:guildId/leaderboard', requireAuth, async (req: Authenticated
     logger.error('Error fetching leaderboard:', error);
     res.status(500).json({ error: 'Failed to fetch leaderboard' });
   }
-});
+}));
 
 // Get guild warnings
-guildsRouter.get('/:guildId/warnings', requireAuth, requireGuildAccess, async (req: AuthenticatedRequest, res) => {
+guildsRouter.get('/:guildId/warnings', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     const userId = req.query.userId as string;
@@ -148,4 +160,4 @@ guildsRouter.get('/:guildId/warnings', requireAuth, requireGuildAccess, async (r
     logger.error('Error fetching warnings:', error);
     res.status(500).json({ error: 'Failed to fetch warnings' });
   }
-});
+}));

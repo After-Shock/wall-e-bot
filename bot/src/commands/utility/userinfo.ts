@@ -63,8 +63,9 @@ const command: Command = {
       }
     }
 
-    if (user.bannerURL()) {
-      embed.setImage(user.bannerURL({ size: 512 }));
+    const bannerUrl = user.bannerURL({ size: 512 });
+    if (bannerUrl) {
+      embed.setImage(bannerUrl);
     }
 
     await interaction.reply({ embeds: [embed] });

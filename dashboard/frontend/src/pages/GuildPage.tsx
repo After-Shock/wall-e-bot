@@ -4,19 +4,21 @@ import { api } from '../services/api';
 import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings } from 'lucide-react';
 import { useState } from 'react';
 
+interface ModulesConfig {
+  moderation: boolean;
+  automod: boolean;
+  leveling: boolean;
+  welcome: boolean;
+  logging: boolean;
+  reactionRoles: boolean;
+  customCommands: boolean;
+}
+
 interface GuildConfig {
   guild_id: string;
   config: {
     prefix: string;
-    modules: {
-      moderation: boolean;
-      automod: boolean;
-      leveling: boolean;
-      welcome: boolean;
-      logging: boolean;
-      reactionRoles: boolean;
-      customCommands: boolean;
-    };
+    modules: ModulesConfig;
     welcome: {
       enabled: boolean;
       channelId?: string;
@@ -27,6 +29,13 @@ interface GuildConfig {
       xpPerMessage: { min: number; max: number };
     };
   };
+}
+
+interface ConfigUpdate {
+  prefix?: string;
+  modules?: Partial<ModulesConfig>;
+  welcome?: Partial<GuildConfig['config']['welcome']>;
+  leveling?: Partial<GuildConfig['config']['leveling']>;
 }
 
 export default function GuildPage() {
@@ -43,7 +52,7 @@ export default function GuildPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (updates: Partial<GuildConfig['config']>) => {
+    mutationFn: async (updates: ConfigUpdate) => {
       await api.patch(`/api/guilds/${guildId}`, updates);
     },
     onSuccess: () => {

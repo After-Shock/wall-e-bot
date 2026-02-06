@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { logger } from '../utils/logger.js';
 import type { GuildConfig } from '@wall-e/shared';
 

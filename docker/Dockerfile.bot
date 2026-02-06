@@ -9,7 +9,7 @@ COPY bot/package*.json ./bot/
 COPY shared/package*.json ./shared/
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy source
 COPY shared ./shared
@@ -33,8 +33,8 @@ COPY package*.json ./
 COPY bot/package*.json ./bot/
 COPY shared/package*.json ./shared/
 
-# Install production dependencies only
-RUN npm ci --omit=dev
+# Install ALL dependencies (including dev) for building
+RUN npm install
 
 # Copy source
 COPY shared ./shared
@@ -44,6 +44,9 @@ COPY tsconfig.base.json ./
 # Build
 RUN npm run build -w shared
 RUN npm run build -w bot
+
+# Remove dev dependencies after build
+RUN npm prune --omit=dev
 
 WORKDIR /app/bot
 

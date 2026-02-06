@@ -1,6 +1,19 @@
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
-import { Shield, Star, MessageSquare, Settings, Bot, Zap } from 'lucide-react';
+import { Shield, Star, MessageSquare, Settings, Bot, Zap, Plus, LogIn } from 'lucide-react';
+
+// Bot invite URL with required permissions
+// Permissions: Administrator (8) - or customize as needed
+const BOT_PERMISSIONS = '8';
+const BOT_SCOPES = 'bot%20applications.commands';
+const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
+
+const getInviteUrl = () => {
+  if (!DISCORD_CLIENT_ID || DISCORD_CLIENT_ID === 'your_discord_client_id') {
+    return null;
+  }
+  return `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&permissions=${BOT_PERMISSIONS}&scope=${BOT_SCOPES}`;
+};
 
 const features = [
   {
@@ -37,6 +50,7 @@ const features = [
 
 export default function HomePage() {
   const { user, login } = useAuth();
+  const inviteUrl = getInviteUrl();
 
   return (
     <div>
@@ -52,25 +66,48 @@ export default function HomePage() {
             A feature-rich Discord bot with moderation, leveling, welcome messages, 
             and a powerful dashboard. Everything you need to manage your server.
           </p>
-          <div className="flex gap-4 justify-center">
-            {user ? (
-              <Link to="/dashboard" className="btn btn-primary text-lg px-8 py-3">
-                Go to Dashboard
-              </Link>
+          <div className="flex flex-wrap gap-4 justify-center">
+            {/* Primary CTA: Invite Bot */}
+            {inviteUrl ? (
+              <a
+                href={inviteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary text-lg px-8 py-3 flex items-center gap-2"
+              >
+                <Plus className="w-5 h-5" />
+                Add to Server
+              </a>
             ) : (
-              <button onClick={login} className="btn btn-primary text-lg px-8 py-3">
-                Add to Discord
+              <button
+                disabled
+                className="btn btn-primary text-lg px-8 py-3 opacity-50 cursor-not-allowed"
+                title="Discord Client ID not configured"
+              >
+                <Plus className="w-5 h-5 inline mr-2" />
+                Add to Server
               </button>
             )}
-            <a
-              href="https://discord.gg/example"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-secondary text-lg px-8 py-3"
-            >
-              Support Server
-            </a>
+            
+            {/* Dashboard Access */}
+            {user ? (
+              <Link to="/dashboard" className="btn btn-secondary text-lg px-8 py-3 flex items-center gap-2">
+                <Settings className="w-5 h-5" />
+                Dashboard
+              </Link>
+            ) : (
+              <button onClick={login} className="btn btn-secondary text-lg px-8 py-3 flex items-center gap-2">
+                <LogIn className="w-5 h-5" />
+                Login to Dashboard
+              </button>
+            )}
           </div>
+          
+          {!inviteUrl && (
+            <p className="text-sm text-yellow-500 mt-4">
+              ⚠️ Bot invite not available - Discord Client ID not configured
+            </p>
+          )}
         </div>
       </section>
 

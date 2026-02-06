@@ -1,13 +1,20 @@
 import type {
   SlashCommandBuilder,
   SlashCommandSubcommandsOnlyBuilder,
+  SlashCommandOptionsOnlyBuilder,
   ChatInputCommandInteraction,
   PermissionResolvable,
 } from 'discord.js';
 import type { WallEClient } from './Client.js';
 
+export type CommandData = 
+  | SlashCommandBuilder 
+  | SlashCommandSubcommandsOnlyBuilder 
+  | SlashCommandOptionsOnlyBuilder
+  | Omit<SlashCommandBuilder, 'addSubcommand' | 'addSubcommandGroup'>;
+
 export interface Command {
-  data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | Omit<SlashCommandBuilder, 'addSubcommand' | 'addSubcommandGroup'>;
+  data: CommandData;
   cooldown?: number; // seconds
   permissions?: PermissionResolvable[];
   ownerOnly?: boolean;

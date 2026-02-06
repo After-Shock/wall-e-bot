@@ -107,11 +107,11 @@ export class DatabaseService {
    * Execute a query with automatic retry on transient failures.
    * Useful for operations that may fail due to connection issues.
    */
-  async queryWithRetry<T>(
+  async queryWithRetry(
     query: string,
     params: unknown[],
     maxRetries = 3
-  ): Promise<pg.QueryResult<T>> {
+  ): Promise<pg.QueryResult> {
     let lastError: Error | undefined;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {

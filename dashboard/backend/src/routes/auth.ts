@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import passport from 'passport';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 
@@ -8,30 +8,33 @@ authRouter.get('/login', passport.authenticate('discord'));
 
 authRouter.get('/callback',
   passport.authenticate('discord', { failureRedirect: '/' }),
-  (req, res) => {
+  (req: Request, res: Response) => {
     res.redirect(process.env.DASHBOARD_URL || 'http://localhost:3000');
   }
 );
 
-authRouter.get('/logout', (req: AuthenticatedRequest, res) => {
+authRouter.get('/logout', (req: Request, res: Response) => {
   req.logout((err) => {
     if (err) {
-      return res.status(500).json({ error: 'Failed to logout' });
+      res.status(500).json({ error: 'Failed to logout' });
+      return;
     }
     res.redirect(process.env.DASHBOARD_URL || 'http://localhost:3000');
   });
 });
 
-authRouter.get('/me', (req: AuthenticatedRequest, res) => {
-  if (!req.user) {
-    return res.status(401).json({ error: 'Not authenticated' });
+authRouter.get('/me', (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  if (!user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
   }
 
   res.json({
-    id: req.user.id,
-    username: req.user.username,
-    discriminator: req.user.discriminator,
-    avatar: req.user.avatar,
-    email: req.user.email,
+    id: user.id,
+    username: user.username,
+    discriminator: user.discriminator,
+    avatar: user.avatar,
+    email: user.email,
   });
 });

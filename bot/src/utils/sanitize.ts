@@ -114,19 +114,19 @@ export const schemas = {
     .string()
     .min(1, 'Response is required')
     .max(2000, 'Response must be 2000 characters or less')
-    .transform(sanitizeCommandResponse),
+    .transform((val) => sanitizeCommandResponse(val)),
   
   /** Embed title */
   embedTitle: z
     .string()
     .max(256, 'Title must be 256 characters or less')
-    .transform(sanitizeTitle),
+    .transform((val) => sanitizeTitle(val)),
   
   /** Embed description */
   embedDescription: z
     .string()
     .max(4096, 'Description must be 4096 characters or less')
-    .transform(sanitizeEmbedContent),
+    .transform((val) => sanitizeEmbedContent(val)),
   
   /** Hex color code */
   hexColor: z

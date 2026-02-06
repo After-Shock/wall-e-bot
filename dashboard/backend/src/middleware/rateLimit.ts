@@ -8,7 +8,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 
 // Initialize Redis client (use same connection as session store if available)
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');

@@ -1,11 +1,12 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const botRouter = Router();
 
 // Get bot info
-botRouter.get('/info', async (req, res) => {
+botRouter.get('/info', asyncHandler(async (req, res) => {
   try {
     // This would typically fetch from the bot via IPC or a shared database
     res.json({
@@ -18,10 +19,10 @@ botRouter.get('/info', async (req, res) => {
     logger.error('Error fetching bot info:', error);
     res.status(500).json({ error: 'Failed to fetch bot info' });
   }
-});
+}));
 
 // Get bot stats
-botRouter.get('/stats', async (req, res) => {
+botRouter.get('/stats', asyncHandler(async (req, res) => {
   try {
     // In production, this would query the actual bot stats
     res.json({
@@ -34,10 +35,10 @@ botRouter.get('/stats', async (req, res) => {
     logger.error('Error fetching bot stats:', error);
     res.status(500).json({ error: 'Failed to fetch bot stats' });
   }
-});
+}));
 
 // Update bot nickname for a guild
-botRouter.patch('/guilds/:guildId/nickname', requireAuth, async (req: AuthenticatedRequest, res) => {
+botRouter.patch('/guilds/:guildId/nickname', requireAuth, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     const { nickname } = req.body;
@@ -49,4 +50,4 @@ botRouter.patch('/guilds/:guildId/nickname', requireAuth, async (req: Authentica
     logger.error('Error updating nickname:', error);
     res.status(500).json({ error: 'Failed to update nickname' });
   }
-});
+}));

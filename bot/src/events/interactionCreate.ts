@@ -9,7 +9,7 @@
  * @module events/interactionCreate
  */
 
-import { Events, ChatInputCommandInteraction, Collection } from 'discord.js';
+import { Events, ChatInputCommandInteraction, Collection, PermissionsBitField } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { errorEmbed } from '../utils/embeds.js';
 import { logger } from '../utils/logger.js';
@@ -69,9 +69,10 @@ export default {
     // Check permissions
     if (command.permissions && interaction.guild) {
       const member = interaction.member;
-      if (member && 'permissions' in member) {
+      if (member && 'permissions' in member && member.permissions instanceof PermissionsBitField) {
+        const permissions = member.permissions as PermissionsBitField;
         const missingPerms = command.permissions.filter(
-          perm => !member.permissions.has(perm)
+          perm => !permissions.has(perm)
         );
 
         if (missingPerms.length > 0) {
