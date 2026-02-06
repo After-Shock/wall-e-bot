@@ -185,6 +185,90 @@ docker compose -f docker/docker-compose.yml down -v
 | `JWT_SECRET` | Secret for JWT token signing | Yes |
 | `DASHBOARD_URL` | Frontend URL for OAuth callbacks | Yes |
 
+---
+
+## 🧂 Saltbox Integration
+
+<p align="center">
+  <img src="https://docs.saltbox.dev/images/logo.png" alt="Saltbox" width="150">
+  <br>
+  <strong>SALTBOX VERIFIED</strong>
+</p>
+
+Wall-E Bot includes native support for [Saltbox](https://github.com/saltyorg/Saltbox) deployments with Traefik reverse proxy integration.
+
+### Saltbox Quick Start
+
+1. **Clone to your Saltbox server:**
+   ```bash
+   cd /opt
+   git clone https://github.com/After-Shock/wall-e-bot.git
+   cd wall-e-bot
+   ```
+
+2. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+   
+   Required Saltbox-specific variables:
+   ```env
+   # Your Saltbox domain
+   DOMAIN=yourdomain.com
+   
+   # Wall-E subdomain (optional, defaults to wall-e.${DOMAIN})
+   WALL_E_DOMAIN=wall-e.yourdomain.com
+   
+   # Database password (required)
+   DB_PASSWORD=your_secure_password
+   ```
+
+3. **Deploy:**
+   ```bash
+   docker compose -f docker/docker-compose.saltbox.yml up -d
+   ```
+
+4. **Access dashboard:** `https://wall-e.yourdomain.com`
+
+### Saltbox Features
+
+- ✅ **Traefik Integration** - Automatic HTTPS with Let's Encrypt
+- ✅ **Saltbox Network** - Uses existing `saltbox` Docker network
+- ✅ **Backup Compatible** - Data stored in `/opt/wall-e-bot/` for Saltbox backups
+- ✅ **Managed Labels** - Containers tagged with `saltbox_managed=true`
+- ✅ **Authelia Ready** - Optional authentication middleware (uncomment in compose file)
+
+### Saltbox Commands
+
+```bash
+# Start Wall-E Bot
+docker compose -f docker/docker-compose.saltbox.yml up -d
+
+# View logs
+docker compose -f docker/docker-compose.saltbox.yml logs -f
+
+# Update
+git pull
+docker compose -f docker/docker-compose.saltbox.yml up -d --build
+
+# Stop
+docker compose -f docker/docker-compose.saltbox.yml down
+
+# Full reset (removes data)
+docker compose -f docker/docker-compose.saltbox.yml down
+rm -rf /opt/wall-e-bot/{postgres,redis}
+```
+
+### Saltbox Directory Structure
+
+```
+/opt/wall-e-bot/
+├── postgres/          # PostgreSQL data
+├── redis/             # Redis persistence
+└── (source files)     # Cloned repository
+```
+
 ## Project Structure
 
 ```

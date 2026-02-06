@@ -1,0 +1,188 @@
+# =============================================================================
+# Wall-E Bot - Saltbox Docker Compose
+# =============================================================================
+#
+#  ___  __ _ _ | |_| |__   _____  __
+# / __|/ _` | | __| '_ \ / _ \ \/ /
+# \__ \ (_| | | |_| |_) | (_) >  <   VERIFIED
+# |___/\__,_|_|\__|_.__/ \___/_/\_\
+#
+# =============================================================================
+#
+# This configuration is designed for Saltbox (https://github.com/saltyorg/Saltbox)
+# integration with Traefik reverse proxy and Saltbox networking.
+#
+# Prerequisites:
+#   - Saltbox installed and running
+#   - Traefik configured (default with Saltbox)
+#   - Domain configured in Saltbox
+#
+# Installation:
+#   1. Copy .env.example to .env and configure
+#   2. Set WALL_E_DOMAIN in .env (e.g., wall-e.yourdomain.com)
+#   3. Run: docker compose -f docker/docker-compose.saltbox.yml up -d
+#
+# The dashboard will be available at https://${WALL_E_DOMAIN}
+#
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  # Uses Saltbox's standard database naming convention.
+  # Data persisted to /opt/wall-e-bot/postgres for Saltbox backup compatibility.
+  wall-e-postgres:
+    image: postgres:16-alpine
+    container_name: wall-e-postgres
+    hostname: wall-e-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-wall_e}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-wall_e_bot}
+    volumes:
+      # Saltbox convention: /opt/<app_name>/<data>
+      - /opt/wall-e-bot/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-wall_e} -d ${DB_NAME:-wall_e_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - saltbox
+    labels:
+      # Saltbox backup integration
+      - "com.github.saltbox.saltbox_managed=true"
+
+  # ---------------------------------------------------------------------------
+  # Redis Cache
+  # ---------------------------------------------------------------------------
+  wall-e-redis:
+    image: redis:7-alpine
+    container_name: wall-e-redis
+    hostname: wall-e-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - /opt/wall-e-bot/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - saltbox
+    labels:
+      - "com.github.saltbox.saltbox_managed=true"
+
+  # ---------------------------------------------------------------------------
+  # Discord Bot
+  # ---------------------------------------------------------------------------
+  # The main bot process - connects to Discord and handles all commands.
+  wall-e-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bot
+      target: production
+    image: wall-e-bot:latest
+    container_name: wall-e-bot
+    hostname: wall-e-bot
+    restart: unless-stopped
+    depends_on:
+      wall-e-postgres:
+        condition: service_healthy
+      wall-e-redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-wall_e}:${DB_PASSWORD}@wall-e-postgres:5432/${DB_NAME:-wall_e_bot}
+      REDIS_URL: redis://wall-e-redis:6379
+      NODE_ENV: production
+    env_file:
+      - ../.env
+    networks:
+      - saltbox
+    labels:
+      - "com.github.saltbox.saltbox_managed=true"
+
+  # ---------------------------------------------------------------------------
+  # Dashboard Backend (API)
+  # ---------------------------------------------------------------------------
+  # REST API for the web dashboard. Exposed via Traefik.
+  wall-e-backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+      target: production
+    image: wall-e-backend:latest
+    container_name: wall-e-backend
+    hostname: wall-e-backend
+    restart: unless-stopped
+    depends_on:
+      wall-e-postgres:
+        condition: service_healthy
+      wall-e-redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-wall_e}:${DB_PASSWORD}@wall-e-postgres:5432/${DB_NAME:-wall_e_bot}
+      REDIS_URL: redis://wall-e-redis:6379
+      NODE_ENV: production
+      PORT: 3001
+      # Saltbox domain configuration
+      DASHBOARD_URL: https://${WALL_E_DOMAIN:-wall-e.${DOMAIN}}
+    env_file:
+      - ../.env
+    networks:
+      - saltbox
+    labels:
+      - "com.github.saltbox.saltbox_managed=true"
+      # Traefik configuration for API
+      - "traefik.enable=true"
+      - "traefik.http.routers.wall-e-api.rule=Host(`${WALL_E_DOMAIN:-wall-e.${DOMAIN}}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.wall-e-api.entrypoints=websecure"
+      - "traefik.http.routers.wall-e-api.tls=true"
+      - "traefik.http.routers.wall-e-api.tls.certresolver=cfdns"
+      - "traefik.http.routers.wall-e-api.middlewares=secureHeaders@file"
+      - "traefik.http.services.wall-e-api.loadbalancer.server.port=3001"
+
+  # ---------------------------------------------------------------------------
+  # Dashboard Frontend
+  # ---------------------------------------------------------------------------
+  # React web dashboard served via nginx, exposed through Traefik.
+  wall-e-frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+      target: production
+      args:
+        VITE_API_URL: https://${WALL_E_DOMAIN:-wall-e.${DOMAIN}}/api
+    image: wall-e-frontend:latest
+    container_name: wall-e-frontend
+    hostname: wall-e-frontend
+    restart: unless-stopped
+    depends_on:
+      - wall-e-backend
+    networks:
+      - saltbox
+    labels:
+      - "com.github.saltbox.saltbox_managed=true"
+      # Traefik configuration for frontend
+      - "traefik.enable=true"
+      - "traefik.http.routers.wall-e.rule=Host(`${WALL_E_DOMAIN:-wall-e.${DOMAIN}}`)"
+      - "traefik.http.routers.wall-e.entrypoints=websecure"
+      - "traefik.http.routers.wall-e.tls=true"
+      - "traefik.http.routers.wall-e.tls.certresolver=cfdns"
+      - "traefik.http.routers.wall-e.middlewares=secureHeaders@file"
+      - "traefik.http.services.wall-e.loadbalancer.server.port=80"
+      # Optional: Add Authelia authentication
+      # - "traefik.http.routers.wall-e.middlewares=secureHeaders@file,authelia@docker"
+
+# =============================================================================
+# Networks
+# =============================================================================
+# Use Saltbox's existing network for Traefik integration
+networks:
+  saltbox:
+    external: true
