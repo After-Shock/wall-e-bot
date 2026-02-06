@@ -241,4 +241,75 @@ export class WallEClient extends Client {
     
     logger.info('Successfully deployed application commands');
   }
+
+  // ===========================================================================
+  // Graceful Shutdown
+  // ===========================================================================
+
+  /**
+   * Gracefully shutdown the bot and all services.
+   * 
+   * Shutdown sequence:
+   * 1. Set bot presence to indicate shutdown
+   * 2. Stop the scheduler (prevents new tasks from starting)
+   * 3. Allow brief delay for in-flight operations
+   * 4. Destroy Discord connection
+   * 5. Close Redis connection
+   * 6. Close database connection pool
+   */
+  async shutdown(): Promise<void> {
+    logger.info('🔄 Shutting down services...');
+
+    // Step 1: Update presence to indicate shutdown
+    try {
+      if (this.user) {
+        this.user.setPresence({
+          status: 'dnd',
+          activities: [{ name: 'Shutting down...' }],
+        });
+      }
+    } catch {
+      // May fail if already disconnected
+    }
+
+    // Step 2: Stop scheduler to prevent new tasks
+    if (this.scheduler) {
+      logger.info('  → Stopping scheduler...');
+      this.scheduler.stop();
+    }
+
+    // Step 3: Brief delay for in-flight operations to complete
+    logger.info('  → Waiting for in-flight operations...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Step 4: Destroy Discord connection
+    logger.info('  → Disconnecting from Discord...');
+    try {
+      this.destroy();
+    } catch (error) {
+      logger.warn('Error destroying Discord client:', error);
+    }
+
+    // Step 5: Close Redis connection
+    if (this.cache) {
+      logger.info('  → Closing Redis connection...');
+      try {
+        await this.cache.close();
+      } catch (error) {
+        logger.warn('Error disconnecting from Redis:', error);
+      }
+    }
+
+    // Step 6: Close database connection pool
+    if (this.db) {
+      logger.info('  → Closing database connections...');
+      try {
+        await this.db.close();
+      } catch (error) {
+        logger.warn('Error closing database:', error);
+      }
+    }
+
+    logger.info('✅ All services shut down');
+  }
 }

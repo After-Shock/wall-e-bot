@@ -1,0 +1,184 @@
+# =============================================================================
+# Wall-E Bot - Continuous Integration
+# =============================================================================
+#
+# Runs on:
+# - Push to main branch
+# - Pull requests to main branch
+#
+# Jobs:
+# 1. Lint - Check code style with ESLint
+# 2. Test - Run unit tests with Jest
+# 3. Build - Verify TypeScript compilation
+# 4. Docker - Build and test Docker images
+#
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ===========================================================================
+  # Lint Job
+  # ===========================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint --workspaces --if-present
+
+  # ===========================================================================
+  # Test Job
+  # ===========================================================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    services:
+      # PostgreSQL for integration tests
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      # Redis for integration tests
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+          DISCORD_TOKEN: test-token-for-ci
+          DISCORD_CLIENT_ID: 123456789012345678
+          NODE_ENV: test
+        run: npm test --workspaces --if-present
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          files: ./bot/coverage/lcov.info,./dashboard/backend/coverage/lcov.info
+          fail_ci_if_error: false
+
+  # ===========================================================================
+  # Build Job
+  # ===========================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build --workspaces --if-present
+
+      - name: Check for TypeScript errors
+        run: npx tsc --noEmit --project bot/tsconfig.json
+
+  # ===========================================================================
+  # Docker Build Job
+  # ===========================================================================
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [lint, test, build]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build bot image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.bot
+          push: false
+          tags: wall-e-bot:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.backend
+          push: false
+          tags: wall-e-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.frontend
+          push: false
+          tags: wall-e-frontend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
