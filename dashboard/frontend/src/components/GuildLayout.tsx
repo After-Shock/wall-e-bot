@@ -1,6 +1,5 @@
 import { Outlet, useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../services/api';
 import Sidebar from './Sidebar';
 import { ArrowLeft, Server } from 'lucide-react';
 

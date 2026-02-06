@@ -5,30 +5,32 @@ import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
 import GuildOverviewPage from './pages/GuildOverviewPage';
 import GuildPage from './pages/GuildPage';
-import FeaturePage from './pages/FeaturePage';
 import NotFoundPage from './pages/NotFoundPage';
-import {
-  MessageSquare,
-  Shield,
-  ShieldAlert,
-  ScrollText,
-  Smile,
-  Terminal,
-  Star,
-  TrendingUp,
-  Bell,
-  Zap,
-  Palette,
-  Lightbulb,
-  MessageCircle,
-  Settings,
-  Users,
-} from 'lucide-react';
 
-// Feature page wrapper component
-const Feature = ({ title, description, icon }: { title: string; description: string; icon: React.ComponentType<{ className?: string }> }) => (
-  <FeaturePage title={title} description={description} icon={icon} />
-);
+// Guild feature pages
+import WelcomeMessagesPage from './pages/guild/WelcomeMessagesPage';
+import AutoRolesPage from './pages/guild/AutoRolesPage';
+import ServerRulesPage from './pages/guild/ServerRulesPage';
+import ModerationPage from './pages/guild/ModerationPage';
+import WarningsPage from './pages/guild/WarningsPage';
+import TempBansPage from './pages/guild/TempBansPage';
+import SpamProtectionPage from './pages/guild/SpamProtectionPage';
+import WordFiltersPage from './pages/guild/WordFiltersPage';
+import LinkProtectionPage from './pages/guild/LinkProtectionPage';
+import LoggingPage from './pages/guild/LoggingPage';
+import ReactionRolesPage from './pages/guild/ReactionRolesPage';
+import CustomCommandsPage from './pages/guild/CustomCommandsPage';
+import StarboardPage from './pages/guild/StarboardPage';
+import LevelingSettingsPage from './pages/guild/LevelingSettingsPage';
+import RoleRewardsPage from './pages/guild/RoleRewardsPage';
+import LeaderboardPage from './pages/guild/LeaderboardPage';
+import ScheduledMessagesPage from './pages/guild/ScheduledMessagesPage';
+import TwitchAlertsPage from './pages/guild/TwitchAlertsPage';
+import AutoFeedsPage from './pages/guild/AutoFeedsPage';
+import TriggersPage from './pages/guild/TriggersPage';
+import EmbedBuilderPage from './pages/guild/EmbedBuilderPage';
+import SuggestionsPage from './pages/guild/SuggestionsPage';
+import TicketsPage from './pages/guild/TicketsPage';
 
 function App() {
   return (
@@ -45,58 +47,58 @@ function App() {
           <Route index element={<GuildOverviewPage />} />
           
           {/* Welcome */}
-          <Route path="welcome" element={<Feature title="Welcome" description="Configure welcome messages, auto-roles, and server rules for new members." icon={MessageSquare} />} />
-          <Route path="welcome/messages" element={<Feature title="Welcome Messages" description="Set up custom welcome and farewell messages with embed support and variables." icon={MessageSquare} />} />
-          <Route path="welcome/autoroles" element={<Feature title="Auto Roles" description="Automatically assign roles to new members when they join your server." icon={Users} />} />
-          <Route path="welcome/rules" element={<Feature title="Server Rules" description="Display server rules and require members to accept them before accessing the server." icon={ScrollText} />} />
+          <Route path="welcome" element={<WelcomeMessagesPage />} />
+          <Route path="welcome/messages" element={<WelcomeMessagesPage />} />
+          <Route path="welcome/autoroles" element={<AutoRolesPage />} />
+          <Route path="welcome/rules" element={<ServerRulesPage />} />
           
           {/* Moderation */}
-          <Route path="moderation" element={<Feature title="Moderation" description="View and manage moderation actions, warnings, and bans." icon={Shield} />} />
-          <Route path="moderation/actions" element={<Feature title="Mod Actions" description="View recent moderation actions and manage punishments." icon={Shield} />} />
-          <Route path="moderation/warnings" element={<Feature title="Warnings" description="View and manage member warnings and strikes." icon={ShieldAlert} />} />
-          <Route path="moderation/tempbans" element={<Feature title="Temp Bans" description="View and manage temporary bans." icon={Shield} />} />
+          <Route path="moderation" element={<ModerationPage />} />
+          <Route path="moderation/actions" element={<ModerationPage />} />
+          <Route path="moderation/warnings" element={<WarningsPage />} />
+          <Route path="moderation/tempbans" element={<TempBansPage />} />
           
           {/* Auto-Mod */}
-          <Route path="automod" element={<Feature title="Auto-Mod" description="Configure automatic moderation to protect your server from spam and abuse." icon={ShieldAlert} />} />
-          <Route path="automod/spam" element={<Feature title="Spam Protection" description="Configure spam detection and rate limiting." icon={ShieldAlert} />} />
-          <Route path="automod/filters" element={<Feature title="Word Filters" description="Set up word blacklists and content filters." icon={Terminal} />} />
-          <Route path="automod/links" element={<Feature title="Link Protection" description="Control which links can be posted in your server." icon={Zap} />} />
+          <Route path="automod" element={<SpamProtectionPage />} />
+          <Route path="automod/spam" element={<SpamProtectionPage />} />
+          <Route path="automod/filters" element={<WordFiltersPage />} />
+          <Route path="automod/links" element={<LinkProtectionPage />} />
           
           {/* Logging */}
-          <Route path="logging" element={<Feature title="Logging" description="Configure logging for messages, members, moderation actions, and more." icon={ScrollText} />} />
+          <Route path="logging" element={<LoggingPage />} />
           
           {/* Reaction Roles */}
-          <Route path="reaction-roles" element={<Feature title="Reaction Roles" description="Create reaction role messages for self-assignable roles." icon={Smile} />} />
+          <Route path="reaction-roles" element={<ReactionRolesPage />} />
           
           {/* Custom Commands */}
-          <Route path="commands" element={<Feature title="Custom Commands" description="Create custom commands with variables, embeds, and advanced logic." icon={Terminal} />} />
+          <Route path="commands" element={<CustomCommandsPage />} />
           
           {/* Starboard */}
-          <Route path="starboard" element={<Feature title="Starboard" description="Highlight popular messages that receive star reactions." icon={Star} />} />
+          <Route path="starboard" element={<StarboardPage />} />
           
           {/* Leveling */}
-          <Route path="leveling" element={<Feature title="Leveling" description="Configure the XP and leveling system for your server." icon={TrendingUp} />} />
-          <Route path="leveling/settings" element={<Feature title="Leveling Settings" description="Configure XP rates, cooldowns, and level-up messages." icon={Settings} />} />
-          <Route path="leveling/rewards" element={<Feature title="Role Rewards" description="Set up automatic role rewards for reaching certain levels." icon={Star} />} />
-          <Route path="leveling/leaderboard" element={<Feature title="Leaderboard" description="View the server leaderboard and manage XP." icon={TrendingUp} />} />
+          <Route path="leveling" element={<LevelingSettingsPage />} />
+          <Route path="leveling/settings" element={<LevelingSettingsPage />} />
+          <Route path="leveling/rewards" element={<RoleRewardsPage />} />
+          <Route path="leveling/leaderboard" element={<LeaderboardPage />} />
           
           {/* Announcements */}
-          <Route path="announcements" element={<Feature title="Announcements" description="Set up scheduled messages, Twitch alerts, and auto feeds." icon={Bell} />} />
-          <Route path="announcements/scheduled" element={<Feature title="Scheduled Messages" description="Create recurring messages and announcements." icon={Bell} />} />
-          <Route path="announcements/twitch" element={<Feature title="Twitch Alerts" description="Get notified when streamers go live." icon={Zap} />} />
-          <Route path="announcements/feeds" element={<Feature title="Auto Feeds" description="Automatically post content from external sources." icon={Bell} />} />
+          <Route path="announcements" element={<ScheduledMessagesPage />} />
+          <Route path="announcements/scheduled" element={<ScheduledMessagesPage />} />
+          <Route path="announcements/twitch" element={<TwitchAlertsPage />} />
+          <Route path="announcements/feeds" element={<AutoFeedsPage />} />
           
           {/* Triggers */}
-          <Route path="triggers" element={<Feature title="Triggers" description="Create automated responses triggered by specific messages or events." icon={Zap} />} />
+          <Route path="triggers" element={<TriggersPage />} />
           
           {/* Embeds */}
-          <Route path="embeds" element={<Feature title="Embed Builder" description="Create and send custom embeds with a visual builder." icon={Palette} />} />
+          <Route path="embeds" element={<EmbedBuilderPage />} />
           
           {/* Suggestions */}
-          <Route path="suggestions" element={<Feature title="Suggestions" description="Let members submit suggestions and vote on them." icon={Lightbulb} />} />
+          <Route path="suggestions" element={<SuggestionsPage />} />
           
           {/* Tickets */}
-          <Route path="tickets" element={<Feature title="Tickets" description="Set up a support ticket system for your server." icon={MessageCircle} />} />
+          <Route path="tickets" element={<TicketsPage />} />
           
           {/* Settings */}
           <Route path="settings" element={<GuildPage />} />

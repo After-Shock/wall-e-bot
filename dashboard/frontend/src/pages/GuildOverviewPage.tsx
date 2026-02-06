@@ -8,7 +8,6 @@ import {
   Smile,
   Terminal,
   Star,
-  Bell,
   Activity,
   ArrowRight,
 } from 'lucide-react';
