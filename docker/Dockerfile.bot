@@ -1,0 +1,50 @@
+# Development stage
+FROM node:20-alpine AS development
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY bot/package*.json ./bot/
+COPY shared/package*.json ./shared/
+
+# Install dependencies
+RUN npm ci
+
+# Copy source
+COPY shared ./shared
+COPY bot ./bot
+COPY tsconfig.base.json ./
+
+# Build shared
+RUN npm run build -w shared
+
+WORKDIR /app/bot
+
+CMD ["npm", "run", "dev"]
+
+# Production stage
+FROM node:20-alpine AS production
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY bot/package*.json ./bot/
+COPY shared/package*.json ./shared/
+
+# Install production dependencies only
+RUN npm ci --omit=dev
+
+# Copy source
+COPY shared ./shared
+COPY bot ./bot
+COPY tsconfig.base.json ./
+
+# Build
+RUN npm run build -w shared
+RUN npm run build -w bot
+
+WORKDIR /app/bot
+
+CMD ["npm", "start"]

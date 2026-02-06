@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-discord-darkest text-white min-h-screen;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-discord-blurple hover:bg-discord-blurple/80 text-white;
+  }
+
+  .btn-secondary {
+    @apply bg-discord-dark hover:bg-discord-darker text-white;
+  }
+
+  .btn-danger {
+    @apply bg-discord-red hover:bg-discord-red/80 text-white;
+  }
+
+  .card {
+    @apply bg-discord-dark rounded-xl p-6;
+  }
+
+  .input {
+    @apply w-full px-4 py-2 bg-discord-darker rounded-lg border border-discord-dark 
+           focus:border-discord-blurple focus:outline-none transition-colors;
+  }
+
+  .toggle {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full 
+           transition-colors duration-200 focus:outline-none;
+  }
+
+  .toggle-enabled {
+    @apply bg-discord-blurple;
+  }
+
+  .toggle-disabled {
+    @apply bg-discord-dark;
+  }
+
+  .toggle-dot {
+    @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200;
+  }
+}

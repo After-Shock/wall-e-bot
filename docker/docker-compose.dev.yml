@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wall-e-postgres
+    environment:
+      POSTGRES_USER: wallE
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: wall_e_bot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallE -d wall_e_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: wall-e-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bot
+    container_name: wall-e-bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://wallE:password@postgres:5432/wall_e_bot
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - ../.env
+    volumes:
+      - ../bot:/app/bot
+      - ../shared:/app/shared
+      - /app/bot/node_modules
+      - /app/shared/node_modules
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: wall-e-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://wallE:password@postgres:5432/wall_e_bot
+      REDIS_URL: redis://redis:6379
+      PORT: 3001
+    env_file:
+      - ../.env
+    volumes:
+      - ../dashboard/backend:/app/dashboard/backend
+      - ../shared:/app/shared
+      - /app/dashboard/backend/node_modules
+      - /app/shared/node_modules
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: wall-e-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:3001
+    env_file:
+      - ../.env
+    volumes:
+      - ../dashboard/frontend:/app/dashboard/frontend
+      - /app/dashboard/frontend/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:

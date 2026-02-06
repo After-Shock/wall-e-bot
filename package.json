@@ -1,0 +1,43 @@
+{
+  "name": "wall-e-bot",
+  "version": "1.0.0",
+  "description": "A feature-rich Discord bot with web dashboard - Wall-E Bot",
+  "private": true,
+  "workspaces": [
+    "bot",
+    "dashboard/backend",
+    "dashboard/frontend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:bot\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:bot": "npm run dev -w bot",
+    "dev:backend": "npm run dev -w dashboard/backend",
+    "dev:frontend": "npm run dev -w dashboard/frontend",
+    "build": "npm run build -ws",
+    "build:bot": "npm run build -w bot",
+    "build:backend": "npm run build -w dashboard/backend",
+    "build:frontend": "npm run build -w dashboard/frontend",
+    "start": "npm run start -w bot",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "npm run test -ws --if-present",
+    "docker:dev": "docker-compose -f docker/docker-compose.dev.yml up --build",
+    "docker:prod": "docker-compose -f docker/docker-compose.yml up --build -d",
+    "db:migrate": "npm run migrate -w dashboard/backend",
+    "db:seed": "npm run seed -w dashboard/backend"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "prettier": "^3.2.4",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
