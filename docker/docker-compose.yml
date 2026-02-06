@@ -1,16 +1,37 @@
+# =============================================================================
+# Wall-E Bot - Production Docker Compose
+# =============================================================================
+# 
+# Usage:
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml down
+#
+# This configuration is optimized for production with:
+#   - Multi-stage builds for smaller images
+#   - Health checks for reliability
+#   - Automatic restart policies
+#   - Internal networking (no exposed DB ports)
+#
+# =============================================================================
+
 version: '3.8'
 
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  # Primary data store for guild configs, user data, warnings, etc.
+  # Uses Alpine variant for smaller image size (~80MB vs ~400MB)
   postgres:
     image: postgres:16-alpine
     container_name: wall-e-postgres
-    restart: unless-stopped
+    restart: unless-stopped  # Auto-restart on failure (not on manual stop)
     environment:
       POSTGRES_USER: ${DB_USER:-wallE}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: ${DB_NAME:-wall_e_bot}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data  # Persist data across restarts
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-wallE} -d ${DB_NAME:-wall_e_bot}"]
       interval: 10s
@@ -18,13 +39,19 @@ services:
       retries: 5
     networks:
       - wall-e-network
+    # Note: No ports exposed - only accessible within Docker network
 
+  # ---------------------------------------------------------------------------
+  # Redis Cache
+  # ---------------------------------------------------------------------------
+  # Used for session storage, rate limiting, and temporary data caching.
+  # Configured with AOF persistence for data durability.
   redis:
     image: redis:7-alpine
     container_name: wall-e-redis
     restart: unless-stopped
     volumes:
-      - redis_data:/data
+      - redis_data:/data  # Persist Redis data (AOF/RDB)
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -32,28 +59,41 @@ services:
       retries: 5
     networks:
       - wall-e-network
+    # Note: No ports exposed - only accessible within Docker network
 
+  # ---------------------------------------------------------------------------
+  # Discord Bot
+  # ---------------------------------------------------------------------------
+  # The main Discord bot application. Handles all Discord interactions,
+  # commands, events, and background tasks (scheduled messages, etc.)
   bot:
     build:
-      context: ..
+      context: ..           # Build from project root
       dockerfile: docker/Dockerfile.bot
-      target: production
+      target: production    # Use production stage from multi-stage build
     container_name: wall-e-bot
     restart: unless-stopped
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_healthy  # Wait for DB to be ready
       redis:
-        condition: service_healthy
+        condition: service_healthy  # Wait for cache to be ready
     environment:
+      # Internal Docker network URLs (not localhost)
       DATABASE_URL: postgresql://${DB_USER:-wallE}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-wall_e_bot}
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
     env_file:
-      - ../.env
+      - ../.env  # Discord tokens and secrets
     networks:
       - wall-e-network
+    # Note: Bot doesn't expose ports - outbound only to Discord API
 
+  # ---------------------------------------------------------------------------
+  # Dashboard Backend (API)
+  # ---------------------------------------------------------------------------
+  # Express.js REST API for the web dashboard.
+  # Handles Discord OAuth2, guild management, and bot configuration.
   backend:
     build:
       context: ..
@@ -67,7 +107,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "3001:3001"
+      - "3001:3001"  # Expose API port
     environment:
       DATABASE_URL: postgresql://${DB_USER:-wallE}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-wall_e_bot}
       REDIS_URL: redis://redis:6379
@@ -78,6 +118,11 @@ services:
     networks:
       - wall-e-network
 
+  # ---------------------------------------------------------------------------
+  # Dashboard Frontend
+  # ---------------------------------------------------------------------------
+  # React web dashboard served via nginx.
+  # Provides UI for guild admins to configure the bot.
   frontend:
     build:
       context: ..
@@ -86,16 +131,22 @@ services:
     container_name: wall-e-frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3000:80"  # nginx serves on port 80 internally
     depends_on:
       - backend
     networks:
       - wall-e-network
 
+# =============================================================================
+# Volumes - Persistent storage
+# =============================================================================
 volumes:
-  postgres_data:
-  redis_data:
+  postgres_data:  # PostgreSQL data directory
+  redis_data:     # Redis persistence (AOF/RDB)
 
+# =============================================================================
+# Networks - Internal communication
+# =============================================================================
 networks:
   wall-e-network:
-    driver: bridge
+    driver: bridge  # Default bridge network for container communication

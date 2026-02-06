@@ -1,6 +1,26 @@
+# =============================================================================
+# Wall-E Bot - Development Docker Compose
+# =============================================================================
+#
+# Usage:
+#   docker compose -f docker/docker-compose.dev.yml up -d
+#   docker compose -f docker/docker-compose.dev.yml logs -f
+#   docker compose -f docker/docker-compose.dev.yml down
+#
+# Development features:
+#   - Exposed database ports for local debugging
+#   - Volume mounts for hot-reloading
+#   - Faster health check intervals
+#   - No restart policies (manual control)
+#
+# =============================================================================
+
 version: '3.8'
 
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database (Development)
+  # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     container_name: wall-e-postgres
@@ -9,20 +29,23 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: wall_e_bot
     ports:
-      - "5432:5432"
+      - "5432:5432"  # Exposed for local DB tools (pgAdmin, DBeaver, etc.)
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wallE -d wall_e_bot"]
-      interval: 5s
+      interval: 5s   # Faster checks for development
       timeout: 5s
       retries: 5
 
+  # ---------------------------------------------------------------------------
+  # Redis Cache (Development)
+  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: wall-e-redis
     ports:
-      - "6379:6379"
+      - "6379:6379"  # Exposed for redis-cli and debugging
     volumes:
       - redis_data:/data
     healthcheck:
@@ -31,6 +54,11 @@ services:
       timeout: 5s
       retries: 5
 
+  # ---------------------------------------------------------------------------
+  # Discord Bot (Development)
+  # ---------------------------------------------------------------------------
+  # Source code is mounted for hot-reloading during development.
+  # node_modules are excluded to use container's dependencies.
   bot:
     build:
       context: ..
@@ -47,11 +75,16 @@ services:
     env_file:
       - ../.env
     volumes:
+      # Mount source for hot-reloading
       - ../bot:/app/bot
       - ../shared:/app/shared
+      # Exclude node_modules (use container's)
       - /app/bot/node_modules
       - /app/shared/node_modules
 
+  # ---------------------------------------------------------------------------
+  # Dashboard Backend (Development)
+  # ---------------------------------------------------------------------------
   backend:
     build:
       context: ..
@@ -71,18 +104,24 @@ services:
     env_file:
       - ../.env
     volumes:
+      # Mount source for hot-reloading
       - ../dashboard/backend:/app/dashboard/backend
       - ../shared:/app/shared
+      # Exclude node_modules
       - /app/dashboard/backend/node_modules
       - /app/shared/node_modules
 
+  # ---------------------------------------------------------------------------
+  # Dashboard Frontend (Development)
+  # ---------------------------------------------------------------------------
+  # Vite dev server with HMR (Hot Module Replacement)
   frontend:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
     container_name: wall-e-frontend
     ports:
-      - "3000:3000"
+      - "3000:3000"  # Vite dev server port
     environment:
       VITE_API_URL: http://localhost:3001
     env_file:
@@ -91,6 +130,9 @@ services:
       - ../dashboard/frontend:/app/dashboard/frontend
       - /app/dashboard/frontend/node_modules
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   postgres_data:
   redis_data:

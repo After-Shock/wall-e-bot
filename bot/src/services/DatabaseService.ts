@@ -1,21 +1,56 @@
+/**
+ * Database Service
+ * 
+ * Provides PostgreSQL connection pooling and query methods for all bot data.
+ * Uses node-postgres (pg) with connection pooling for optimal performance.
+ * 
+ * @module services/DatabaseService
+ */
+
 import pg from 'pg';
 import { logger } from '../utils/logger.js';
 import type { GuildConfig, GuildMember } from '@wall-e/shared';
 
 const { Pool } = pg;
 
+/**
+ * PostgreSQL database service with connection pooling.
+ * 
+ * Manages:
+ * - Guild configurations (prefixes, modules, settings)
+ * - Member data (XP, levels, message counts)
+ * - Warnings and moderation actions
+ * - Scheduled tasks and temporary bans
+ */
 export class DatabaseService {
+  /** PostgreSQL connection pool - exposed for direct queries in commands */
   public pool!: pg.Pool;
 
+  /**
+   * Initialize the database connection pool.
+   * 
+   * Uses DATABASE_URL environment variable for connection string.
+   * Pool automatically manages connection lifecycle and reconnection.
+   * 
+   * @throws {Error} If database connection fails
+   */
   async connect() {
     this.pool = new Pool({
       connectionString: process.env.DATABASE_URL,
+      // Pool defaults: max 10 connections, idle timeout 10s
     });
 
+    // Verify connection with simple query
     await this.pool.query('SELECT NOW()');
     logger.info('Connected to PostgreSQL');
   }
 
+  /**
+   * Retrieve guild configuration settings.
+   * 
+   * @param guildId - Discord guild/server ID
+   * @returns Guild config object or null if not found
+   */
   async getGuildConfig(guildId: string): Promise<GuildConfig | null> {
     const result = await this.pool.query(
       'SELECT * FROM guild_configs WHERE guild_id = $1',
@@ -24,6 +59,12 @@ export class DatabaseService {
     return result.rows[0] || null;
   }
 
+  /**
+   * Create or update guild configuration.
+   * Uses PostgreSQL UPSERT (INSERT ... ON CONFLICT) for atomicity.
+   * 
+   * @param config - Partial config with required guildId
+   */
   async upsertGuildConfig(config: Partial<GuildConfig> & { guildId: string }) {
     await this.pool.query(
       `INSERT INTO guild_configs (guild_id, config)
@@ -55,6 +96,18 @@ export class DatabaseService {
     );
   }
 
+  /**
+   * Add XP to a member and handle level-ups.
+   * 
+   * Level formula: level = floor(0.1 * sqrt(total_xp))
+   * This creates a smooth progression curve where higher levels
+   * require exponentially more XP.
+   * 
+   * @param guildId - Discord guild ID
+   * @param odiscordId - Discord user ID
+   * @param xp - Amount of XP to add
+   * @returns Object with new XP, new level, and whether user leveled up
+   */
   async addXp(guildId: string, odiscordId: string, xp: number): Promise<{ newXp: number; newLevel: number; leveledUp: boolean }> {
     const result = await this.pool.query(
       `UPDATE guild_members 
@@ -64,8 +117,8 @@ export class DatabaseService {
       [guildId, odiscordId, xp]
     );
 
+    // If no existing record, create new member with initial XP
     if (result.rows.length === 0) {
-      // Create new member record
       await this.pool.query(
         `INSERT INTO guild_members (guild_id, user_id, xp, level, total_xp, message_count)
          VALUES ($1, $2, $3, 0, $3, 1)`,
@@ -74,10 +127,12 @@ export class DatabaseService {
       return { newXp: xp, newLevel: 0, leveledUp: false };
     }
 
+    // Calculate new level using square root formula
     const { xp: newXp, level, total_xp } = result.rows[0];
     const newLevel = Math.floor(0.1 * Math.sqrt(total_xp));
     const leveledUp = newLevel > level;
 
+    // Update level in database if user leveled up
     if (leveledUp) {
       await this.pool.query(
         'UPDATE guild_members SET level = $3 WHERE guild_id = $1 AND user_id = $2',
