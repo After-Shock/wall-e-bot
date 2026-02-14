@@ -26,7 +26,7 @@ export const WelcomeConfigSchema = z.object({
   embedImage: z.string().url().optional(),
   dmEnabled: z.boolean(),
   dmMessage: z.string().min(1).max(2000).optional(),
-  autoRole: z.array(discordId).optional(),
+  autoRole: z.array(discordId).max(50).optional(), // Max 50 auto-roles
 
   // Leave messages
   leaveEnabled: z.boolean(),

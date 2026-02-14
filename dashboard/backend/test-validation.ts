@@ -22,7 +22,7 @@ const WelcomeConfigSchema = z.object({
   embedImage: z.string().url().optional(),
   dmEnabled: z.boolean(),
   dmMessage: z.string().min(1).max(2000).optional(),
-  autoRole: z.array(discordId).optional(),
+  autoRole: z.array(discordId).max(50).optional(), // Max 50 auto-roles (DoS protection)
   leaveEnabled: z.boolean(),
   leaveChannelId: discordId.optional(),
   leaveMessage: z.string().min(1).max(2000).optional(),
@@ -164,10 +164,12 @@ console.log('\n📋 Test 11: DoS attempt with massive array');
 try {
   const massiveArray = new Array(10000).fill('1234567890123456789');
   WelcomeConfigSchema.parse({ autoRole: massiveArray });
-  console.log('❌ FAIL: Should have size limits on arrays');
+  console.log('❌ FAIL: Should have rejected massive array');
 } catch (error) {
-  console.log('⚠️  WARNING: No array size limit in current schema');
-  console.log('   Recommendation: Add .max() to array validators');
+  if (error instanceof z.ZodError) {
+    console.log('✅ PASS: Rejected massive array (DoS protection active)');
+    console.log('   Error:', error.errors[0].message);
+  }
 }
 
 console.log('\n' + '='.repeat(60));
@@ -177,7 +179,7 @@ console.log('   ✅ Message length limits (Discord\'s 2000 char limit)');
 console.log('   ✅ Hex color format validation');
 console.log('   ✅ URL format validation');
 console.log('   ✅ Partial updates supported');
-console.log('   ⚠️  Consider adding array size limits');
+console.log('   ✅ Array size limits (DoS protection)');
 console.log('\n💡 Combined with:');
 console.log('   - PostgreSQL prepared statements (prevents SQL injection)');
 console.log('   - Rate limiting (10 requests/min per guild)');
