@@ -1,40 +1,90 @@
-import { useState } from 'react';
-import { Link2, Save, Plus, Trash2, Hash, Shield } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { Link2, Save, Plus, Trash2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { AutoModConfig } from '@wall-e/shared';
+import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import ErrorAlert from '../../components/ErrorAlert';
 
 export default function LinkProtectionPage() {
-  const [enabled, setEnabled] = useState(false);
-  const [config, setConfig] = useState({
-    blockAll: false,
-    allowDiscord: true,
-    allowImages: true,
-    allowYoutube: true,
-    allowTwitch: true,
-    allowTwitter: true,
-    blockInvites: true,
-    blockIpGrabbers: true,
-    action: 'delete',
-    logChannel: '',
-  });
-  const [whitelist, setWhitelist] = useState(['example.com', 'trusted-site.org']);
-  const [blacklist, setBlacklist] = useState(['malicious.com', 'phishing.net']);
-  const [newWhitelist, setNewWhitelist] = useState('');
-  const [newBlacklist, setNewBlacklist] = useState('');
+  const { guildId } = useParams<{ guildId: string }>();
+  const [localConfig, setLocalConfig] = useState<AutoModConfig | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [newDomain, setNewDomain] = useState('');
 
-  const updateConfig = (updates: Partial<typeof config>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
+  const {
+    data,
+    isLoading,
+    error,
+    update,
+    isUpdating,
+    updateError,
+    refetch
+  } = useGuildConfig<AutoModConfig>(guildId, 'automod');
+
+  const errorMessage = useErrorMessage(error || updateError);
+
+  useEffect(() => {
+    if (data) {
+      setLocalConfig(data);
+    }
+  }, [data]);
+
+  if (isLoading) {
+    return <LoadingSpinner message="Loading link protection..." fullScreen />;
+  }
+
+  if (error) {
+    return (
+      <ErrorAlert
+        message="Failed to load link protection configuration"
+        details={errorMessage || undefined}
+        onRetry={() => refetch()}
+        fullScreen
+      />
+    );
+  }
+
+  if (!localConfig) {
+    return <LoadingSpinner fullScreen />;
+  }
+
+  const updateLinkFilter = (updates: Partial<AutoModConfig['linkFilter']>) => {
+    setLocalConfig(prev => prev ? {
+      ...prev,
+      linkFilter: { ...prev.linkFilter, ...updates }
+    } : null);
   };
 
-  const addToWhitelist = () => {
-    if (!newWhitelist.trim()) return;
-    setWhitelist(prev => [...prev, newWhitelist.trim()]);
-    setNewWhitelist('');
+  const addDomain = () => {
+    if (!newDomain.trim()) return;
+    const currentDomains = localConfig.linkFilter.allowedDomains || [];
+    if (currentDomains.includes(newDomain.trim())) return; // Prevent duplicates
+
+    updateLinkFilter({
+      allowedDomains: [...currentDomains, newDomain.trim()]
+    });
+    setNewDomain('');
   };
 
-  const addToBlacklist = () => {
-    if (!newBlacklist.trim()) return;
-    setBlacklist(prev => [...prev, newBlacklist.trim()]);
-    setNewBlacklist('');
+  const removeDomain = (domain: string) => {
+    updateLinkFilter({
+      allowedDomains: (localConfig.linkFilter.allowedDomains || []).filter(d => d !== domain)
+    });
   };
+
+  const handleSave = async () => {
+    if (!localConfig) return;
+    try {
+      await update(localConfig);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+    }
+  };
+
+  const domainCount = localConfig.linkFilter.allowedDomains?.length || 0;
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -47,11 +97,47 @@ export default function LinkProtectionPage() {
             <p className="text-discord-light">Control which links can be posted</p>
           </div>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
-          <Save className="w-4 h-4" />
-          Save Changes
+        <button
+          onClick={handleSave}
+          disabled={isUpdating}
+          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isUpdating ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : showSuccess ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Saved!
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Changes
+            </>
+          )}
         </button>
       </div>
+
+      {/* Update Error Alert */}
+      {updateError && (
+        <ErrorAlert
+          message="Failed to save configuration"
+          details={errorMessage || undefined}
+          onRetry={handleSave}
+          variant="error"
+        />
+      )}
+
+      {/* Success Message */}
+      {showSuccess && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-green-400">Configuration saved successfully!</p>
+        </div>
+      )}
 
       {/* Enable Toggle */}
       <div className="card">
@@ -59,230 +145,118 @@ export default function LinkProtectionPage() {
           <div>
             <h3 className="font-semibold">Enable Link Protection</h3>
             <p className="text-sm text-discord-light">
-              Automatically filter or delete messages containing links
+              Automatically filter messages containing disallowed links
             </p>
           </div>
           <button
-            onClick={() => setEnabled(!enabled)}
+            onClick={() => updateLinkFilter({ enabled: !localConfig.linkFilter.enabled })}
             className={`relative w-12 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
+              localConfig.linkFilter.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
             }`}
           >
             <span
               className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                enabled ? 'translate-x-7' : 'translate-x-1'
+                localConfig.linkFilter.enabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
       </div>
 
-      {enabled && (
+      {localConfig.linkFilter.enabled && (
         <>
-          {/* Mode */}
+          {/* Action Settings */}
           <div className="card space-y-4">
-            <h3 className="font-semibold">Link Mode</h3>
-            <div className="space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={!config.blockAll}
-                  onChange={() => updateConfig({ blockAll: false })}
-                  className="w-4 h-4"
-                />
-                <div>
-                  <p className="font-medium">Whitelist Mode</p>
-                  <p className="text-sm text-discord-light">Block all links except whitelisted domains</p>
-                </div>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={config.blockAll}
-                  onChange={() => updateConfig({ blockAll: true })}
-                  className="w-4 h-4"
-                />
-                <div>
-                  <p className="font-medium">Blacklist Mode</p>
-                  <p className="text-sm text-discord-light">Allow all links except blacklisted domains</p>
-                </div>
-              </label>
+            <h3 className="font-semibold">Filter Action</h3>
+            <p className="text-sm text-discord-light">
+              What to do when a message contains a disallowed link
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Action</label>
+              <select
+                value={localConfig.linkFilter.action}
+                onChange={e => updateLinkFilter({ action: e.target.value as any })}
+                className="input w-full"
+              >
+                <option value="delete">Delete message only</option>
+                <option value="warn">Delete and warn user</option>
+                <option value="mute">Delete and mute user</option>
+              </select>
             </div>
           </div>
 
-          {/* Allowed Platforms */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold">Always Allow</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {[
-                { key: 'allowDiscord', label: 'Discord Links' },
-                { key: 'allowImages', label: 'Image Links' },
-                { key: 'allowYoutube', label: 'YouTube' },
-                { key: 'allowTwitch', label: 'Twitch' },
-                { key: 'allowTwitter', label: 'Twitter/X' },
-              ].map(item => (
-                <label key={item.key} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config[item.key as keyof typeof config] as boolean}
-                    onChange={e => updateConfig({ [item.key]: e.target.checked })}
-                    className="w-4 h-4 rounded"
-                  />
-                  <span>{item.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Security */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold flex items-center gap-2">
-              <Shield className="w-5 h-5 text-green-400" />
-              Security
-            </h3>
-            <div className="space-y-3">
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <p className="font-medium">Block Discord Invites</p>
-                  <p className="text-sm text-discord-light">Block discord.gg and other invite links</p>
-                </div>
-                <button
-                  onClick={() => updateConfig({ blockInvites: !config.blockInvites })}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
-                    config.blockInvites ? 'bg-green-500' : 'bg-discord-dark'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      config.blockInvites ? 'translate-x-5' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </label>
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <p className="font-medium">Block IP Grabbers</p>
-                  <p className="text-sm text-discord-light">Block known IP logger and grabber sites</p>
-                </div>
-                <button
-                  onClick={() => updateConfig({ blockIpGrabbers: !config.blockIpGrabbers })}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
-                    config.blockIpGrabbers ? 'bg-green-500' : 'bg-discord-dark'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      config.blockIpGrabbers ? 'translate-x-5' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </label>
-            </div>
-          </div>
-
-          {/* Whitelist */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold text-green-400">Whitelisted Domains</h3>
+          {/* Add Domain */}
+          <div className="card">
+            <h3 className="font-semibold mb-4">Add Allowed Domain</h3>
             <div className="flex gap-2">
               <input
                 type="text"
-                value={newWhitelist}
-                onChange={e => setNewWhitelist(e.target.value)}
-                placeholder="example.com"
+                value={newDomain}
+                onChange={e => setNewDomain(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && addDomain()}
                 className="input flex-1"
-                onKeyDown={e => e.key === 'Enter' && addToWhitelist()}
+                placeholder="Enter domain to allow (e.g., youtube.com)..."
               />
-              <button onClick={addToWhitelist} className="btn btn-secondary">
+              <button
+                onClick={addDomain}
+                disabled={!newDomain.trim()}
+                className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
+              >
                 <Plus className="w-4 h-4" />
+                Add Domain
               </button>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {whitelist.map(domain => (
-                <span
-                  key={domain}
-                  className="flex items-center gap-2 bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-sm"
-                >
-                  {domain}
-                  <button
-                    onClick={() => setWhitelist(prev => prev.filter(d => d !== domain))}
-                    className="hover:text-white"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
+            <p className="text-xs text-discord-light mt-2">
+              Press Enter or click Add Domain to add to the allowed list
+            </p>
           </div>
 
-          {/* Blacklist */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold text-red-400">Blacklisted Domains</h3>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newBlacklist}
-                onChange={e => setNewBlacklist(e.target.value)}
-                placeholder="malicious.com"
-                className="input flex-1"
-                onKeyDown={e => e.key === 'Enter' && addToBlacklist()}
-              />
-              <button onClick={addToBlacklist} className="btn btn-secondary">
-                <Plus className="w-4 h-4" />
-              </button>
+          {/* Allowed Domains List */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Allowed Domains ({domainCount})</h3>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {blacklist.map(domain => (
-                <span
-                  key={domain}
-                  className="flex items-center gap-2 bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-sm"
-                >
-                  {domain}
-                  <button
-                    onClick={() => setBlacklist(prev => prev.filter(d => d !== domain))}
-                    className="hover:text-white"
+
+            {domainCount === 0 ? (
+              <div className="text-center py-12 text-discord-light">
+                <Link2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No allowed domains yet</p>
+                <p className="text-sm mt-1">Add domains to create a whitelist</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {(localConfig.linkFilter.allowedDomains || []).map((domain, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-discord-dark rounded-lg p-3"
                   >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
+                    <code className="bg-discord-darker px-3 py-1 rounded font-mono text-sm">
+                      {domain}
+                    </code>
+
+                    <button
+                      onClick={() => removeDomain(domain)}
+                      className="p-2 text-discord-light hover:text-red-400 transition-colors"
+                      title="Remove domain"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Action */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold">Action & Logging</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Action</label>
-                <select
-                  value={config.action}
-                  onChange={e => updateConfig({ action: e.target.value })}
-                  className="input w-full"
-                >
-                  <option value="delete">Delete Message</option>
-                  <option value="warn">Warn User</option>
-                  <option value="mute">Mute User</option>
-                  <option value="kick">Kick User</option>
-                  <option value="ban">Ban User</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Log Channel</label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
-                  <select
-                    value={config.logChannel}
-                    onChange={e => updateConfig({ logChannel: e.target.value })}
-                    className="input w-full pl-9"
-                  >
-                    <option value="">No logging</option>
-                    <option value="mod-log">mod-log</option>
-                    <option value="link-log">link-log</option>
-                  </select>
-                </div>
-              </div>
+          {/* Info */}
+          <div className="bg-blue-500/10 border border-blue-500/50 rounded-lg p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-blue-400">Whitelist Mode</p>
+              <p className="text-sm text-discord-light mt-1">
+                Only links from domains in the allowed list will be permitted. All other links will be filtered.
+                Add common domains like youtube.com, twitter.com, etc. to the allowed list.
+              </p>
             </div>
           </div>
         </>

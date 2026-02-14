@@ -1,22 +1,72 @@
-import { useState } from 'react';
-import { TrendingUp, Save, Hash, Volume2, Gift } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { TrendingUp, Save, Hash, Volume2, Gift, CheckCircle, Info } from 'lucide-react';
+import { LevelingConfig } from '@wall-e/shared';
+import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import ErrorAlert from '../../components/ErrorAlert';
 
 export default function LevelingSettingsPage() {
-  const [enabled, setEnabled] = useState(false);
-  const [config, setConfig] = useState({
-    xpPerMessage: 15,
-    xpCooldown: 60,
-    xpMultiplier: 1,
-    announceChannel: '',
-    announceMessage: '🎉 Congratulations {user}! You reached **Level {level}**!',
-    stackRoles: true,
-    removeOnLeave: false,
-    ignoredChannels: [] as string[],
-    ignoredRoles: [] as string[],
-  });
+  const { guildId } = useParams<{ guildId: string }>();
+  const [localConfig, setLocalConfig] = useState<LevelingConfig | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const updateConfig = (updates: Partial<typeof config>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
+  // Fetch and update leveling config
+  const {
+    data,
+    isLoading,
+    error,
+    update,
+    isUpdating,
+    updateError,
+    refetch
+  } = useGuildConfig<LevelingConfig>(guildId, 'leveling');
+
+  const errorMessage = useErrorMessage(error || updateError);
+
+  // Initialize local config when data loads
+  useEffect(() => {
+    if (data) {
+      setLocalConfig(data);
+    }
+  }, [data]);
+
+  // Show loading state
+  if (isLoading) {
+    return <LoadingSpinner message="Loading leveling configuration..." fullScreen />;
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <ErrorAlert
+        message="Failed to load leveling configuration"
+        details={errorMessage || undefined}
+        onRetry={() => refetch()}
+        fullScreen
+      />
+    );
+  }
+
+  // Config not loaded yet
+  if (!localConfig) {
+    return <LoadingSpinner fullScreen />;
+  }
+
+  const updateConfig = (updates: Partial<LevelingConfig>) => {
+    setLocalConfig(prev => prev ? { ...prev, ...updates } : null);
+  };
+
+  const handleSave = async () => {
+    if (!localConfig) return;
+
+    try {
+      await update(localConfig);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+    }
   };
 
   return (
@@ -30,11 +80,47 @@ export default function LevelingSettingsPage() {
             <p className="text-discord-light">Configure XP gain and level-up announcements</p>
           </div>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
-          <Save className="w-4 h-4" />
-          Save Changes
+        <button
+          onClick={handleSave}
+          disabled={isUpdating}
+          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isUpdating ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : showSuccess ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Saved!
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Changes
+            </>
+          )}
         </button>
       </div>
+
+      {/* Update Error Alert */}
+      {updateError && (
+        <ErrorAlert
+          message="Failed to save configuration"
+          details={errorMessage || undefined}
+          onRetry={handleSave}
+          variant="error"
+        />
+      )}
+
+      {/* Success Message */}
+      {showSuccess && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-green-400">Configuration saved successfully!</p>
+        </div>
+      )}
 
       {/* Enable Toggle */}
       <div className="card">
@@ -46,21 +132,21 @@ export default function LevelingSettingsPage() {
             </p>
           </div>
           <button
-            onClick={() => setEnabled(!enabled)}
+            onClick={() => updateConfig({ enabled: !localConfig.enabled })}
             className={`relative w-12 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
+              localConfig.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
             }`}
           >
             <span
               className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                enabled ? 'translate-x-7' : 'translate-x-1'
+                localConfig.enabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
       </div>
 
-      {enabled && (
+      {localConfig.enabled && (
         <>
           {/* XP Settings */}
           <div className="card space-y-4">
@@ -69,48 +155,49 @@ export default function LevelingSettingsPage() {
               XP Settings
             </h3>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">XP Per Message</label>
+                <label className="block text-sm font-medium mb-2">Min XP Per Message</label>
                 <input
                   type="number"
-                  value={config.xpPerMessage}
-                  onChange={e => updateConfig({ xpPerMessage: parseInt(e.target.value) || 0 })}
-                  className="input w-full"
-                  min="1"
-                  max="100"
-                />
-                <p className="text-xs text-discord-light mt-1">Base XP earned per message</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Cooldown (seconds)</label>
-                <input
-                  type="number"
-                  value={config.xpCooldown}
-                  onChange={e => updateConfig({ xpCooldown: parseInt(e.target.value) || 0 })}
+                  value={localConfig.xpPerMessage.min}
+                  onChange={e => updateConfig({
+                    xpPerMessage: { ...localConfig.xpPerMessage, min: parseInt(e.target.value) || 0 }
+                  })}
                   className="input w-full"
                   min="0"
-                  max="3600"
+                  max="100"
                 />
-                <p className="text-xs text-discord-light mt-1">Time between XP gains</p>
+                <p className="text-xs text-discord-light mt-1">Minimum XP earned</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">XP Multiplier</label>
-                <select
-                  value={config.xpMultiplier}
-                  onChange={e => updateConfig({ xpMultiplier: parseFloat(e.target.value) })}
+                <label className="block text-sm font-medium mb-2">Max XP Per Message</label>
+                <input
+                  type="number"
+                  value={localConfig.xpPerMessage.max}
+                  onChange={e => updateConfig({
+                    xpPerMessage: { ...localConfig.xpPerMessage, max: parseInt(e.target.value) || 0 }
+                  })}
                   className="input w-full"
-                >
-                  <option value="0.5">0.5x (Half)</option>
-                  <option value="1">1x (Normal)</option>
-                  <option value="1.5">1.5x</option>
-                  <option value="2">2x (Double)</option>
-                  <option value="3">3x (Triple)</option>
-                </select>
-                <p className="text-xs text-discord-light mt-1">Server-wide multiplier</p>
+                  min="0"
+                  max="100"
+                />
+                <p className="text-xs text-discord-light mt-1">Maximum XP earned</p>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">XP Cooldown (seconds)</label>
+              <input
+                type="number"
+                value={localConfig.xpCooldown}
+                onChange={e => updateConfig({ xpCooldown: parseInt(e.target.value) || 0 })}
+                className="input w-full"
+                min="0"
+                max="300"
+              />
+              <p className="text-xs text-discord-light mt-1">Time between XP gains (prevents spam)</p>
             </div>
           </div>
 
@@ -126,23 +213,34 @@ export default function LevelingSettingsPage() {
               <div className="relative">
                 <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
                 <select
-                  value={config.announceChannel}
-                  onChange={e => updateConfig({ announceChannel: e.target.value })}
+                  value={localConfig.levelUpChannel || 'current'}
+                  onChange={e => updateConfig({ levelUpChannel: e.target.value as any })}
                   className="input w-full pl-9"
                 >
-                  <option value="">Same channel (where they leveled up)</option>
-                  <option value="level-ups">level-ups</option>
-                  <option value="general">general</option>
-                  <option value="bot-commands">bot-commands</option>
+                  <option value="current">Current channel (where they leveled up)</option>
+                  <option value="dm">Direct message to user</option>
+                  <option value="">Custom channel (enter ID below)</option>
                 </select>
               </div>
+
+              {localConfig.levelUpChannel &&
+               localConfig.levelUpChannel !== 'current' &&
+               localConfig.levelUpChannel !== 'dm' && (
+                <input
+                  type="text"
+                  value={localConfig.levelUpChannel}
+                  onChange={e => updateConfig({ levelUpChannel: e.target.value })}
+                  className="input w-full mt-2"
+                  placeholder="Enter channel ID (e.g., 1234567890123456789)"
+                />
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-2">Announcement Message</label>
               <textarea
-                value={config.announceMessage}
-                onChange={e => updateConfig({ announceMessage: e.target.value })}
+                value={localConfig.levelUpMessage}
+                onChange={e => updateConfig({ levelUpMessage: e.target.value })}
                 className="input w-full h-24 resize-none"
                 placeholder="Congratulations {user}!"
               />
@@ -150,85 +248,59 @@ export default function LevelingSettingsPage() {
                 <span className="text-xs bg-discord-dark px-2 py-1 rounded">{'{user}'} - Mention</span>
                 <span className="text-xs bg-discord-dark px-2 py-1 rounded">{'{username}'} - Name</span>
                 <span className="text-xs bg-discord-dark px-2 py-1 rounded">{'{level}'} - New level</span>
-                <span className="text-xs bg-discord-dark px-2 py-1 rounded">{'{xp}'} - Total XP</span>
               </div>
             </div>
           </div>
 
-          {/* Role Behavior */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold">Role Behavior</h3>
-
-            <div className="space-y-3">
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <p className="font-medium">Stack Role Rewards</p>
-                  <p className="text-sm text-discord-light">
-                    Keep previous level roles when earning new ones
-                  </p>
-                </div>
-                <button
-                  onClick={() => updateConfig({ stackRoles: !config.stackRoles })}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
-                    config.stackRoles ? 'bg-green-500' : 'bg-discord-dark'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      config.stackRoles ? 'translate-x-5' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </label>
-
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <p className="font-medium">Remove XP on Leave</p>
-                  <p className="text-sm text-discord-light">
-                    Delete member's XP when they leave the server
-                  </p>
-                </div>
-                <button
-                  onClick={() => updateConfig({ removeOnLeave: !config.removeOnLeave })}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
-                    config.removeOnLeave ? 'bg-green-500' : 'bg-discord-dark'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      config.removeOnLeave ? 'translate-x-5' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </label>
-            </div>
-          </div>
-
-          {/* Ignored Channels/Roles */}
+          {/* Exclusions */}
           <div className="card space-y-4">
             <h3 className="font-semibold">Exclusions</h3>
+            <p className="text-sm text-discord-light">
+              Configure which channels and roles should not earn XP
+            </p>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Ignored Channels</label>
-                <select className="input w-full" multiple size={4}>
-                  <option value="bot-commands">bot-commands</option>
-                  <option value="spam">spam</option>
-                  <option value="memes">memes</option>
-                </select>
+                <label className="block text-sm font-medium mb-2">Ignored Channels (IDs)</label>
+                <textarea
+                  value={(localConfig.ignoredChannels || []).join('\n')}
+                  onChange={e => updateConfig({
+                    ignoredChannels: e.target.value.split('\n').filter(id => id.trim())
+                  })}
+                  className="input w-full h-24 resize-none font-mono text-sm"
+                  placeholder="123456789012345678&#10;987654321098765432"
+                />
                 <p className="text-xs text-discord-light mt-1">
-                  No XP gained in these channels
+                  One channel ID per line
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Ignored Roles</label>
-                <select className="input w-full" multiple size={4}>
-                  <option value="muted">Muted</option>
-                  <option value="bots">Bots</option>
-                </select>
+                <label className="block text-sm font-medium mb-2">Ignored Roles (IDs)</label>
+                <textarea
+                  value={(localConfig.ignoredRoles || []).join('\n')}
+                  onChange={e => updateConfig({
+                    ignoredRoles: e.target.value.split('\n').filter(id => id.trim())
+                  })}
+                  className="input w-full h-24 resize-none font-mono text-sm"
+                  placeholder="123456789012345678&#10;987654321098765432"
+                />
                 <p className="text-xs text-discord-light mt-1">
-                  Members with these roles don't gain XP
+                  One role ID per line
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Note */}
+          <div className="card bg-blue-500/10 border-blue-500/50">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-400 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-blue-400 mb-1">Role Rewards & Multipliers</h4>
+                <p className="text-sm text-discord-light">
+                  To configure role rewards for reaching specific levels or XP multipliers for certain roles,
+                  visit the <strong>Role Rewards</strong> page in the sidebar.
                 </p>
               </div>
             </div>

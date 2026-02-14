@@ -32,6 +32,11 @@ import EmbedBuilderPage from './pages/guild/EmbedBuilderPage';
 import SuggestionsPage from './pages/guild/SuggestionsPage';
 import TicketsPage from './pages/guild/TicketsPage';
 
+// Premium features
+import AnalyticsPage from './pages/guild/AnalyticsPage';
+import AdvancedAutomodPage from './pages/guild/AdvancedAutomodPage';
+import BackupPage from './pages/guild/BackupPage';
+
 function App() {
   return (
     <Routes>
@@ -45,7 +50,10 @@ function App() {
         {/* Guild-specific pages with sidebar */}
         <Route path="dashboard/:guildId" element={<GuildLayout />}>
           <Route index element={<GuildOverviewPage />} />
-          
+
+          {/* Analytics (Premium) */}
+          <Route path="analytics" element={<AnalyticsPage />} />
+
           {/* Welcome */}
           <Route path="welcome" element={<WelcomeMessagesPage />} />
           <Route path="welcome/messages" element={<WelcomeMessagesPage />} />
@@ -63,7 +71,8 @@ function App() {
           <Route path="automod/spam" element={<SpamProtectionPage />} />
           <Route path="automod/filters" element={<WordFiltersPage />} />
           <Route path="automod/links" element={<LinkProtectionPage />} />
-          
+          <Route path="automod/advanced" element={<AdvancedAutomodPage />} />
+
           {/* Logging */}
           <Route path="logging" element={<LoggingPage />} />
           
@@ -99,7 +108,10 @@ function App() {
           
           {/* Tickets */}
           <Route path="tickets" element={<TicketsPage />} />
-          
+
+          {/* Backup & Restore (Premium) */}
+          <Route path="backup" element={<BackupPage />} />
+
           {/* Settings */}
           <Route path="settings" element={<GuildPage />} />
         </Route>

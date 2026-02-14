@@ -1,20 +1,66 @@
-import { useState } from 'react';
-import { Star, Save, Hash, Image } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { Star, Save, Hash, Image, CheckCircle } from 'lucide-react';
+import { StarboardConfig } from '@wall-e/shared';
+import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import ErrorAlert from '../../components/ErrorAlert';
 
 export default function StarboardPage() {
-  const [enabled, setEnabled] = useState(false);
-  const [config, setConfig] = useState({
-    channelId: '',
-    emoji: '⭐',
-    threshold: 3,
-    selfStar: false,
-    ignoreBots: true,
-    ignoreNsfw: true,
-    embedColor: '#FFD700',
-  });
+  const { guildId } = useParams<{ guildId: string }>();
+  const [localConfig, setLocalConfig] = useState<StarboardConfig | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const updateConfig = (updates: Partial<typeof config>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
+  const {
+    data,
+    isLoading,
+    error,
+    update,
+    isUpdating,
+    updateError,
+    refetch
+  } = useGuildConfig<StarboardConfig>(guildId, 'starboard');
+
+  const errorMessage = useErrorMessage(error || updateError);
+
+  useEffect(() => {
+    if (data) {
+      setLocalConfig(data);
+    }
+  }, [data]);
+
+  if (isLoading) {
+    return <LoadingSpinner message="Loading starboard configuration..." fullScreen />;
+  }
+
+  if (error) {
+    return (
+      <ErrorAlert
+        message="Failed to load starboard configuration"
+        details={errorMessage || undefined}
+        onRetry={() => refetch()}
+        fullScreen
+      />
+    );
+  }
+
+  if (!localConfig) {
+    return <LoadingSpinner fullScreen />;
+  }
+
+  const updateConfig = (updates: Partial<StarboardConfig>) => {
+    setLocalConfig(prev => prev ? { ...prev, ...updates } : null);
+  };
+
+  const handleSave = async () => {
+    if (!localConfig) return;
+    try {
+      await update(localConfig);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+    }
   };
 
   return (
@@ -28,11 +74,47 @@ export default function StarboardPage() {
             <p className="text-discord-light">Highlight popular messages with star reactions</p>
           </div>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
-          <Save className="w-4 h-4" />
-          Save Changes
+        <button
+          onClick={handleSave}
+          disabled={isUpdating}
+          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isUpdating ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : showSuccess ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Saved!
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Changes
+            </>
+          )}
         </button>
       </div>
+
+      {/* Update Error Alert */}
+      {updateError && (
+        <ErrorAlert
+          message="Failed to save configuration"
+          details={errorMessage || undefined}
+          onRetry={handleSave}
+          variant="error"
+        />
+      )}
+
+      {/* Success Message */}
+      {showSuccess && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-green-400">Configuration saved successfully!</p>
+        </div>
+      )}
 
       {/* Enable Toggle */}
       <div className="card">
@@ -44,21 +126,21 @@ export default function StarboardPage() {
             </p>
           </div>
           <button
-            onClick={() => setEnabled(!enabled)}
+            onClick={() => updateConfig({ enabled: !localConfig.enabled })}
             className={`relative w-12 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
+              localConfig.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
             }`}
           >
             <span
               className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                enabled ? 'translate-x-7' : 'translate-x-1'
+                localConfig.enabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
       </div>
 
-      {enabled && (
+      {localConfig.enabled && (
         <>
           {/* Basic Settings */}
           <div className="card space-y-4">
@@ -67,25 +149,19 @@ export default function StarboardPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Starboard Channel</label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
-                  <select
-                    value={config.channelId}
-                    onChange={e => updateConfig({ channelId: e.target.value })}
-                    className="input w-full pl-9"
-                  >
-                    <option value="">Select channel...</option>
-                    <option value="starboard">starboard</option>
-                    <option value="hall-of-fame">hall-of-fame</option>
-                    <option value="best-of">best-of</option>
-                  </select>
-                </div>
+                <input
+                  type="text"
+                  value={localConfig.channelId || ''}
+                  onChange={e => updateConfig({ channelId: e.target.value })}
+                  className="input w-full font-mono"
+                  placeholder="Enter channel ID (e.g., 1234567890123456789)"
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Star Emoji</label>
                 <select
-                  value={config.emoji}
+                  value={localConfig.emoji}
                   onChange={e => updateConfig({ emoji: e.target.value })}
                   className="input w-full"
                 >
@@ -106,14 +182,14 @@ export default function StarboardPage() {
                 </label>
                 <input
                   type="number"
-                  value={config.threshold}
+                  value={localConfig.threshold}
                   onChange={e => updateConfig({ threshold: parseInt(e.target.value) || 1 })}
                   className="input w-full"
                   min="1"
                   max="100"
                 />
                 <p className="text-xs text-discord-light mt-1">
-                  Messages need at least {config.threshold} {config.emoji} reactions
+                  Messages need at least {localConfig.threshold} {localConfig.emoji} reactions
                 </p>
               </div>
 
@@ -122,13 +198,13 @@ export default function StarboardPage() {
                 <div className="flex gap-2">
                   <input
                     type="color"
-                    value={config.embedColor}
+                    value={localConfig.embedColor}
                     onChange={e => updateConfig({ embedColor: e.target.value })}
                     className="w-10 h-10 rounded cursor-pointer"
                   />
                   <input
                     type="text"
-                    value={config.embedColor}
+                    value={localConfig.embedColor}
                     onChange={e => updateConfig({ embedColor: e.target.value })}
                     className="input flex-1"
                   />
@@ -150,14 +226,14 @@ export default function StarboardPage() {
                   </p>
                 </div>
                 <button
-                  onClick={() => updateConfig({ selfStar: !config.selfStar })}
+                  onClick={() => updateConfig({ selfStar: !localConfig.selfStar })}
                   className={`relative w-10 h-5 rounded-full transition-colors ${
-                    config.selfStar ? 'bg-green-500' : 'bg-discord-dark'
+                    localConfig.selfStar ? 'bg-green-500' : 'bg-discord-dark'
                   }`}
                 >
                   <span
                     className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      config.selfStar ? 'translate-x-5' : 'translate-x-0.5'
+                      localConfig.selfStar ? 'translate-x-5' : 'translate-x-0.5'
                     }`}
                   />
                 </button>
@@ -171,14 +247,14 @@ export default function StarboardPage() {
                   </p>
                 </div>
                 <button
-                  onClick={() => updateConfig({ ignoreBots: !config.ignoreBots })}
+                  onClick={() => updateConfig({ ignoreBots: !localConfig.ignoreBots })}
                   className={`relative w-10 h-5 rounded-full transition-colors ${
-                    config.ignoreBots ? 'bg-green-500' : 'bg-discord-dark'
+                    localConfig.ignoreBots ? 'bg-green-500' : 'bg-discord-dark'
                   }`}
                 >
                   <span
                     className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      config.ignoreBots ? 'translate-x-5' : 'translate-x-0.5'
+                      localConfig.ignoreBots ? 'translate-x-5' : 'translate-x-0.5'
                     }`}
                   />
                 </button>
@@ -192,14 +268,14 @@ export default function StarboardPage() {
                   </p>
                 </div>
                 <button
-                  onClick={() => updateConfig({ ignoreNsfw: !config.ignoreNsfw })}
+                  onClick={() => updateConfig({ ignoreNsfw: !localConfig.ignoreNsfw })}
                   className={`relative w-10 h-5 rounded-full transition-colors ${
-                    config.ignoreNsfw ? 'bg-green-500' : 'bg-discord-dark'
+                    localConfig.ignoreNsfw ? 'bg-green-500' : 'bg-discord-dark'
                   }`}
                 >
                   <span
                     className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      config.ignoreNsfw ? 'translate-x-5' : 'translate-x-0.5'
+                      localConfig.ignoreNsfw ? 'translate-x-5' : 'translate-x-0.5'
                     }`}
                   />
                 </button>
@@ -214,12 +290,12 @@ export default function StarboardPage() {
               <div className="flex gap-4">
                 <div
                   className="w-1 rounded-full shrink-0"
-                  style={{ backgroundColor: config.embedColor }}
+                  style={{ backgroundColor: localConfig.embedColor }}
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">{config.emoji}</span>
-                    <span className="font-semibold text-yellow-400">{config.threshold}</span>
+                    <span className="text-lg">{localConfig.emoji}</span>
+                    <span className="font-semibold text-yellow-400">{localConfig.threshold}</span>
                     <span className="text-discord-light">|</span>
                     <Hash className="w-4 h-4 text-discord-light" />
                     <span className="text-discord-light">general</span>

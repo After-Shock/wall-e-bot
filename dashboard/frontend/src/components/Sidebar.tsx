@@ -19,6 +19,8 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
+  Database,
+  Crown,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -35,6 +37,12 @@ const getNavItems = (guildId: string): NavItem[] => [
     name: 'Overview',
     href: `/dashboard/${guildId}`,
     icon: Home,
+  },
+  {
+    name: 'Analytics',
+    href: `/dashboard/${guildId}/analytics`,
+    icon: BarChart3,
+    badge: 'Premium',
   },
   {
     name: 'Welcome',
@@ -64,6 +72,7 @@ const getNavItems = (guildId: string): NavItem[] => [
       { name: 'Spam Protection', href: `/dashboard/${guildId}/automod/spam`, icon: ShieldAlert },
       { name: 'Word Filters', href: `/dashboard/${guildId}/automod/filters`, icon: Terminal },
       { name: 'Link Protection', href: `/dashboard/${guildId}/automod/links`, icon: Zap },
+      { name: 'Advanced AI', href: `/dashboard/${guildId}/automod/advanced`, icon: Crown, badge: 'Premium' },
     ],
   },
   {
@@ -125,6 +134,12 @@ const getNavItems = (guildId: string): NavItem[] => [
     name: 'Tickets',
     href: `/dashboard/${guildId}/tickets`,
     icon: MessageSquare,
+  },
+  {
+    name: 'Backup & Restore',
+    href: `/dashboard/${guildId}/backup`,
+    icon: Database,
+    badge: 'Premium',
   },
   {
     name: 'Settings',

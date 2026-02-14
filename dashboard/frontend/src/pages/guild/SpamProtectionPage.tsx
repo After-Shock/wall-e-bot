@@ -1,26 +1,69 @@
-import { useState } from 'react';
-import { Zap, Save, Hash } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { Zap, Save, CheckCircle, Clock } from 'lucide-react';
+import { AutoModConfig } from '@wall-e/shared';
+import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import ErrorAlert from '../../components/ErrorAlert';
 
 export default function SpamProtectionPage() {
-  const [enabled, setEnabled] = useState(false);
-  const [config, setConfig] = useState({
-    messageLimit: 5,
-    timeWindow: 5,
-    duplicateThreshold: 3,
-    mentionLimit: 5,
-    emojiLimit: 10,
-    newlineLimit: 10,
-    capsPercentage: 70,
-    action: 'mute',
-    muteDuration: 5,
-    deleteMessages: true,
-    logChannel: '',
-    ignoredRoles: [] as string[],
-    ignoredChannels: [] as string[],
-  });
+  const { guildId } = useParams<{ guildId: string }>();
+  const [localConfig, setLocalConfig] = useState<AutoModConfig | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const updateConfig = (updates: Partial<typeof config>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
+  const {
+    data,
+    isLoading,
+    error,
+    update,
+    isUpdating,
+    updateError,
+    refetch
+  } = useGuildConfig<AutoModConfig>(guildId, 'automod');
+
+  const errorMessage = useErrorMessage(error || updateError);
+
+  useEffect(() => {
+    if (data) {
+      setLocalConfig(data);
+    }
+  }, [data]);
+
+  if (isLoading) {
+    return <LoadingSpinner message="Loading spam protection..." fullScreen />;
+  }
+
+  if (error) {
+    return (
+      <ErrorAlert
+        message="Failed to load spam protection configuration"
+        details={errorMessage || undefined}
+        onRetry={() => refetch()}
+        fullScreen
+      />
+    );
+  }
+
+  if (!localConfig) {
+    return <LoadingSpinner fullScreen />;
+  }
+
+  const updateAntiSpam = (updates: Partial<AutoModConfig['antiSpam']>) => {
+    setLocalConfig(prev => prev ? {
+      ...prev,
+      antiSpam: { ...prev.antiSpam, ...updates }
+    } : null);
+  };
+
+  const handleSave = async () => {
+    if (!localConfig) return;
+    try {
+      await update(localConfig);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+    }
   };
 
   return (
@@ -34,11 +77,47 @@ export default function SpamProtectionPage() {
             <p className="text-discord-light">Automatically detect and handle spam messages</p>
           </div>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
-          <Save className="w-4 h-4" />
-          Save Changes
+        <button
+          onClick={handleSave}
+          disabled={isUpdating}
+          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isUpdating ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : showSuccess ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Saved!
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Changes
+            </>
+          )}
         </button>
       </div>
+
+      {/* Update Error Alert */}
+      {updateError && (
+        <ErrorAlert
+          message="Failed to save configuration"
+          details={errorMessage || undefined}
+          onRetry={handleSave}
+          variant="error"
+        />
+      )}
+
+      {/* Success Message */}
+      {showSuccess && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-green-400">Configuration saved successfully!</p>
+        </div>
+      )}
 
       {/* Enable Toggle */}
       <div className="card">
@@ -50,46 +129,53 @@ export default function SpamProtectionPage() {
             </p>
           </div>
           <button
-            onClick={() => setEnabled(!enabled)}
+            onClick={() => updateAntiSpam({ enabled: !localConfig.antiSpam.enabled })}
             className={`relative w-12 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
+              localConfig.antiSpam.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
             }`}
           >
             <span
               className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                enabled ? 'translate-x-7' : 'translate-x-1'
+                localConfig.antiSpam.enabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
       </div>
 
-      {enabled && (
+      {localConfig.antiSpam.enabled && (
         <>
           {/* Rate Limiting */}
           <div className="card space-y-4">
-            <h3 className="font-semibold">Rate Limiting</h3>
+            <h3 className="font-semibold">Spam Detection Settings</h3>
+            <p className="text-sm text-discord-light">
+              Trigger when a user sends too many messages in a short time
+            </p>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Message Limit</label>
+                <label className="block text-sm font-medium mb-2">Max Messages</label>
                 <input
                   type="number"
-                  value={config.messageLimit}
-                  onChange={e => updateConfig({ messageLimit: parseInt(e.target.value) || 1 })}
+                  value={localConfig.antiSpam.maxMessages}
+                  onChange={e => updateAntiSpam({ maxMessages: parseInt(e.target.value) || 1 })}
                   className="input w-full"
                   min="2"
-                  max="20"
+                  max="50"
                 />
                 <p className="text-xs text-discord-light mt-1">
-                  Max messages before triggering
+                  Maximum messages allowed in time window
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Time Window (seconds)</label>
+                <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Time Window (seconds)
+                </label>
                 <input
                   type="number"
-                  value={config.timeWindow}
-                  onChange={e => updateConfig({ timeWindow: parseInt(e.target.value) || 1 })}
+                  value={localConfig.antiSpam.interval}
+                  onChange={e => updateAntiSpam({ interval: parseInt(e.target.value) || 1 })}
                   className="input w-full"
                   min="1"
                   max="60"
@@ -101,164 +187,83 @@ export default function SpamProtectionPage() {
             </div>
           </div>
 
-          {/* Content Filters */}
+          {/* Action */}
           <div className="card space-y-4">
-            <h3 className="font-semibold">Content Filters</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Duplicate Threshold</label>
-                <input
-                  type="number"
-                  value={config.duplicateThreshold}
-                  onChange={e => updateConfig({ duplicateThreshold: parseInt(e.target.value) || 1 })}
-                  className="input w-full"
-                  min="2"
-                  max="10"
-                />
-                <p className="text-xs text-discord-light mt-1">
-                  Identical messages before action
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Mention Limit</label>
-                <input
-                  type="number"
-                  value={config.mentionLimit}
-                  onChange={e => updateConfig({ mentionLimit: parseInt(e.target.value) || 0 })}
-                  className="input w-full"
-                  min="0"
-                  max="50"
-                />
-                <p className="text-xs text-discord-light mt-1">
-                  Max mentions per message (0 = disabled)
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Emoji Limit</label>
-                <input
-                  type="number"
-                  value={config.emojiLimit}
-                  onChange={e => updateConfig({ emojiLimit: parseInt(e.target.value) || 0 })}
-                  className="input w-full"
-                  min="0"
-                  max="100"
-                />
-                <p className="text-xs text-discord-light mt-1">
-                  Max emojis per message (0 = disabled)
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Newline Limit</label>
-                <input
-                  type="number"
-                  value={config.newlineLimit}
-                  onChange={e => updateConfig({ newlineLimit: parseInt(e.target.value) || 0 })}
-                  className="input w-full"
-                  min="0"
-                  max="50"
-                />
-                <p className="text-xs text-discord-light mt-1">
-                  Max newlines per message (0 = disabled)
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Caps Percentage</label>
-                <input
-                  type="number"
-                  value={config.capsPercentage}
-                  onChange={e => updateConfig({ capsPercentage: parseInt(e.target.value) || 0 })}
-                  className="input w-full"
-                  min="0"
-                  max="100"
-                />
-                <p className="text-xs text-discord-light mt-1">
-                  Max % of caps allowed (0 = disabled)
-                </p>
-              </div>
-            </div>
-          </div>
+            <h3 className="font-semibold">Action</h3>
+            <p className="text-sm text-discord-light">
+              What to do when spam is detected
+            </p>
 
-          {/* Actions */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold">Actions</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Action to Take</label>
                 <select
-                  value={config.action}
-                  onChange={e => updateConfig({ action: e.target.value })}
+                  value={localConfig.antiSpam.action}
+                  onChange={e => updateAntiSpam({ action: e.target.value as any })}
                   className="input w-full"
                 >
-                  <option value="warn">Warn</option>
-                  <option value="mute">Mute</option>
-                  <option value="kick">Kick</option>
-                  <option value="ban">Ban</option>
+                  <option value="warn">Warn user</option>
+                  <option value="mute">Mute user</option>
+                  <option value="kick">Kick from server</option>
+                  <option value="ban">Ban from server</option>
                 </select>
               </div>
-              {config.action === 'mute' && (
+              {localConfig.antiSpam.action === 'mute' && (
                 <div>
                   <label className="block text-sm font-medium mb-2">Mute Duration (minutes)</label>
                   <input
                     type="number"
-                    value={config.muteDuration}
-                    onChange={e => updateConfig({ muteDuration: parseInt(e.target.value) || 1 })}
+                    value={localConfig.antiSpam.muteDuration || 10}
+                    onChange={e => updateAntiSpam({ muteDuration: parseInt(e.target.value) || 10 })}
                     className="input w-full"
                     min="1"
                     max="10080"
                   />
+                  <p className="text-xs text-discord-light mt-1">
+                    Maximum: 10080 minutes (1 week)
+                  </p>
                 </div>
               )}
-            </div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={config.deleteMessages}
-                onChange={e => updateConfig({ deleteMessages: e.target.checked })}
-                className="w-4 h-4 rounded"
-              />
-              <span>Delete spam messages</span>
-            </label>
-          </div>
-
-          {/* Logging */}
-          <div className="card space-y-4">
-            <h3 className="font-semibold">Logging</h3>
-            <div>
-              <label className="block text-sm font-medium mb-2">Log Channel</label>
-              <div className="relative">
-                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
-                <select
-                  value={config.logChannel}
-                  onChange={e => updateConfig({ logChannel: e.target.value })}
-                  className="input w-full pl-9"
-                >
-                  <option value="">No logging</option>
-                  <option value="mod-log">mod-log</option>
-                  <option value="spam-log">spam-log</option>
-                  <option value="bot-log">bot-log</option>
-                </select>
-              </div>
             </div>
           </div>
 
           {/* Exclusions */}
           <div className="card space-y-4">
             <h3 className="font-semibold">Exclusions</h3>
+            <p className="text-sm text-discord-light">
+              Channels and roles that are excluded from spam protection
+            </p>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Ignored Roles</label>
-                <select className="input w-full" multiple size={4}>
-                  <option value="admin">Admin</option>
-                  <option value="moderator">Moderator</option>
-                  <option value="trusted">Trusted</option>
-                </select>
+                <label className="block text-sm font-medium mb-2">Ignored Channels (IDs)</label>
+                <textarea
+                  value={(localConfig.ignoredChannels || []).join('\n')}
+                  onChange={e => setLocalConfig(prev => prev ? {
+                    ...prev,
+                    ignoredChannels: e.target.value.split('\n').filter(id => id.trim())
+                  } : null)}
+                  className="input w-full h-24 resize-none font-mono text-sm"
+                  placeholder="123456789012345678&#10;987654321098765432"
+                />
+                <p className="text-xs text-discord-light mt-1">
+                  One channel ID per line
+                </p>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Ignored Channels</label>
-                <select className="input w-full" multiple size={4}>
-                  <option value="spam">spam</option>
-                  <option value="bot-commands">bot-commands</option>
-                </select>
+                <label className="block text-sm font-medium mb-2">Ignored Roles (IDs)</label>
+                <textarea
+                  value={(localConfig.ignoredRoles || []).join('\n')}
+                  onChange={e => setLocalConfig(prev => prev ? {
+                    ...prev,
+                    ignoredRoles: e.target.value.split('\n').filter(id => id.trim())
+                  } : null)}
+                  className="input w-full h-24 resize-none font-mono text-sm"
+                  placeholder="123456789012345678&#10;987654321098765432"
+                />
+                <p className="text-xs text-discord-light mt-1">
+                  One role ID per line
+                </p>
               </div>
             </div>
           </div>

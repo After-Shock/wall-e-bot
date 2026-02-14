@@ -1,29 +1,20 @@
-import { useState } from 'react';
-import { ScrollText, Save, Hash } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { ScrollText, Save, Hash, CheckCircle } from 'lucide-react';
+import { LoggingConfig } from '@wall-e/shared';
+import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import ErrorAlert from '../../components/ErrorAlert';
 
-interface LogCategory {
-  id: string;
-  name: string;
-  description: string;
-  events: LogEvent[];
-}
-
-interface LogEvent {
-  id: string;
-  name: string;
-  description: string;
-  enabled: boolean;
-}
-
-const logCategories: LogCategory[] = [
+// Event categories for organized UI
+const eventCategories = [
   {
     id: 'messages',
     name: 'Messages',
-    description: 'Message edits, deletions, and bulk deletes',
+    description: 'Message edits and deletions',
     events: [
-      { id: 'messageDelete', name: 'Message Deleted', description: 'Log when messages are deleted', enabled: true },
-      { id: 'messageEdit', name: 'Message Edited', description: 'Log when messages are edited', enabled: true },
-      { id: 'messageBulkDelete', name: 'Bulk Delete', description: 'Log bulk message deletions', enabled: false },
+      { key: 'messageDelete' as const, name: 'Message Deleted', description: 'Log when messages are deleted' },
+      { key: 'messageEdit' as const, name: 'Message Edited', description: 'Log when messages are edited' },
     ],
   },
   {
@@ -31,32 +22,30 @@ const logCategories: LogCategory[] = [
     name: 'Members',
     description: 'Member joins, leaves, and updates',
     events: [
-      { id: 'memberJoin', name: 'Member Joined', description: 'Log when members join', enabled: true },
-      { id: 'memberLeave', name: 'Member Left', description: 'Log when members leave', enabled: true },
-      { id: 'memberUpdate', name: 'Member Updated', description: 'Log nickname and role changes', enabled: false },
+      { key: 'memberJoin' as const, name: 'Member Joined', description: 'Log when members join' },
+      { key: 'memberLeave' as const, name: 'Member Left', description: 'Log when members leave' },
+      { key: 'nicknameChange' as const, name: 'Nickname Changed', description: 'Log nickname changes' },
+      { key: 'usernameChange' as const, name: 'Username Changed', description: 'Log username changes' },
     ],
   },
   {
     id: 'moderation',
     name: 'Moderation',
-    description: 'Bans, kicks, mutes, and warnings',
+    description: 'Bans and unbans',
     events: [
-      { id: 'memberBan', name: 'Member Banned', description: 'Log when members are banned', enabled: true },
-      { id: 'memberUnban', name: 'Member Unbanned', description: 'Log when members are unbanned', enabled: true },
-      { id: 'memberKick', name: 'Member Kicked', description: 'Log when members are kicked', enabled: true },
-      { id: 'memberWarn', name: 'Member Warned', description: 'Log when members are warned', enabled: true },
-      { id: 'memberTimeout', name: 'Member Timed Out', description: 'Log when members are timed out', enabled: false },
+      { key: 'memberBan' as const, name: 'Member Banned', description: 'Log when members are banned' },
+      { key: 'memberUnban' as const, name: 'Member Unbanned', description: 'Log when members are unbanned' },
     ],
   },
   {
     id: 'server',
     name: 'Server',
-    description: 'Channel, role, and server updates',
+    description: 'Channel and role changes',
     events: [
-      { id: 'channelCreate', name: 'Channel Created', description: 'Log channel creations', enabled: false },
-      { id: 'channelDelete', name: 'Channel Deleted', description: 'Log channel deletions', enabled: false },
-      { id: 'roleCreate', name: 'Role Created', description: 'Log role creations', enabled: false },
-      { id: 'roleDelete', name: 'Role Deleted', description: 'Log role deletions', enabled: false },
+      { key: 'channelCreate' as const, name: 'Channel Created', description: 'Log channel creations' },
+      { key: 'channelDelete' as const, name: 'Channel Deleted', description: 'Log channel deletions' },
+      { key: 'roleCreate' as const, name: 'Role Created', description: 'Log role creations' },
+      { key: 'roleDelete' as const, name: 'Role Deleted', description: 'Log role deletions' },
     ],
   },
   {
@@ -64,43 +53,94 @@ const logCategories: LogCategory[] = [
     name: 'Voice',
     description: 'Voice channel activity',
     events: [
-      { id: 'voiceJoin', name: 'Voice Join', description: 'Log when members join voice', enabled: false },
-      { id: 'voiceLeave', name: 'Voice Leave', description: 'Log when members leave voice', enabled: false },
-      { id: 'voiceMove', name: 'Voice Move', description: 'Log when members move channels', enabled: false },
+      { key: 'voiceStateUpdate' as const, name: 'Voice State Update', description: 'Log voice joins, leaves, and moves' },
     ],
   },
 ];
 
 export default function LoggingPage() {
-  const [enabled, setEnabled] = useState(true);
-  const [logChannel, setLogChannel] = useState('mod-logs');
-  const [categories, setCategories] = useState(logCategories);
-  const [splitChannels, setSplitChannels] = useState(false);
-  const [categoryChannels, setCategoryChannels] = useState<Record<string, string>>({});
+  const { guildId } = useParams<{ guildId: string }>();
+  const [localConfig, setLocalConfig] = useState<LoggingConfig | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const toggleEvent = (categoryId: string, eventId: string) => {
-    setCategories(prev =>
-      prev.map(cat =>
-        cat.id === categoryId
-          ? {
-              ...cat,
-              events: cat.events.map(evt =>
-                evt.id === eventId ? { ...evt, enabled: !evt.enabled } : evt
-              ),
-            }
-          : cat
-      )
+  // Fetch and update logging config
+  const {
+    data,
+    isLoading,
+    error,
+    update,
+    isUpdating,
+    updateError,
+    refetch
+  } = useGuildConfig<LoggingConfig>(guildId, 'logging');
+
+  const errorMessage = useErrorMessage(error || updateError);
+
+  // Initialize local config when data loads
+  useEffect(() => {
+    if (data) {
+      setLocalConfig(data);
+    }
+  }, [data]);
+
+  // Show loading state
+  if (isLoading) {
+    return <LoadingSpinner message="Loading logging configuration..." fullScreen />;
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <ErrorAlert
+        message="Failed to load logging configuration"
+        details={errorMessage || undefined}
+        onRetry={() => refetch()}
+        fullScreen
+      />
     );
+  }
+
+  // Config not loaded yet
+  if (!localConfig) {
+    return <LoadingSpinner fullScreen />;
+  }
+
+  const updateConfig = (updates: Partial<LoggingConfig>) => {
+    setLocalConfig(prev => prev ? { ...prev, ...updates } : null);
+  };
+
+  const updateEvent = (eventKey: keyof LoggingConfig['events'], enabled: boolean) => {
+    setLocalConfig(prev => prev ? {
+      ...prev,
+      events: { ...prev.events, [eventKey]: enabled }
+    } : null);
   };
 
   const toggleCategory = (categoryId: string, enabled: boolean) => {
-    setCategories(prev =>
-      prev.map(cat =>
-        cat.id === categoryId
-          ? { ...cat, events: cat.events.map(evt => ({ ...evt, enabled })) }
-          : cat
-      )
-    );
+    const category = eventCategories.find(c => c.id === categoryId);
+    if (!category || !localConfig) return;
+
+    const updates: Partial<LoggingConfig['events']> = {};
+    category.events.forEach(event => {
+      updates[event.key] = enabled;
+    });
+
+    setLocalConfig({
+      ...localConfig,
+      events: { ...localConfig.events, ...updates }
+    });
+  };
+
+  const handleSave = async () => {
+    if (!localConfig) return;
+
+    try {
+      await update(localConfig);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+    }
   };
 
   return (
@@ -114,11 +154,47 @@ export default function LoggingPage() {
             <p className="text-discord-light">Configure event logging for your server</p>
           </div>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
-          <Save className="w-4 h-4" />
-          Save Changes
+        <button
+          onClick={handleSave}
+          disabled={isUpdating}
+          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isUpdating ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : showSuccess ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Saved!
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Changes
+            </>
+          )}
         </button>
       </div>
+
+      {/* Update Error Alert */}
+      {updateError && (
+        <ErrorAlert
+          message="Failed to save configuration"
+          details={errorMessage || undefined}
+          onRetry={handleSave}
+          variant="error"
+        />
+      )}
+
+      {/* Success Message */}
+      {showSuccess && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-green-400">Configuration saved successfully!</p>
+        </div>
+      )}
 
       {/* Enable Toggle */}
       <div className="card">
@@ -128,81 +204,42 @@ export default function LoggingPage() {
             <p className="text-sm text-discord-light">Log server events to a designated channel</p>
           </div>
           <button
-            onClick={() => setEnabled(!enabled)}
+            onClick={() => updateConfig({ enabled: !localConfig.enabled })}
             className={`relative w-12 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
+              localConfig.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
             }`}
           >
             <span
               className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                enabled ? 'translate-x-7' : 'translate-x-1'
+                localConfig.enabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
       </div>
 
-      {enabled && (
+      {localConfig.enabled && (
         <>
           {/* Log Channel */}
           <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-semibold">Log Channel</h3>
-                <p className="text-sm text-discord-light">Where to send log messages</p>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={splitChannels}
-                  onChange={e => setSplitChannels(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm">Use separate channels per category</span>
-              </label>
+            <div>
+              <h3 className="font-semibold mb-2">Log Channel</h3>
+              <p className="text-sm text-discord-light mb-4">Where to send log messages</p>
             </div>
 
-            {!splitChannels ? (
-              <div className="relative">
-                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
-                <select
-                  value={logChannel}
-                  onChange={e => setLogChannel(e.target.value)}
-                  className="input w-full pl-9"
-                >
-                  <option value="">Select channel...</option>
-                  <option value="mod-logs">mod-logs</option>
-                  <option value="server-logs">server-logs</option>
-                  <option value="audit-log">audit-log</option>
-                </select>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {categories.map(cat => (
-                  <div key={cat.id} className="flex items-center gap-4">
-                    <span className="w-32 text-sm font-medium">{cat.name}</span>
-                    <div className="relative flex-1">
-                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
-                      <select
-                        value={categoryChannels[cat.id] || ''}
-                        onChange={e => setCategoryChannels(prev => ({ ...prev, [cat.id]: e.target.value }))}
-                        className="input w-full pl-9"
-                      >
-                        <option value="">Select channel...</option>
-                        <option value={`${cat.id}-logs`}>{cat.id}-logs</option>
-                        <option value="mod-logs">mod-logs</option>
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <input
+              type="text"
+              value={localConfig.channelId || ''}
+              onChange={e => updateConfig({ channelId: e.target.value })}
+              className="input w-full font-mono"
+              placeholder="Enter channel ID (e.g., 1234567890123456789)"
+            />
           </div>
 
           {/* Event Categories */}
           <div className="space-y-4">
-            {categories.map(category => {
-              const enabledCount = category.events.filter(e => e.enabled).length;
+            {eventCategories.map(category => {
+              const enabledCount = category.events.filter(e => localConfig.events[e.key]).length;
               const allEnabled = enabledCount === category.events.length;
               const someEnabled = enabledCount > 0 && !allEnabled;
 
@@ -235,7 +272,7 @@ export default function LoggingPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {category.events.map(event => (
                       <div
-                        key={event.id}
+                        key={event.key}
                         className="bg-discord-dark rounded-lg p-3 flex items-center justify-between"
                       >
                         <div>
@@ -243,14 +280,14 @@ export default function LoggingPage() {
                           <p className="text-xs text-discord-light">{event.description}</p>
                         </div>
                         <button
-                          onClick={() => toggleEvent(category.id, event.id)}
+                          onClick={() => updateEvent(event.key, !localConfig.events[event.key])}
                           className={`relative w-10 h-5 rounded-full transition-colors ${
-                            event.enabled ? 'bg-green-500' : 'bg-discord-darker'
+                            localConfig.events[event.key] ? 'bg-green-500' : 'bg-discord-darker'
                           }`}
                         >
                           <span
                             className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                              event.enabled ? 'translate-x-5' : 'translate-x-0.5'
+                              localConfig.events[event.key] ? 'translate-x-5' : 'translate-x-0.5'
                             }`}
                           />
                         </button>

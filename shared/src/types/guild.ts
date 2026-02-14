@@ -50,7 +50,7 @@ export interface ModerationConfig {
 
 export interface AutoModConfig {
   enabled: boolean;
-  
+
   // Spam detection
   antiSpam: {
     enabled: boolean;
@@ -59,7 +59,7 @@ export interface AutoModConfig {
     action: 'warn' | 'mute' | 'kick' | 'ban';
     muteDuration?: number; // minutes
   };
-  
+
   // Word filter
   wordFilter: {
     enabled: boolean;
@@ -67,14 +67,14 @@ export interface AutoModConfig {
     action: 'delete' | 'warn' | 'mute';
     muteDuration?: number;
   };
-  
+
   // Link filter
   linkFilter: {
     enabled: boolean;
     allowedDomains: string[];
     action: 'delete' | 'warn' | 'mute';
   };
-  
+
   // Caps detection
   capsFilter: {
     enabled: boolean;
@@ -82,7 +82,36 @@ export interface AutoModConfig {
     minLength: number;
     action: 'delete' | 'warn';
   };
-  
+
+  // Advanced: Image scanning (Premium)
+  imageScanning?: {
+    enabled: boolean;
+    scanForNsfw: boolean;
+    scanForViolence: boolean;
+    scanForGore: boolean;
+    action: 'delete' | 'warn' | 'mute';
+    threshold: number; // 0-100 confidence threshold
+  };
+
+  // Advanced: Link safety (Premium)
+  linkSafety?: {
+    enabled: boolean;
+    checkPhishing: boolean;
+    checkMalware: boolean;
+    checkIpLoggers: boolean;
+    action: 'delete' | 'warn' | 'mute';
+  };
+
+  // Advanced: Raid protection (Premium)
+  raidProtection?: {
+    enabled: boolean;
+    joinThreshold: number; // max joins per minute
+    accountAgeMinimum: number; // minimum account age in days
+    verificationLevel: 'low' | 'medium' | 'high';
+    action: 'kick' | 'ban';
+    alertChannel?: string;
+  };
+
   // Ignored channels/roles
   ignoredChannels: string[];
   ignoredRoles: string[];
@@ -180,4 +209,92 @@ export interface CustomCommand {
   createdBy: string;
   createdAt: Date;
   uses: number;
+}
+
+// Analytics types
+export interface AnalyticsOverview {
+  totalMembers: number;
+  totalMessages: number;
+  activeMembers: number; // last 7 days
+  newMembers: number; // last 7 days
+  memberGrowth: number; // percentage change
+  messageGrowth: number; // percentage change
+}
+
+export interface GrowthMetrics {
+  period: 'day' | 'week' | 'month';
+  data: Array<{
+    date: string;
+    members: number;
+    messages: number;
+    joins: number;
+    leaves: number;
+  }>;
+}
+
+export interface ChannelActivity {
+  channelId: string;
+  channelName: string;
+  messageCount: number;
+  uniqueUsers: number;
+  averagePerDay: number;
+}
+
+export interface MemberActivity {
+  userId: string;
+  username: string;
+  messageCount: number;
+  lastActive: Date;
+  joinedAt: Date;
+}
+
+export interface ContentInsights {
+  topChannels: ChannelActivity[];
+  topMembers: MemberActivity[];
+  peakHours: Array<{
+    hour: number;
+    messageCount: number;
+  }>;
+  peakDays: Array<{
+    day: string;
+    messageCount: number;
+  }>;
+}
+
+// Backup & Restore types
+export interface BackupConfig {
+  enabled: boolean;
+  autoBackup: boolean;
+  backupFrequency: 'daily' | 'weekly' | 'monthly';
+  maxBackups: number; // Keep last N backups
+  includeMessages: boolean;
+  includeMembers: boolean;
+  includeRoles: boolean;
+  includeChannels: boolean;
+}
+
+export interface Backup {
+  id: string;
+  guildId: string;
+  name: string;
+  type: 'manual' | 'automatic';
+  size: number; // bytes
+  createdAt: Date;
+  createdBy?: string; // user ID who created manual backup
+  data: {
+    config: GuildConfig;
+    roles?: any[];
+    channels?: any[];
+    members?: any[];
+    messages?: any[];
+  };
+}
+
+export interface BackupListItem {
+  id: string;
+  name: string;
+  type: 'manual' | 'automatic';
+  size: number;
+  createdAt: Date;
+  createdBy?: string;
 }

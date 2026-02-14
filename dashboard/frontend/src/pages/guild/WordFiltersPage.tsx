@@ -1,58 +1,96 @@
-import { useState } from 'react';
-import { Filter, Save, Plus, Trash2, AlertTriangle } from 'lucide-react';
-
-interface WordFilter {
-  id: string;
-  pattern: string;
-  isRegex: boolean;
-  action: 'delete' | 'warn' | 'mute' | 'kick' | 'ban';
-  enabled: boolean;
-}
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { Filter, Save, Plus, Trash2, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { AutoModConfig } from '@wall-e/shared';
+import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import ErrorAlert from '../../components/ErrorAlert';
 
 export default function WordFiltersPage() {
-  const [enabled, setEnabled] = useState(true);
-  const [filters, setFilters] = useState<WordFilter[]>([
-    { id: '1', pattern: 'badword1', isRegex: false, action: 'delete', enabled: true },
-    { id: '2', pattern: 'slur.*', isRegex: true, action: 'warn', enabled: true },
-    { id: '3', pattern: 'spam phrase', isRegex: false, action: 'mute', enabled: false },
-  ]);
-  const [newFilter, setNewFilter] = useState({ pattern: '', isRegex: false, action: 'delete' as const });
-  const [isAdding, setIsAdding] = useState(false);
+  const { guildId } = useParams<{ guildId: string }>();
+  const [localConfig, setLocalConfig] = useState<AutoModConfig | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [newWord, setNewWord] = useState('');
 
-  const addFilter = () => {
-    if (!newFilter.pattern.trim()) return;
-    setFilters(prev => [
+  // Fetch and update automod config (word filter is part of automod)
+  const {
+    data,
+    isLoading,
+    error,
+    update,
+    isUpdating,
+    updateError,
+    refetch
+  } = useGuildConfig<AutoModConfig>(guildId, 'automod');
+
+  const errorMessage = useErrorMessage(error || updateError);
+
+  // Initialize local config when data loads
+  useEffect(() => {
+    if (data) {
+      setLocalConfig(data);
+    }
+  }, [data]);
+
+  // Show loading state
+  if (isLoading) {
+    return <LoadingSpinner message="Loading word filter configuration..." fullScreen />;
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <ErrorAlert
+        message="Failed to load word filter configuration"
+        details={errorMessage || undefined}
+        onRetry={() => refetch()}
+        fullScreen
+      />
+    );
+  }
+
+  // Config not loaded yet
+  if (!localConfig) {
+    return <LoadingSpinner fullScreen />;
+  }
+
+  const updateWordFilter = (updates: Partial<AutoModConfig['wordFilter']>) => {
+    setLocalConfig(prev => prev ? {
       ...prev,
-      {
-        id: Date.now().toString(),
-        pattern: newFilter.pattern,
-        isRegex: newFilter.isRegex,
-        action: newFilter.action,
-        enabled: true,
-      },
-    ]);
-    setNewFilter({ pattern: '', isRegex: false, action: 'delete' });
-    setIsAdding(false);
+      wordFilter: { ...prev.wordFilter, ...updates }
+    } : null);
   };
 
-  const removeFilter = (id: string) => {
-    setFilters(prev => prev.filter(f => f.id !== id));
+  const addWord = () => {
+    if (!newWord.trim()) return;
+    const currentWords = localConfig.wordFilter.words || [];
+    if (currentWords.includes(newWord.trim())) return; // Prevent duplicates
+
+    updateWordFilter({
+      words: [...currentWords, newWord.trim()]
+    });
+    setNewWord('');
   };
 
-  const toggleFilter = (id: string) => {
-    setFilters(prev => prev.map(f => f.id === id ? { ...f, enabled: !f.enabled } : f));
+  const removeWord = (word: string) => {
+    updateWordFilter({
+      words: (localConfig.wordFilter.words || []).filter(w => w !== word)
+    });
   };
 
-  const getActionBadge = (action: string) => {
-    const colors: Record<string, string> = {
-      delete: 'bg-gray-500/20 text-gray-400',
-      warn: 'bg-yellow-500/20 text-yellow-400',
-      mute: 'bg-orange-500/20 text-orange-400',
-      kick: 'bg-red-500/20 text-red-400',
-      ban: 'bg-red-600/20 text-red-500',
-    };
-    return colors[action] || 'bg-gray-500/20 text-gray-400';
+  const handleSave = async () => {
+    if (!localConfig) return;
+
+    try {
+      await update(localConfig);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+    }
   };
+
+  const wordCount = localConfig.wordFilter.words?.length || 0;
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -65,11 +103,47 @@ export default function WordFiltersPage() {
             <p className="text-discord-light">Block specific words and phrases</p>
           </div>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
-          <Save className="w-4 h-4" />
-          Save Changes
+        <button
+          onClick={handleSave}
+          disabled={isUpdating}
+          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isUpdating ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : showSuccess ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Saved!
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Changes
+            </>
+          )}
         </button>
       </div>
+
+      {/* Update Error Alert */}
+      {updateError && (
+        <ErrorAlert
+          message="Failed to save configuration"
+          details={errorMessage || undefined}
+          onRetry={handleSave}
+          variant="error"
+        />
+      )}
+
+      {/* Success Message */}
+      {showSuccess && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-green-400">Configuration saved successfully!</p>
+        </div>
+      )}
 
       {/* Enable Toggle */}
       <div className="card">
@@ -81,138 +155,116 @@ export default function WordFiltersPage() {
             </p>
           </div>
           <button
-            onClick={() => setEnabled(!enabled)}
+            onClick={() => updateWordFilter({ enabled: !localConfig.wordFilter.enabled })}
             className={`relative w-12 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
+              localConfig.wordFilter.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
             }`}
           >
             <span
               className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                enabled ? 'translate-x-7' : 'translate-x-1'
+                localConfig.wordFilter.enabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
       </div>
 
-      {enabled && (
+      {localConfig.wordFilter.enabled && (
         <>
-          {/* Quick Add Preset */}
-          <div className="card">
-            <h3 className="font-semibold mb-3">Quick Add Presets</h3>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn btn-secondary btn-sm">+ Profanity Filter</button>
-              <button className="btn btn-secondary btn-sm">+ Slurs</button>
-              <button className="btn btn-secondary btn-sm">+ Spam Phrases</button>
-              <button className="btn btn-secondary btn-sm">+ Zalgo Text</button>
-              <button className="btn btn-secondary btn-sm">+ Discord Invites</button>
-            </div>
-          </div>
+          {/* Action Settings */}
+          <div className="card space-y-4">
+            <h3 className="font-semibold">Filter Action</h3>
+            <p className="text-sm text-discord-light">
+              Choose what happens when a message contains a filtered word
+            </p>
 
-          {/* Filters List */}
-          <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Custom Filters ({filters.length})</h3>
-              <button
-                onClick={() => setIsAdding(true)}
-                className="btn btn-secondary flex items-center gap-2"
+            <div>
+              <label className="block text-sm font-medium mb-2">Action</label>
+              <select
+                value={localConfig.wordFilter.action}
+                onChange={e => updateWordFilter({ action: e.target.value as any })}
+                className="input w-full"
               >
-                <Plus className="w-4 h-4" />
-                Add Filter
-              </button>
+                <option value="delete">Delete message only</option>
+                <option value="warn">Delete and warn user</option>
+                <option value="mute">Delete and mute user</option>
+              </select>
             </div>
 
-            {isAdding && (
-              <div className="bg-discord-dark rounded-lg p-4 mb-4">
-                <div className="flex items-end gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium mb-2">Word/Pattern</label>
-                    <input
-                      type="text"
-                      value={newFilter.pattern}
-                      onChange={e => setNewFilter(prev => ({ ...prev, pattern: e.target.value }))}
-                      className="input w-full"
-                      placeholder="Enter word or regex pattern..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Type</label>
-                    <select
-                      value={newFilter.isRegex ? 'regex' : 'word'}
-                      onChange={e => setNewFilter(prev => ({ ...prev, isRegex: e.target.value === 'regex' }))}
-                      className="input"
-                    >
-                      <option value="word">Exact Word</option>
-                      <option value="regex">Regex</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Action</label>
-                    <select
-                      value={newFilter.action}
-                      onChange={e => setNewFilter(prev => ({ ...prev, action: e.target.value as any }))}
-                      className="input"
-                    >
-                      <option value="delete">Delete</option>
-                      <option value="warn">Warn</option>
-                      <option value="mute">Mute</option>
-                      <option value="kick">Kick</option>
-                      <option value="ban">Ban</option>
-                    </select>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={addFilter} className="btn btn-primary">Add</button>
-                    <button onClick={() => setIsAdding(false)} className="btn btn-secondary">Cancel</button>
-                  </div>
-                </div>
+            {localConfig.wordFilter.action === 'mute' && (
+              <div>
+                <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Mute Duration (minutes)
+                </label>
+                <input
+                  type="number"
+                  value={localConfig.wordFilter.muteDuration || 10}
+                  onChange={e => updateWordFilter({ muteDuration: parseInt(e.target.value) || 10 })}
+                  className="input w-full"
+                  min="1"
+                  max="10080"
+                />
+                <p className="text-xs text-discord-light mt-1">
+                  Maximum: 10080 minutes (1 week)
+                </p>
               </div>
             )}
+          </div>
 
-            {filters.length === 0 ? (
+          {/* Add Word */}
+          <div className="card">
+            <h3 className="font-semibold mb-4">Add Filtered Word</h3>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newWord}
+                onChange={e => setNewWord(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && addWord()}
+                className="input flex-1"
+                placeholder="Enter a word or phrase to filter..."
+              />
+              <button
+                onClick={addWord}
+                disabled={!newWord.trim()}
+                className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                Add Word
+              </button>
+            </div>
+            <p className="text-xs text-discord-light mt-2">
+              Press Enter or click Add Word to add to the filter list
+            </p>
+          </div>
+
+          {/* Filtered Words List */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Filtered Words ({wordCount})</h3>
+            </div>
+
+            {wordCount === 0 ? (
               <div className="text-center py-12 text-discord-light">
                 <Filter className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No word filters configured</p>
-                <p className="text-sm mt-1">Add filters to block specific words or phrases</p>
+                <p>No words filtered yet</p>
+                <p className="text-sm mt-1">Add words to start filtering messages</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {filters.map(filter => (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {(localConfig.wordFilter.words || []).map((word, index) => (
                   <div
-                    key={filter.id}
-                    className={`flex items-center gap-4 bg-discord-dark rounded-lg p-3 ${
-                      !filter.enabled ? 'opacity-50' : ''
-                    }`}
+                    key={index}
+                    className="flex items-center justify-between bg-discord-dark rounded-lg p-3"
                   >
-                    <button
-                      onClick={() => toggleFilter(filter.id)}
-                      className={`relative w-10 h-5 rounded-full transition-colors ${
-                        filter.enabled ? 'bg-green-500' : 'bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                          filter.enabled ? 'translate-x-5' : 'translate-x-0.5'
-                        }`}
-                      />
-                    </button>
-
-                    <code className="flex-1 bg-discord-darker px-3 py-1 rounded font-mono text-sm">
-                      {filter.pattern}
+                    <code className="bg-discord-darker px-3 py-1 rounded font-mono text-sm">
+                      {word}
                     </code>
 
-                    {filter.isRegex && (
-                      <span className="px-2 py-0.5 rounded text-xs bg-purple-500/20 text-purple-400">
-                        Regex
-                      </span>
-                    )}
-
-                    <span className={`px-2 py-0.5 rounded text-xs capitalize ${getActionBadge(filter.action)}`}>
-                      {filter.action}
-                    </span>
-
                     <button
-                      onClick={() => removeFilter(filter.id)}
+                      onClick={() => removeWord(word)}
                       className="p-2 text-discord-light hover:text-red-400 transition-colors"
+                      title="Remove word"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -226,10 +278,10 @@ export default function WordFiltersPage() {
           <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium text-yellow-400">Regex Patterns</p>
+              <p className="font-medium text-yellow-400">Case Insensitive Matching</p>
               <p className="text-sm text-discord-light mt-1">
-                Be careful with regex patterns - poorly written patterns can cause performance issues
-                or block unintended content. Test your patterns before enabling them.
+                Word filters are case-insensitive and match whole words. For example, filtering "bad" will match
+                "Bad", "BAD", and "bad", but not "badminton" or "forbade".
               </p>
             </div>
           </div>
