@@ -38,7 +38,76 @@ const COOLDOWN_CATEGORIES: Record<string, number> = {
 export default {
   name: Events.InteractionCreate,
   once: false,
-  async execute(client: WallEClient, interaction: ChatInputCommandInteraction) {
+  async execute(client: WallEClient, interaction: any) {
+    // =========================================================================
+    // Handle Modal Submissions
+    // =========================================================================
+
+    if (interaction.isModalSubmit()) {
+      const customId = interaction.customId;
+
+      if (customId.startsWith('ticket_modal:')) {
+        const parts = customId.split(':');
+        const panelId = parseInt(parts[1]);
+        const categoryId = parseInt(parts[2]);
+
+        // Collect form answers keyed by field label (resolved from DB)
+        const rawAnswers: Record<string, string> = {};
+        for (const row of interaction.components) {
+          for (const component of row.components) {
+            rawAnswers[component.customId] = (component as any).value;
+          }
+        }
+
+        const panelResult = await client.db.pool.query(
+          'SELECT * FROM ticket_panels WHERE id = $1 AND guild_id = $2',
+          [panelId, interaction.guild!.id]
+        );
+        if (panelResult.rows.length === 0) {
+          await interaction.reply({ content: '❌ Panel not found.', ephemeral: true });
+          return;
+        }
+
+        const catResult = await client.db.pool.query(
+          'SELECT * FROM ticket_categories WHERE id = $1',
+          [categoryId]
+        );
+
+        const configResult = await client.db.pool.query(
+          'SELECT * FROM ticket_config WHERE guild_id = $1',
+          [interaction.guild!.id]
+        );
+
+        // Resolve field_<id> keys back to human-readable labels
+        const fieldsResult = await client.db.pool.query(
+          'SELECT * FROM ticket_form_fields WHERE category_id = $1 ORDER BY position',
+          [categoryId]
+        );
+        const labeledAnswers: Record<string, string> = {};
+        for (const field of fieldsResult.rows) {
+          const val = rawAnswers[`field_${field.id}`];
+          if (val !== undefined) {
+            labeledAnswers[field.label] = val;
+          }
+        }
+
+        const { createTicketChannel } = await import('./buttonInteraction.js');
+        await createTicketChannel(
+          client,
+          interaction as any,
+          panelResult.rows[0],
+          catResult.rows[0] || null,
+          configResult.rows[0] || { max_tickets_per_user: 1, welcome_message: '' },
+          labeledAnswers
+        );
+      }
+      return;
+    }
+
+    // =========================================================================
+    // Handle Slash Commands
+    // =========================================================================
+
     if (!interaction.isChatInputCommand()) return;
 
     const command = client.commands.get(interaction.commandName);
