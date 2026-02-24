@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS ticket_categories (
 -- Form fields per category (up to 5 — Discord modal limit)
 CREATE TABLE IF NOT EXISTS ticket_form_fields (
   id SERIAL PRIMARY KEY,
-  category_id INTEGER REFERENCES ticket_categories(id) ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES ticket_categories(id) ON DELETE CASCADE,
   label VARCHAR(45) NOT NULL,
   placeholder VARCHAR(100),
   min_length INTEGER DEFAULT 0,
@@ -221,8 +221,8 @@ CREATE TABLE IF NOT EXISTS ticket_form_fields (
 CREATE TABLE IF NOT EXISTS tickets (
   id SERIAL PRIMARY KEY,
   guild_id VARCHAR(20) NOT NULL,
-  panel_id INTEGER REFERENCES ticket_panels(id),
-  category_id INTEGER REFERENCES ticket_categories(id),
+  panel_id INTEGER REFERENCES ticket_panels(id) ON DELETE SET NULL,
+  category_id INTEGER REFERENCES ticket_categories(id) ON DELETE SET NULL,
   channel_id VARCHAR(20) NOT NULL,
   thread_id VARCHAR(20),
   user_id VARCHAR(20) NOT NULL,
