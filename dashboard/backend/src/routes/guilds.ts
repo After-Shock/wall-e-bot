@@ -768,3 +768,247 @@ guildsRouter.delete(
     }
   })
 );
+
+// ============================================================================
+// Ticket System Endpoints
+// ============================================================================
+
+// GET /guilds/:guildId/ticket-config
+guildsRouter.get('/:guildId/ticket-config', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  const result = await db.query('SELECT * FROM ticket_config WHERE guild_id = $1', [guildId]);
+  res.json(result.rows[0] || {
+    guild_id: guildId, transcript_channel_id: null,
+    max_tickets_per_user: 1, auto_close_hours: 0,
+    welcome_message: 'Welcome! Please describe your issue and a staff member will assist you shortly.',
+  });
+}));
+
+// PUT /guilds/:guildId/ticket-config
+guildsRouter.put('/:guildId/ticket-config', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message } = req.body;
+    await db.query(
+      `INSERT INTO ticket_config (guild_id, transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (guild_id) DO UPDATE SET
+         transcript_channel_id=$2, max_tickets_per_user=$3,
+         auto_close_hours=$4, welcome_message=$5, updated_at=NOW()`,
+      [guildId, transcript_channel_id||null, max_tickets_per_user||1, auto_close_hours||0, welcome_message||'']
+    );
+    res.json({ success: true });
+  })
+);
+
+// GET /guilds/:guildId/ticket-panels
+guildsRouter.get('/:guildId/ticket-panels', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  const panels = await db.query('SELECT * FROM ticket_panels WHERE guild_id = $1 ORDER BY id', [guildId]);
+  // Attach categories to each panel
+  const result = [];
+  for (const panel of panels.rows) {
+    const cats = await db.query(
+      'SELECT * FROM ticket_categories WHERE panel_id = $1 ORDER BY position',
+      [panel.id]
+    );
+    result.push({ ...panel, categories: cats.rows });
+  }
+  res.json(result);
+}));
+
+// POST /guilds/:guildId/ticket-panels
+guildsRouter.post('/:guildId/ticket-panels', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { name, style = 'channel', panel_type = 'buttons', category_open_id, category_closed_id,
+            overflow_category_id, channel_name_template = '{type}-{number}' } = req.body;
+    if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+    const r = await db.query(
+      `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template]
+    );
+    res.json(r.rows[0]);
+  })
+);
+
+// GET /guilds/:guildId/ticket-panels/:panelId
+guildsRouter.get('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId, panelId } = req.params;
+  const panel = await db.query('SELECT * FROM ticket_panels WHERE id=$1 AND guild_id=$2', [panelId, guildId]);
+  if (!panel.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
+  const cats = await db.query('SELECT * FROM ticket_categories WHERE panel_id=$1 ORDER BY position', [panelId]);
+  const categoriesWithFields = [];
+  for (const cat of cats.rows) {
+    const fields = await db.query('SELECT * FROM ticket_form_fields WHERE category_id=$1 ORDER BY position', [cat.id]);
+    categoriesWithFields.push({ ...cat, form_fields: fields.rows });
+  }
+  res.json({ ...panel.rows[0], categories: categoriesWithFields });
+}));
+
+// PUT /guilds/:guildId/ticket-panels/:panelId
+guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, panelId } = req.params;
+    const { name, style, panel_type, category_open_id, category_closed_id, overflow_category_id, channel_name_template } = req.body;
+    const r = await db.query(
+      `UPDATE ticket_panels SET
+         name=COALESCE($3,name), style=COALESCE($4,style), panel_type=COALESCE($5,panel_type),
+         category_open_id=$6, category_closed_id=$7, overflow_category_id=$8,
+         channel_name_template=COALESCE($9,channel_name_template)
+       WHERE id=$1 AND guild_id=$2 RETURNING *`,
+      [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template]
+    );
+    if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
+    res.json(r.rows[0]);
+  })
+);
+
+// DELETE /guilds/:guildId/ticket-panels/:panelId
+guildsRouter.delete('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId, panelId } = req.params;
+  const r = await db.query('DELETE FROM ticket_panels WHERE id=$1 AND guild_id=$2 RETURNING id', [panelId, guildId]);
+  if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
+  res.json({ success: true });
+}));
+
+// POST /guilds/:guildId/ticket-panels/:panelId/categories
+guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, panelId } = req.params;
+    const { name, emoji, description, support_role_ids = [], observer_role_ids = [] } = req.body;
+    if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+    const posResult = await db.query(
+      'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_categories WHERE panel_id=$1',
+      [panelId]
+    );
+    const r = await db.query(
+      `INSERT INTO ticket_categories (panel_id,guild_id,name,emoji,description,support_role_ids,observer_role_ids,position)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [panelId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, posResult.rows[0].next]
+    );
+    res.json(r.rows[0]);
+  })
+);
+
+// PUT /guilds/:guildId/ticket-categories/:categoryId
+guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, categoryId } = req.params;
+    const { name, emoji, description, support_role_ids, observer_role_ids, position } = req.body;
+    const r = await db.query(
+      `UPDATE ticket_categories SET
+         name=COALESCE($3,name), emoji=$4, description=$5,
+         support_role_ids=COALESCE($6,support_role_ids),
+         observer_role_ids=COALESCE($7,observer_role_ids),
+         position=COALESCE($8,position)
+       WHERE id=$1 AND guild_id=$2 RETURNING *`,
+      [categoryId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, position]
+    );
+    if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
+    res.json(r.rows[0]);
+  })
+);
+
+// DELETE /guilds/:guildId/ticket-categories/:categoryId
+guildsRouter.delete('/:guildId/ticket-categories/:categoryId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId, categoryId } = req.params;
+  const r = await db.query('DELETE FROM ticket_categories WHERE id=$1 AND guild_id=$2 RETURNING id', [categoryId, guildId]);
+  if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
+  res.json({ success: true });
+}));
+
+// GET /guilds/:guildId/ticket-categories/:categoryId/form-fields
+guildsRouter.get('/:guildId/ticket-categories/:categoryId/form-fields', requireAuth, requireGuildAccess,
+  asyncHandler(async (req, res) => {
+    const { categoryId } = req.params;
+    const r = await db.query('SELECT * FROM ticket_form_fields WHERE category_id=$1 ORDER BY position', [categoryId]);
+    res.json(r.rows);
+  })
+);
+
+// POST /guilds/:guildId/ticket-categories/:categoryId/form-fields
+guildsRouter.post('/:guildId/ticket-categories/:categoryId/form-fields', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { categoryId } = req.params;
+    // Check count limit
+    const countResult = await db.query('SELECT COUNT(*) FROM ticket_form_fields WHERE category_id=$1', [categoryId]);
+    if (parseInt(countResult.rows[0].count) >= 5) {
+      res.status(400).json({ error: 'Maximum 5 form fields per category (Discord modal limit)' });
+      return;
+    }
+    const { label, placeholder, min_length = 0, max_length = 1024, style = 'short', required = true } = req.body;
+    if (!label) { res.status(400).json({ error: 'label is required' }); return; }
+    const posResult = await db.query(
+      'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_form_fields WHERE category_id=$1',
+      [categoryId]
+    );
+    const r = await db.query(
+      `INSERT INTO ticket_form_fields (category_id,label,placeholder,min_length,max_length,style,required,position)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [categoryId, label, placeholder||null, min_length, max_length, style, required, posResult.rows[0].next]
+    );
+    res.json(r.rows[0]);
+  })
+);
+
+// PUT /guilds/:guildId/ticket-form-fields/:fieldId
+guildsRouter.put('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { fieldId } = req.params;
+    const { label, placeholder, min_length, max_length, style, required, position } = req.body;
+    const r = await db.query(
+      `UPDATE ticket_form_fields SET
+         label=COALESCE($2,label), placeholder=$3,
+         min_length=COALESCE($4,min_length), max_length=COALESCE($5,max_length),
+         style=COALESCE($6,style), required=COALESCE($7,required), position=COALESCE($8,position)
+       WHERE id=$1 RETURNING *`,
+      [fieldId, label, placeholder||null, min_length, max_length, style, required, position]
+    );
+    if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
+    res.json(r.rows[0]);
+  })
+);
+
+// DELETE /guilds/:guildId/ticket-form-fields/:fieldId
+guildsRouter.delete('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { fieldId } = req.params;
+  const r = await db.query('DELETE FROM ticket_form_fields WHERE id=$1 RETURNING id', [fieldId]);
+  if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
+  res.json({ success: true });
+}));
+
+// GET /guilds/:guildId/tickets
+guildsRouter.get('/:guildId/tickets', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  const status = req.query.status as string || 'open,claimed';
+  const statuses = status.split(',').filter(s => ['open','claimed','closed'].includes(s));
+  const panelId = req.query.panel_id;
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+
+  let query = `SELECT t.*, tc.name as category_name, tp.name as panel_name
+               FROM tickets t
+               LEFT JOIN ticket_categories tc ON t.category_id = tc.id
+               LEFT JOIN ticket_panels tp ON t.panel_id = tp.id
+               WHERE t.guild_id = $1 AND t.status = ANY($2::text[])`;
+  const params: any[] = [guildId, statuses];
+
+  if (panelId) {
+    query += ` AND t.panel_id = $${params.length + 1}`;
+    params.push(panelId);
+  }
+
+  query += ` ORDER BY t.created_at DESC LIMIT $${params.length + 1}`;
+  params.push(limit);
+
+  const r = await db.query(query, params);
+  res.json(r.rows);
+}));
