@@ -776,12 +776,17 @@ guildsRouter.delete(
 // GET /guilds/:guildId/ticket-config
 guildsRouter.get('/:guildId/ticket-config', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   const { guildId } = req.params;
-  const result = await db.query('SELECT * FROM ticket_config WHERE guild_id = $1', [guildId]);
-  res.json(result.rows[0] || {
-    guild_id: guildId, transcript_channel_id: null,
-    max_tickets_per_user: 1, auto_close_hours: 0,
-    welcome_message: 'Welcome! Please describe your issue and a staff member will assist you shortly.',
-  });
+  try {
+    const result = await db.query('SELECT * FROM ticket_config WHERE guild_id = $1', [guildId]);
+    res.json(result.rows[0] || {
+      guild_id: guildId, transcript_channel_id: null,
+      max_tickets_per_user: 1, auto_close_hours: 0,
+      welcome_message: 'Welcome! Please describe your issue and a staff member will assist you shortly.',
+    });
+  } catch (error) {
+    logger.error('Error fetching ticket config:', { guildId, error });
+    res.status(500).json({ error: 'Failed to fetch ticket configuration' });
+  }
 }));
 
 // PUT /guilds/:guildId/ticket-config
@@ -790,32 +795,49 @@ guildsRouter.put('/:guildId/ticket-config', requireAuth, requireGuildAccess,
   asyncHandler(async (req, res) => {
     const { guildId } = req.params;
     const { transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message } = req.body;
-    await db.query(
-      `INSERT INTO ticket_config (guild_id, transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (guild_id) DO UPDATE SET
-         transcript_channel_id=$2, max_tickets_per_user=$3,
-         auto_close_hours=$4, welcome_message=$5, updated_at=NOW()`,
-      [guildId, transcript_channel_id||null, max_tickets_per_user||1, auto_close_hours||0, welcome_message||'']
-    );
-    res.json({ success: true });
+    try {
+      await db.query(
+        `INSERT INTO ticket_config (guild_id, transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (guild_id) DO UPDATE SET
+           transcript_channel_id=$2, max_tickets_per_user=$3,
+           auto_close_hours=$4, welcome_message=$5, updated_at=NOW()`,
+        [guildId, transcript_channel_id||null, max_tickets_per_user||1, auto_close_hours||0, welcome_message||'']
+      );
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error updating ticket config:', { guildId, error });
+      res.status(500).json({ error: 'Failed to update ticket configuration' });
+    }
   })
 );
 
 // GET /guilds/:guildId/ticket-panels
 guildsRouter.get('/:guildId/ticket-panels', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   const { guildId } = req.params;
-  const panels = await db.query('SELECT * FROM ticket_panels WHERE guild_id = $1 ORDER BY id', [guildId]);
-  // Attach categories to each panel
-  const result = [];
-  for (const panel of panels.rows) {
+  try {
+    const panels = await db.query('SELECT * FROM ticket_panels WHERE guild_id = $1 ORDER BY id', [guildId]);
+    if (panels.rows.length === 0) {
+      res.json([]);
+      return;
+    }
+    const panelIds = panels.rows.map((p: any) => p.id);
     const cats = await db.query(
-      'SELECT * FROM ticket_categories WHERE panel_id = $1 ORDER BY position',
-      [panel.id]
+      'SELECT * FROM ticket_categories WHERE panel_id = ANY($1::int[]) ORDER BY panel_id, position',
+      [panelIds]
     );
-    result.push({ ...panel, categories: cats.rows });
+    // Group categories by panel_id
+    const catsByPanel: Record<number, any[]> = {};
+    for (const cat of cats.rows) {
+      if (!catsByPanel[cat.panel_id]) catsByPanel[cat.panel_id] = [];
+      catsByPanel[cat.panel_id].push(cat);
+    }
+    const result = panels.rows.map((p: any) => ({ ...p, categories: catsByPanel[p.id] || [] }));
+    res.json(result);
+  } catch (error) {
+    logger.error('Error fetching ticket panels:', { guildId, error });
+    res.status(500).json({ error: 'Failed to fetch ticket panels' });
   }
-  res.json(result);
 }));
 
 // POST /guilds/:guildId/ticket-panels
@@ -826,27 +848,48 @@ guildsRouter.post('/:guildId/ticket-panels', requireAuth, requireGuildAccess,
     const { name, style = 'channel', panel_type = 'buttons', category_open_id, category_closed_id,
             overflow_category_id, channel_name_template = '{type}-{number}' } = req.body;
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
-    const r = await db.query(
-      `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template]
-    );
-    res.json(r.rows[0]);
+    try {
+      const r = await db.query(
+        `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template]
+      );
+      res.json(r.rows[0]);
+    } catch (error) {
+      logger.error('Error creating ticket panel:', { guildId, error });
+      res.status(500).json({ error: 'Failed to create ticket panel' });
+    }
   })
 );
 
 // GET /guilds/:guildId/ticket-panels/:panelId
 guildsRouter.get('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   const { guildId, panelId } = req.params;
-  const panel = await db.query('SELECT * FROM ticket_panels WHERE id=$1 AND guild_id=$2', [panelId, guildId]);
-  if (!panel.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
-  const cats = await db.query('SELECT * FROM ticket_categories WHERE panel_id=$1 ORDER BY position', [panelId]);
-  const categoriesWithFields = [];
-  for (const cat of cats.rows) {
-    const fields = await db.query('SELECT * FROM ticket_form_fields WHERE category_id=$1 ORDER BY position', [cat.id]);
-    categoriesWithFields.push({ ...cat, form_fields: fields.rows });
+  try {
+    const panel = await db.query('SELECT * FROM ticket_panels WHERE id=$1 AND guild_id=$2', [panelId, guildId]);
+    if (!panel.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
+    const cats = await db.query('SELECT * FROM ticket_categories WHERE panel_id=$1 ORDER BY position', [panelId]);
+    const catIds = cats.rows.map((c: any) => c.id);
+    let fieldsByCategory: Record<number, any[]> = {};
+    if (catIds.length > 0) {
+      const fields = await db.query(
+        'SELECT * FROM ticket_form_fields WHERE category_id = ANY($1::int[]) ORDER BY category_id, position',
+        [catIds]
+      );
+      for (const f of fields.rows) {
+        if (!fieldsByCategory[f.category_id]) fieldsByCategory[f.category_id] = [];
+        fieldsByCategory[f.category_id].push(f);
+      }
+    }
+    const categoriesWithFields = cats.rows.map((cat: any) => ({
+      ...cat,
+      form_fields: fieldsByCategory[cat.id] || [],
+    }));
+    res.json({ ...panel.rows[0], categories: categoriesWithFields });
+  } catch (error) {
+    logger.error('Error fetching ticket panel:', { guildId, panelId, error });
+    res.status(500).json({ error: 'Failed to fetch ticket panel' });
   }
-  res.json({ ...panel.rows[0], categories: categoriesWithFields });
 }));
 
 // PUT /guilds/:guildId/ticket-panels/:panelId
@@ -855,16 +898,21 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
   asyncHandler(async (req, res) => {
     const { guildId, panelId } = req.params;
     const { name, style, panel_type, category_open_id, category_closed_id, overflow_category_id, channel_name_template } = req.body;
-    const r = await db.query(
-      `UPDATE ticket_panels SET
-         name=COALESCE($3,name), style=COALESCE($4,style), panel_type=COALESCE($5,panel_type),
-         category_open_id=$6, category_closed_id=$7, overflow_category_id=$8,
-         channel_name_template=COALESCE($9,channel_name_template)
-       WHERE id=$1 AND guild_id=$2 RETURNING *`,
-      [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template]
-    );
-    if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
-    res.json(r.rows[0]);
+    try {
+      const r = await db.query(
+        `UPDATE ticket_panels SET
+           name=COALESCE($3,name), style=COALESCE($4,style), panel_type=COALESCE($5,panel_type),
+           category_open_id=$6, category_closed_id=$7, overflow_category_id=$8,
+           channel_name_template=COALESCE($9,channel_name_template)
+         WHERE id=$1 AND guild_id=$2 RETURNING *`,
+        [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template]
+      );
+      if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
+      res.json(r.rows[0]);
+    } catch (error) {
+      logger.error('Error updating ticket panel:', { guildId, panelId, error });
+      res.status(500).json({ error: 'Failed to update ticket panel' });
+    }
   })
 );
 
@@ -873,9 +921,14 @@ guildsRouter.delete('/:guildId/ticket-panels/:panelId', requireAuth, requireGuil
   rateLimitByGuild({ max: 10, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, panelId } = req.params;
-    const r = await db.query('DELETE FROM ticket_panels WHERE id=$1 AND guild_id=$2 RETURNING id', [panelId, guildId]);
-    if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
-    res.json({ success: true });
+    try {
+      const r = await db.query('DELETE FROM ticket_panels WHERE id=$1 AND guild_id=$2 RETURNING id', [panelId, guildId]);
+      if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error deleting ticket panel:', { guildId, panelId, error });
+      res.status(500).json({ error: 'Failed to delete ticket panel' });
+    }
   })
 );
 
@@ -886,16 +939,31 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
     const { guildId, panelId } = req.params;
     const { name, emoji, description, support_role_ids = [], observer_role_ids = [] } = req.body;
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
-    const posResult = await db.query(
-      'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_categories WHERE panel_id=$1',
-      [panelId]
-    );
-    const r = await db.query(
-      `INSERT INTO ticket_categories (panel_id,guild_id,name,emoji,description,support_role_ids,observer_role_ids,position)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [panelId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, posResult.rows[0].next]
-    );
-    res.json(r.rows[0]);
+    // Validate role ID arrays
+    const isValidSnowflake = (id: string) => /^\d{17,20}$/.test(id);
+    if (!Array.isArray(support_role_ids) || support_role_ids.length > 10 || !support_role_ids.every(isValidSnowflake)) {
+      res.status(400).json({ error: 'support_role_ids must be an array of up to 10 Discord snowflakes' });
+      return;
+    }
+    if (!Array.isArray(observer_role_ids) || observer_role_ids.length > 10 || !observer_role_ids.every(isValidSnowflake)) {
+      res.status(400).json({ error: 'observer_role_ids must be an array of up to 10 Discord snowflakes' });
+      return;
+    }
+    try {
+      const posResult = await db.query(
+        'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_categories WHERE panel_id=$1',
+        [panelId]
+      );
+      const r = await db.query(
+        `INSERT INTO ticket_categories (panel_id,guild_id,name,emoji,description,support_role_ids,observer_role_ids,position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [panelId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, posResult.rows[0].next]
+      );
+      res.json(r.rows[0]);
+    } catch (error) {
+      logger.error('Error creating ticket category:', { guildId, panelId, error });
+      res.status(500).json({ error: 'Failed to create ticket category' });
+    }
   })
 );
 
@@ -905,17 +973,36 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
     const { name, emoji, description, support_role_ids, observer_role_ids, position } = req.body;
-    const r = await db.query(
-      `UPDATE ticket_categories SET
-         name=COALESCE($3,name), emoji=$4, description=$5,
-         support_role_ids=COALESCE($6,support_role_ids),
-         observer_role_ids=COALESCE($7,observer_role_ids),
-         position=COALESCE($8,position)
-       WHERE id=$1 AND guild_id=$2 RETURNING *`,
-      [categoryId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, position]
-    );
-    if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
-    res.json(r.rows[0]);
+    // Validate role ID arrays if provided
+    const isValidSnowflake = (id: string) => /^\d{17,20}$/.test(id);
+    if (support_role_ids !== undefined) {
+      if (!Array.isArray(support_role_ids) || support_role_ids.length > 10 || !support_role_ids.every(isValidSnowflake)) {
+        res.status(400).json({ error: 'support_role_ids must be an array of up to 10 Discord snowflakes' });
+        return;
+      }
+    }
+    if (observer_role_ids !== undefined) {
+      if (!Array.isArray(observer_role_ids) || observer_role_ids.length > 10 || !observer_role_ids.every(isValidSnowflake)) {
+        res.status(400).json({ error: 'observer_role_ids must be an array of up to 10 Discord snowflakes' });
+        return;
+      }
+    }
+    try {
+      const r = await db.query(
+        `UPDATE ticket_categories SET
+           name=COALESCE($3,name), emoji=$4, description=$5,
+           support_role_ids=COALESCE($6,support_role_ids),
+           observer_role_ids=COALESCE($7,observer_role_ids),
+           position=COALESCE($8,position)
+         WHERE id=$1 AND guild_id=$2 RETURNING *`,
+        [categoryId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, position]
+      );
+      if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
+      res.json(r.rows[0]);
+    } catch (error) {
+      logger.error('Error updating ticket category:', { guildId, categoryId, error });
+      res.status(500).json({ error: 'Failed to update ticket category' });
+    }
   })
 );
 
@@ -924,18 +1011,35 @@ guildsRouter.delete('/:guildId/ticket-categories/:categoryId', requireAuth, requ
   rateLimitByGuild({ max: 10, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
-    const r = await db.query('DELETE FROM ticket_categories WHERE id=$1 AND guild_id=$2 RETURNING id', [categoryId, guildId]);
-    if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
-    res.json({ success: true });
+    try {
+      const r = await db.query('DELETE FROM ticket_categories WHERE id=$1 AND guild_id=$2 RETURNING id', [categoryId, guildId]);
+      if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error deleting ticket category:', { guildId, categoryId, error });
+      res.status(500).json({ error: 'Failed to delete ticket category' });
+    }
   })
 );
 
 // GET /guilds/:guildId/ticket-categories/:categoryId/form-fields
 guildsRouter.get('/:guildId/ticket-categories/:categoryId/form-fields', requireAuth, requireGuildAccess,
   asyncHandler(async (req, res) => {
-    const { categoryId } = req.params;
-    const r = await db.query('SELECT * FROM ticket_form_fields WHERE category_id=$1 ORDER BY position', [categoryId]);
-    res.json(r.rows);
+    const { guildId, categoryId } = req.params;
+    try {
+      const r = await db.query(
+        `SELECT ff.* FROM ticket_form_fields ff
+         JOIN ticket_categories tc ON ff.category_id = tc.id
+         JOIN ticket_panels tp ON tc.panel_id = tp.id
+         WHERE ff.category_id = $1 AND tp.guild_id = $2
+         ORDER BY ff.position`,
+        [categoryId, guildId]
+      );
+      res.json(r.rows);
+    } catch (error) {
+      logger.error('Error fetching form fields:', { guildId, categoryId, error });
+      res.status(500).json({ error: 'Failed to fetch form fields' });
+    }
   })
 );
 
@@ -943,25 +1047,30 @@ guildsRouter.get('/:guildId/ticket-categories/:categoryId/form-fields', requireA
 guildsRouter.post('/:guildId/ticket-categories/:categoryId/form-fields', requireAuth, requireGuildAccess,
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
-    const { categoryId } = req.params;
-    // Check count limit
-    const countResult = await db.query('SELECT COUNT(*) FROM ticket_form_fields WHERE category_id=$1', [categoryId]);
-    if (parseInt(countResult.rows[0].count) >= 5) {
-      res.status(400).json({ error: 'Maximum 5 form fields per category (Discord modal limit)' });
-      return;
+    const { guildId, categoryId } = req.params;
+    try {
+      // Check count limit
+      const countResult = await db.query('SELECT COUNT(*) FROM ticket_form_fields WHERE category_id=$1', [categoryId]);
+      if (parseInt(countResult.rows[0].count) >= 5) {
+        res.status(400).json({ error: 'Maximum 5 form fields per category (Discord modal limit)' });
+        return;
+      }
+      const { label, placeholder, min_length = 0, max_length = 1024, style = 'short', required = true } = req.body;
+      if (!label) { res.status(400).json({ error: 'label is required' }); return; }
+      const posResult = await db.query(
+        'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_form_fields WHERE category_id=$1',
+        [categoryId]
+      );
+      const r = await db.query(
+        `INSERT INTO ticket_form_fields (category_id,label,placeholder,min_length,max_length,style,required,position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [categoryId, label, placeholder||null, min_length, max_length, style, required, posResult.rows[0].next]
+      );
+      res.json(r.rows[0]);
+    } catch (error) {
+      logger.error('Error creating form field:', { guildId, categoryId, error });
+      res.status(500).json({ error: 'Failed to create form field' });
     }
-    const { label, placeholder, min_length = 0, max_length = 1024, style = 'short', required = true } = req.body;
-    if (!label) { res.status(400).json({ error: 'label is required' }); return; }
-    const posResult = await db.query(
-      'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_form_fields WHERE category_id=$1',
-      [categoryId]
-    );
-    const r = await db.query(
-      `INSERT INTO ticket_form_fields (category_id,label,placeholder,min_length,max_length,style,required,position)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [categoryId, label, placeholder||null, min_length, max_length, style, required, posResult.rows[0].next]
-    );
-    res.json(r.rows[0]);
   })
 );
 
@@ -969,18 +1078,29 @@ guildsRouter.post('/:guildId/ticket-categories/:categoryId/form-fields', require
 guildsRouter.put('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGuildAccess,
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
-    const { fieldId } = req.params;
+    const { guildId, fieldId } = req.params;
     const { label, placeholder, min_length, max_length, style, required, position } = req.body;
-    const r = await db.query(
-      `UPDATE ticket_form_fields SET
-         label=COALESCE($2,label), placeholder=$3,
-         min_length=COALESCE($4,min_length), max_length=COALESCE($5,max_length),
-         style=COALESCE($6,style), required=COALESCE($7,required), position=COALESCE($8,position)
-       WHERE id=$1 RETURNING *`,
-      [fieldId, label, placeholder||null, min_length, max_length, style, required, position]
-    );
-    if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
-    res.json(r.rows[0]);
+    try {
+      const r = await db.query(
+        `UPDATE ticket_form_fields SET
+           label=COALESCE($2,label), placeholder=$3,
+           min_length=COALESCE($4,min_length), max_length=COALESCE($5,max_length),
+           style=COALESCE($6,style), required=COALESCE($7,required), position=COALESCE($8,position)
+         WHERE id=$1
+           AND category_id IN (
+             SELECT tc.id FROM ticket_categories tc
+             JOIN ticket_panels tp ON tc.panel_id = tp.id
+             WHERE tp.guild_id = $9
+           )
+         RETURNING *`,
+        [fieldId, label, placeholder||null, min_length, max_length, style, required, position, guildId]
+      );
+      if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
+      res.json(r.rows[0]);
+    } catch (error) {
+      logger.error('Error updating form field:', { guildId, fieldId, error });
+      res.status(500).json({ error: 'Failed to update form field' });
+    }
   })
 );
 
@@ -989,19 +1109,24 @@ guildsRouter.delete('/:guildId/ticket-form-fields/:fieldId', requireAuth, requir
   rateLimitByGuild({ max: 10, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, fieldId } = req.params;
-    const r = await db.query(
-      `DELETE FROM ticket_form_fields
-       WHERE id = $1
-         AND category_id IN (
-           SELECT tc.id FROM ticket_categories tc
-           JOIN ticket_panels tp ON tc.panel_id = tp.id
-           WHERE tp.guild_id = $2
-         )
-       RETURNING id`,
-      [fieldId, guildId]
-    );
-    if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
-    res.json({ success: true });
+    try {
+      const r = await db.query(
+        `DELETE FROM ticket_form_fields
+         WHERE id = $1
+           AND category_id IN (
+             SELECT tc.id FROM ticket_categories tc
+             JOIN ticket_panels tp ON tc.panel_id = tp.id
+             WHERE tp.guild_id = $2
+           )
+         RETURNING id`,
+        [fieldId, guildId]
+      );
+      if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error deleting form field:', { guildId, fieldId, error });
+      res.status(500).json({ error: 'Failed to delete form field' });
+    }
   })
 );
 
@@ -1028,6 +1153,11 @@ guildsRouter.get('/:guildId/tickets', requireAuth, requireGuildAccess, asyncHand
   query += ` ORDER BY t.created_at DESC LIMIT $${params.length + 1}`;
   params.push(limit);
 
-  const r = await db.query(query, params);
-  res.json(r.rows);
+  try {
+    const r = await db.query(query, params);
+    res.json(r.rows);
+  } catch (error) {
+    logger.error('Error fetching tickets:', { guildId, error });
+    res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
 }));
