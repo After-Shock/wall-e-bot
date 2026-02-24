@@ -60,6 +60,10 @@ export class SchedulerService {
     // Run immediately on start to catch any missed tasks
     this.checkScheduledTasks();
 
+    // Check for inactive tickets every hour
+    setInterval(() => { this.checkAutoClose(); }, 60 * 60 * 1000);
+    this.checkAutoClose(); // run on start too
+
     logger.info('Scheduler service started');
   }
 
@@ -132,6 +136,91 @@ export class SchedulerService {
       logger.info(`Executed scheduled task ${task.id} in guild ${task.guild_id}`);
     } catch (error) {
       logger.error(`Error executing scheduled task ${task.id}:`, error);
+    }
+  }
+
+  private async checkAutoClose() {
+    try {
+      // Get global config for all guilds with auto-close enabled
+      const configs = await this.client.db.pool.query(
+        `SELECT guild_id, auto_close_hours FROM ticket_config
+         WHERE auto_close_hours > 0`
+      );
+
+      for (const config of configs.rows) {
+        const { guild_id, auto_close_hours } = config;
+
+        // Find tickets inactive for longer than auto_close_hours
+        const staleTickets = await this.client.db.pool.query(
+          `SELECT t.id, t.channel_id, t.user_id, t.warned_inactive
+           FROM tickets t
+           WHERE t.guild_id = $1
+             AND t.status IN ('open', 'claimed')
+             AND t.last_activity < NOW() - INTERVAL '1 hour' * $2`,
+          [guild_id, auto_close_hours]
+        );
+
+        const guild = this.client.guilds.cache.get(guild_id);
+        if (!guild) continue;
+
+        for (const ticket of staleTickets.rows) {
+          const channel = guild.channels.cache.get(ticket.channel_id) as TextChannel | undefined;
+          if (!channel) continue;
+
+          if (ticket.warned_inactive) {
+            // Already warned — close it now
+            await channel.send({
+              embeds: [new EmbedBuilder()
+                .setColor(COLORS.ERROR)
+                .setTitle('🔒 Ticket Auto-Closed')
+                .setDescription('This ticket has been automatically closed due to inactivity.')
+              ],
+            });
+
+            await this.client.db.pool.query(
+              `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
+               close_reason = 'Auto-closed due to inactivity' WHERE id = $1`,
+              [ticket.id, this.client.user!.id]
+            );
+
+            // Try to move to closed category
+            const panelData = await this.client.db.pool.query(
+              `SELECT tp.category_closed_id FROM tickets t
+               JOIN ticket_panels tp ON t.panel_id = tp.id
+               WHERE t.id = $1`,
+              [ticket.id]
+            );
+            if (panelData.rows[0]?.category_closed_id) {
+              try {
+                await channel.setParent(panelData.rows[0].category_closed_id, { lockPermissions: false });
+                await channel.setName(`closed-${channel.name}`);
+              } catch { /* Ignore if already closed */ }
+            } else {
+              setTimeout(async () => {
+                try { await channel.delete(); } catch { /* already deleted */ }
+              }, 5000);
+            }
+          } else {
+            // First warning
+            await channel.send({
+              embeds: [new EmbedBuilder()
+                .setColor(COLORS.WARNING)
+                .setTitle('⚠️ Inactivity Warning')
+                .setDescription(
+                  `This ticket will be automatically closed in **1 hour** due to inactivity.\n` +
+                  `Send a message to keep it open.`
+                )
+              ],
+            });
+            await this.client.db.pool.query(
+              'UPDATE tickets SET warned_inactive = TRUE WHERE id = $1',
+              [ticket.id]
+            );
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Error in auto-close check:', error);
     }
   }
 

@@ -18,5 +18,15 @@ export default {
     } catch (error) {
       logger.error('Error in messageCreate handler:', error);
     }
+
+    // Update ticket last_activity if message is in a ticket channel
+    if (message.guild) {
+      // Fire-and-forget — don't await to avoid slowing message handling
+      client.db.pool.query(
+        `UPDATE tickets SET last_activity = NOW(), warned_inactive = FALSE
+         WHERE channel_id = $1 AND guild_id = $2 AND status IN ('open','claimed')`,
+        [message.channel.id, message.guild.id]
+      ).catch(() => {}); // ignore errors
+    }
   },
 };
