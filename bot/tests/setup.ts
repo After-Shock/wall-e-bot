@@ -107,8 +107,8 @@ globalThis.testUtils = {
     bot: false,
     roles: {
       cache: new Map(),
-      add: jest.fn().mockResolvedValue(undefined),
-      remove: jest.fn().mockResolvedValue(undefined),
+      add: jest.fn().mockResolvedValue(undefined as never),
+      remove: jest.fn().mockResolvedValue(undefined as never),
     },
     ...overrides,
   }),
@@ -117,8 +117,8 @@ globalThis.testUtils = {
     id: '999888777666555444',
     name: 'test-channel',
     type: 0, // GuildText
-    send: jest.fn().mockResolvedValue({ id: 'msg-123' }),
-    delete: jest.fn().mockResolvedValue(undefined),
+    send: jest.fn().mockResolvedValue({ id: 'msg-123' } as never),
+    delete: jest.fn().mockResolvedValue(undefined as never),
     ...overrides,
   }),
 
@@ -134,10 +134,10 @@ globalThis.testUtils = {
       member: user,
       channelId: channel.id,
       channel,
-      reply: jest.fn().mockResolvedValue(undefined),
-      deferReply: jest.fn().mockResolvedValue(undefined),
-      editReply: jest.fn().mockResolvedValue(undefined),
-      followUp: jest.fn().mockResolvedValue(undefined),
+      reply: jest.fn().mockResolvedValue(undefined as never),
+      deferReply: jest.fn().mockResolvedValue(undefined as never),
+      editReply: jest.fn().mockResolvedValue(undefined as never),
+      followUp: jest.fn().mockResolvedValue(undefined as never),
       options: {
         getString: jest.fn(),
         getInteger: jest.fn(),
