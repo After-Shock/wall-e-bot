@@ -869,12 +869,15 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
 );
 
 // DELETE /guilds/:guildId/ticket-panels/:panelId
-guildsRouter.delete('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
-  const { guildId, panelId } = req.params;
-  const r = await db.query('DELETE FROM ticket_panels WHERE id=$1 AND guild_id=$2 RETURNING id', [panelId, guildId]);
-  if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
-  res.json({ success: true });
-}));
+guildsRouter.delete('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, panelId } = req.params;
+    const r = await db.query('DELETE FROM ticket_panels WHERE id=$1 AND guild_id=$2 RETURNING id', [panelId, guildId]);
+    if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
+    res.json({ success: true });
+  })
+);
 
 // POST /guilds/:guildId/ticket-panels/:panelId/categories
 guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, requireGuildAccess,
@@ -917,12 +920,15 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
 );
 
 // DELETE /guilds/:guildId/ticket-categories/:categoryId
-guildsRouter.delete('/:guildId/ticket-categories/:categoryId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
-  const { guildId, categoryId } = req.params;
-  const r = await db.query('DELETE FROM ticket_categories WHERE id=$1 AND guild_id=$2 RETURNING id', [categoryId, guildId]);
-  if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
-  res.json({ success: true });
-}));
+guildsRouter.delete('/:guildId/ticket-categories/:categoryId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, categoryId } = req.params;
+    const r = await db.query('DELETE FROM ticket_categories WHERE id=$1 AND guild_id=$2 RETURNING id', [categoryId, guildId]);
+    if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
+    res.json({ success: true });
+  })
+);
 
 // GET /guilds/:guildId/ticket-categories/:categoryId/form-fields
 guildsRouter.get('/:guildId/ticket-categories/:categoryId/form-fields', requireAuth, requireGuildAccess,
@@ -979,12 +985,25 @@ guildsRouter.put('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGu
 );
 
 // DELETE /guilds/:guildId/ticket-form-fields/:fieldId
-guildsRouter.delete('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
-  const { fieldId } = req.params;
-  const r = await db.query('DELETE FROM ticket_form_fields WHERE id=$1 RETURNING id', [fieldId]);
-  if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
-  res.json({ success: true });
-}));
+guildsRouter.delete('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, fieldId } = req.params;
+    const r = await db.query(
+      `DELETE FROM ticket_form_fields
+       WHERE id = $1
+         AND category_id IN (
+           SELECT tc.id FROM ticket_categories tc
+           JOIN ticket_panels tp ON tc.panel_id = tp.id
+           WHERE tp.guild_id = $2
+         )
+       RETURNING id`,
+      [fieldId, guildId]
+    );
+    if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
+    res.json({ success: true });
+  })
+);
 
 // GET /guilds/:guildId/tickets
 guildsRouter.get('/:guildId/tickets', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
