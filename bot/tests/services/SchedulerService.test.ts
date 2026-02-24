@@ -8,8 +8,10 @@ import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals
 jest.useFakeTimers();
 
 // Create mock client
-const mockQuery = jest.fn();
-const mockChannelSend = jest.fn();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockQuery = jest.fn<any>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockChannelSend = jest.fn<any>();
 const mockGuild = {
   id: 'guild-123',
   name: 'Test Server',

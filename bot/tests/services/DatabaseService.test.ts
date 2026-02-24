@@ -5,8 +5,10 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 // Mock pg module before importing DatabaseService
-const mockQuery = jest.fn();
-const mockConnect = jest.fn();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockQuery = jest.fn<any>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockConnect = jest.fn<any>();
 const mockRelease = jest.fn();
 const mockEnd = jest.fn();
 
@@ -19,6 +21,7 @@ jest.unstable_mockModule('pg', () => ({
         release: mockRelease,
       }),
       end: mockEnd,
+      on: jest.fn(), // Event listener required by DatabaseService
     })),
   },
 }));
@@ -79,9 +82,11 @@ describe('DatabaseService', () => {
 
   describe('addXp', () => {
     it('should add XP to existing member', async () => {
-      mockQuery.mockResolvedValueOnce({
-        rows: [{ xp: 150, level: 1, total_xp: 150 }],
-      });
+      // addXp uses transaction(): BEGIN, UPSERT RETURNING, COMMIT
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ xp: 150, level: 1, total_xp: 150 }] }) // UPSERT RETURNING
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
       const result = await db.addXp('guild-1', 'user-1', 50);
 
@@ -90,9 +95,11 @@ describe('DatabaseService', () => {
     });
 
     it('should create new member if not exists', async () => {
+      // addXp uses a single UPSERT ON CONFLICT; wraps in transaction
       mockQuery
-        .mockResolvedValueOnce({ rows: [] }) // UPDATE returns nothing
-        .mockResolvedValueOnce({ rows: [] }); // INSERT
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ xp: 25, level: 0, total_xp: 25 }] }) // UPSERT RETURNING
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
       const result = await db.addXp('guild-1', 'new-user', 25);
 
@@ -104,10 +111,10 @@ describe('DatabaseService', () => {
       // Level formula: floor(0.1 * sqrt(total_xp))
       // sqrt(101) ≈ 10.05, * 0.1 = 1.005, floor = 1
       mockQuery
-        .mockResolvedValueOnce({
-          rows: [{ xp: 101, level: 0, total_xp: 101 }],
-        })
-        .mockResolvedValueOnce({ rows: [] }); // Level update
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ xp: 101, level: 0, total_xp: 101 }] }) // UPSERT RETURNING
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE level
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
       const result = await db.addXp('guild-1', 'user-1', 2);
 
@@ -118,9 +125,12 @@ describe('DatabaseService', () => {
 
   describe('addWarning', () => {
     it('should add warning and return count', async () => {
+      // addWarning uses transaction(): BEGIN, INSERT, COUNT, COMMIT
       mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT
-        .mockResolvedValueOnce({ rows: [{ count: '3' }] }); // COUNT
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // INSERT warning
+        .mockResolvedValueOnce({ rows: [{ count: 3 }] }) // COUNT (::int)
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
       const count = await db.addWarning('guild-1', 'user-1', 'mod-1', 'Spam');
 

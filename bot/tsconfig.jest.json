@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "paths": {
+      "@wall-e/shared": ["../shared/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "tests/**/*", "../shared/src/**/*"]
+}

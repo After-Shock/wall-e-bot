@@ -460,7 +460,7 @@ const command: Command = {
 
       case 'claim': {
         const ticket = await client.db.pool.query(
-          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = 'open'`,
+          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
           [interaction.guild!.id, interaction.channel!.id]
         );
         if (ticket.rows.length === 0) {
