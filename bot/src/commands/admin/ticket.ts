@@ -342,7 +342,7 @@ const command: Command = {
     switch (subcommand) {
       case 'close': {
         const ticket = await client.db.pool.query(
-          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = 'open'`,
+          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
           [interaction.guild!.id, interaction.channel!.id]
         );
         if (ticket.rows.length === 0) {
@@ -448,7 +448,7 @@ const command: Command = {
         }
         allMessages.reverse();
 
-        const { buildTranscript } = await import('../utils/ticketUtils.js');
+        const { buildTranscript } = await import('../../utils/ticketUtils.js');
         const text = buildTranscript(ch.name, ticket.rows[0].user_id, ticket.rows[0].created_at, allMessages);
 
         await interaction.editReply({
