@@ -298,3 +298,73 @@ export interface BackupListItem {
   createdAt: Date;
   createdBy?: string;
 }
+
+export interface TicketPanel {
+  id: number;
+  guildId: string;
+  name: string;
+  style: 'channel' | 'thread';
+  panelType: 'buttons' | 'dropdown';
+  panelChannelId?: string;
+  panelMessageId?: string;
+  categoryOpenId?: string;
+  categoryClosedId?: string;
+  overflowCategoryId?: string;
+  channelNameTemplate: string;
+  categories?: TicketCategory[];
+  createdAt: Date;
+}
+
+export interface TicketCategory {
+  id: number;
+  panelId: number;
+  guildId: string;
+  name: string;
+  emoji?: string;
+  description?: string;
+  supportRoleIds: string[];
+  observerRoleIds: string[];
+  position: number;
+  formFields?: TicketFormField[];
+  createdAt: Date;
+}
+
+export interface TicketFormField {
+  id: number;
+  categoryId: number;
+  label: string;
+  placeholder?: string;
+  minLength: number;
+  maxLength: number;
+  style: 'short' | 'paragraph';
+  required: boolean;
+  position: number;
+}
+
+export interface TicketConfig {
+  guildId: string;
+  transcriptChannelId?: string;
+  maxTicketsPerUser: number;
+  autoCloseHours: number;
+  welcomeMessage: string;
+}
+
+export interface Ticket {
+  id: number;
+  guildId: string;
+  panelId?: number;
+  categoryId?: number;
+  channelId: string;
+  threadId?: string;
+  userId: string;
+  ticketNumber: number;
+  topic?: string;
+  status: 'open' | 'claimed' | 'closed';
+  claimedBy?: string;
+  closedBy?: string;
+  closedAt?: Date;
+  closeReason?: string;
+  transcriptMessageId?: string;
+  lastActivity: Date;
+  createdAt: Date;
+}
