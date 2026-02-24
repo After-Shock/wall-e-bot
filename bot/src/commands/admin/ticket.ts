@@ -1,14 +1,14 @@
-import { 
-  SlashCommandBuilder, 
-  PermissionFlagsBits, 
-  EmbedBuilder, 
+import {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  EmbedBuilder,
   ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionsBitField,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   TextChannel,
-  CategoryChannel
 } from 'discord.js';
 import type { Command } from '../../structures/Command.js';
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
@@ -18,59 +18,91 @@ const command: Command = {
   data: new SlashCommandBuilder()
     .setName('ticket')
     .setDescription('Ticket system management')
-    .addSubcommand(sub =>
-      sub.setName('setup')
-        .setDescription('Set up the ticket system')
-        .addChannelOption(opt =>
-          opt.setName('channel')
-            .setDescription('Channel where the ticket panel will be sent')
-            .addChannelTypes(ChannelType.GuildText)
-            .setRequired(true))
-        .addChannelOption(opt =>
-          opt.setName('category')
-            .setDescription('Category where tickets will be created')
-            .addChannelTypes(ChannelType.GuildCategory)
-            .setRequired(true))
-        .addRoleOption(opt =>
-          opt.setName('support_role')
-            .setDescription('Role that can see and manage tickets')
-            .setRequired(true))
-        .addStringOption(opt =>
-          opt.setName('title')
-            .setDescription('Panel title')
-            .setRequired(false))
-        .addStringOption(opt =>
-          opt.setName('description')
-            .setDescription('Panel description')
-            .setRequired(false)))
+
+    // panel subcommand group
+    .addSubcommandGroup(group =>
+      group.setName('panel').setDescription('Manage ticket panels')
+        .addSubcommand(sub =>
+          sub.setName('create')
+            .setDescription('Create a new ticket panel')
+            .addStringOption(opt =>
+              opt.setName('name').setDescription('Panel name').setRequired(true))
+            .addStringOption(opt =>
+              opt.setName('style')
+                .setDescription('Channel or thread tickets')
+                .addChoices(
+                  { name: 'Channel (default)', value: 'channel' },
+                  { name: 'Thread', value: 'thread' }
+                ))
+            .addStringOption(opt =>
+              opt.setName('type')
+                .setDescription('Buttons or dropdown selector')
+                .addChoices(
+                  { name: 'Buttons (default)', value: 'buttons' },
+                  { name: 'Dropdown', value: 'dropdown' }
+                )))
+        .addSubcommand(sub =>
+          sub.setName('send')
+            .setDescription('Send panel message to a channel')
+            .addIntegerOption(opt =>
+              opt.setName('panel_id').setDescription('Panel ID from /ticket panel list').setRequired(true))
+            .addChannelOption(opt =>
+              opt.setName('channel')
+                .setDescription('Channel to send the panel to')
+                .addChannelTypes(ChannelType.GuildText)
+                .setRequired(true)))
+        .addSubcommand(sub =>
+          sub.setName('list')
+            .setDescription('List all panels in this server'))
+        .addSubcommand(sub =>
+          sub.setName('delete')
+            .setDescription('Delete a panel')
+            .addIntegerOption(opt =>
+              opt.setName('panel_id').setDescription('Panel ID to delete').setRequired(true))))
+
+    // category subcommand group
+    .addSubcommandGroup(group =>
+      group.setName('category').setDescription('Manage ticket categories within a panel')
+        .addSubcommand(sub =>
+          sub.setName('add')
+            .setDescription('Add a category to a panel')
+            .addIntegerOption(opt =>
+              opt.setName('panel_id').setDescription('Panel ID').setRequired(true))
+            .addStringOption(opt =>
+              opt.setName('name').setDescription('Category name').setRequired(true))
+            .addStringOption(opt =>
+              opt.setName('emoji').setDescription('Emoji for this category'))
+            .addStringOption(opt =>
+              opt.setName('description').setDescription('Short description'))
+            .addRoleOption(opt =>
+              opt.setName('support_role').setDescription('Role that handles this category').setRequired(true)))
+        .addSubcommand(sub =>
+          sub.setName('list')
+            .setDescription('List categories for a panel')
+            .addIntegerOption(opt =>
+              opt.setName('panel_id').setDescription('Panel ID').setRequired(true))))
+
+    // ticket management subcommands
     .addSubcommand(sub =>
       sub.setName('close')
         .setDescription('Close the current ticket')
         .addStringOption(opt =>
-          opt.setName('reason')
-            .setDescription('Reason for closing')
-            .setRequired(false)))
+          opt.setName('reason').setDescription('Reason for closing')))
     .addSubcommand(sub =>
       sub.setName('add')
         .setDescription('Add a user to the current ticket')
         .addUserOption(opt =>
-          opt.setName('user')
-            .setDescription('User to add')
-            .setRequired(true)))
+          opt.setName('user').setDescription('User to add').setRequired(true)))
     .addSubcommand(sub =>
       sub.setName('remove')
         .setDescription('Remove a user from the current ticket')
         .addUserOption(opt =>
-          opt.setName('user')
-            .setDescription('User to remove')
-            .setRequired(true)))
+          opt.setName('user').setDescription('User to remove').setRequired(true)))
     .addSubcommand(sub =>
       sub.setName('rename')
         .setDescription('Rename the current ticket')
         .addStringOption(opt =>
-          opt.setName('name')
-            .setDescription('New ticket name')
-            .setRequired(true)))
+          opt.setName('name').setDescription('New ticket name').setRequired(true)))
     .addSubcommand(sub =>
       sub.setName('transcript')
         .setDescription('Save a transcript of the current ticket'))
@@ -82,178 +114,312 @@ const command: Command = {
   guildOnly: true,
 
   async execute(client, interaction) {
+    const group = interaction.options.getSubcommandGroup(false);
     const subcommand = interaction.options.getSubcommand();
 
-    switch (subcommand) {
-      case 'setup': {
-        if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)) {
+    if (group === 'panel') {
+      switch (subcommand) {
+        case 'create': {
+          const name = interaction.options.getString('name', true);
+          const style = interaction.options.getString('style') || 'channel';
+          const panelType = interaction.options.getString('type') || 'buttons';
+
+          const result = await client.db.pool.query(
+            `INSERT INTO ticket_panels (guild_id, name, style, panel_type)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [interaction.guild!.id, name, style, panelType]
+          );
+
+          const panelId = result.rows[0].id;
           await interaction.reply({
-            embeds: [errorEmbed('Error', 'You need Manage Channels permission.')],
-            ephemeral: true
+            embeds: [successEmbed('Panel Created',
+              `Panel **${name}** created (ID: ${panelId}).\n\n` +
+              `Next steps:\n` +
+              `1. Add categories: \`/ticket category add panel_id:${panelId} name:...\`\n` +
+              `2. Configure in dashboard\n` +
+              `3. Send panel: \`/ticket panel send panel_id:${panelId} #channel\``
+            )],
+            ephemeral: true,
           });
-          return;
+          break;
         }
 
-        const channel = interaction.options.getChannel('channel', true) as TextChannel;
-        const category = interaction.options.getChannel('category', true) as CategoryChannel;
-        const supportRole = interaction.options.getRole('support_role', true);
-        const title = interaction.options.getString('title') || '🎫 Support Tickets';
-        const description = interaction.options.getString('description') || 
-          'Click the button below to create a support ticket.\n\n' +
-          '**Please describe your issue clearly when opening a ticket.**';
+        case 'send': {
+          const panelId = interaction.options.getInteger('panel_id', true);
+          const channel = interaction.options.getChannel('channel', true) as TextChannel;
 
-        // Save config
-        await client.db.pool.query(
-          `INSERT INTO ticket_config (guild_id, channel_id, category_id, support_role_id, panel_title, panel_description)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (guild_id) DO UPDATE SET
-             channel_id = $2, category_id = $3, support_role_id = $4, panel_title = $5, panel_description = $6`,
-          [interaction.guild!.id, channel.id, category.id, supportRole.id, title, description]
-        );
+          const panelResult = await client.db.pool.query(
+            'SELECT * FROM ticket_panels WHERE id = $1 AND guild_id = $2',
+            [panelId, interaction.guild!.id]
+          );
 
-        // Create the panel
-        const embed = new EmbedBuilder()
-          .setColor(COLORS.PRIMARY)
-          .setTitle(title)
-          .setDescription(description)
-          .setFooter({ text: 'Wall-E Ticket System' });
+          if (panelResult.rows.length === 0) {
+            await interaction.reply({ embeds: [errorEmbed('Error', 'Panel not found.')], ephemeral: true });
+            return;
+          }
 
-        const button = new ButtonBuilder()
-          .setCustomId('ticket_create')
-          .setLabel('Create Ticket')
-          .setEmoji('🎫')
-          .setStyle(ButtonStyle.Primary);
+          const panel = panelResult.rows[0];
 
-        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+          const catResult = await client.db.pool.query(
+            'SELECT * FROM ticket_categories WHERE panel_id = $1 ORDER BY position',
+            [panelId]
+          );
+          const categories = catResult.rows;
 
-        await channel.send({ embeds: [embed], components: [row] });
+          const embed = new EmbedBuilder()
+            .setColor(COLORS.PRIMARY)
+            .setTitle(`🎫 ${panel.name}`)
+            .setDescription(
+              categories.length > 0
+                ? `Select a category below to open a ticket.\n\n${categories.map((c: any) => `${c.emoji || '📋'} **${c.name}** — ${c.description || ''}`).join('\n')}`
+                : 'Click the button below to open a support ticket.'
+            )
+            .setFooter({ text: 'Wall-E Ticket System' });
 
-        await interaction.reply({
-          embeds: [successEmbed('Ticket System Setup', `Ticket panel sent to ${channel}.\n\nSupport role: ${supportRole}\nTicket category: ${category.name}`)],
-          ephemeral: true
-        });
-        break;
-      }
+          let components: ActionRowBuilder<any>[] = [];
 
-      case 'close': {
-        // Check if this is a ticket channel
-        const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = $3',
-          [interaction.guild!.id, interaction.channel!.id, 'open']
-        );
+          if (categories.length === 0) {
+            const btn = new ButtonBuilder()
+              .setCustomId(`ticket_open:${panelId}:0`)
+              .setLabel('Open Ticket')
+              .setEmoji('🎫')
+              .setStyle(ButtonStyle.Primary);
+            components = [new ActionRowBuilder<ButtonBuilder>().addComponents(btn)];
+          } else if (panel.panel_type === 'dropdown') {
+            const select = new StringSelectMenuBuilder()
+              .setCustomId(`ticket_select:${panelId}`)
+              .setPlaceholder('Select ticket type...')
+              .addOptions(categories.map((c: any) =>
+                new StringSelectMenuOptionBuilder()
+                  .setLabel(c.name)
+                  .setValue(c.id.toString())
+                  .setDescription((c.description || c.name).substring(0, 100))
+                  .setEmoji(c.emoji || '📋')
+              ));
+            components = [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)];
+          } else {
+            const buttons = categories.slice(0, 5).map((c: any) =>
+              new ButtonBuilder()
+                .setCustomId(`ticket_open:${panelId}:${c.id}`)
+                .setLabel(c.name.substring(0, 80))
+                .setEmoji(c.emoji || '🎫')
+                .setStyle(ButtonStyle.Primary)
+            );
+            components = [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)];
+          }
 
-        if (ticket.rows.length === 0) {
+          const msg = await channel.send({ embeds: [embed], components });
+
+          await client.db.pool.query(
+            'UPDATE ticket_panels SET panel_channel_id = $1, panel_message_id = $2 WHERE id = $3',
+            [channel.id, msg.id, panelId]
+          );
+
           await interaction.reply({
-            embeds: [errorEmbed('Error', 'This is not a ticket channel.')],
-            ephemeral: true
+            embeds: [successEmbed('Panel Sent', `Panel sent to ${channel}.`)],
+            ephemeral: true,
           });
+          break;
+        }
+
+        case 'list': {
+          const panels = await client.db.pool.query(
+            'SELECT * FROM ticket_panels WHERE guild_id = $1 ORDER BY id',
+            [interaction.guild!.id]
+          );
+
+          if (panels.rows.length === 0) {
+            await interaction.reply({
+              embeds: [errorEmbed('No Panels', 'No ticket panels configured. Use `/ticket panel create` to get started.')],
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const embed = new EmbedBuilder()
+            .setColor(COLORS.PRIMARY)
+            .setTitle('Ticket Panels')
+            .setDescription(panels.rows.map((p: any) =>
+              `**ID ${p.id}** — ${p.name} (${p.style}/${p.panel_type})`
+            ).join('\n'));
+
+          await interaction.reply({ embeds: [embed], ephemeral: true });
+          break;
+        }
+
+        case 'delete': {
+          const panelId = interaction.options.getInteger('panel_id', true);
+          const result = await client.db.pool.query(
+            'DELETE FROM ticket_panels WHERE id = $1 AND guild_id = $2 RETURNING name',
+            [panelId, interaction.guild!.id]
+          );
+
+          if (result.rowCount === 0) {
+            await interaction.reply({ embeds: [errorEmbed('Error', 'Panel not found.')], ephemeral: true });
+            return;
+          }
+
+          await interaction.reply({
+            embeds: [successEmbed('Panel Deleted', `Panel **${result.rows[0].name}** has been deleted.`)],
+            ephemeral: true,
+          });
+          break;
+        }
+      }
+      return;
+    }
+
+    if (group === 'category') {
+      switch (subcommand) {
+        case 'add': {
+          const panelId = interaction.options.getInteger('panel_id', true);
+          const name = interaction.options.getString('name', true);
+          const emoji = interaction.options.getString('emoji') || '🎫';
+          const description = interaction.options.getString('description') || '';
+          const supportRole = interaction.options.getRole('support_role', true);
+
+          const panelCheck = await client.db.pool.query(
+            'SELECT id FROM ticket_panels WHERE id = $1 AND guild_id = $2',
+            [panelId, interaction.guild!.id]
+          );
+          if (panelCheck.rows.length === 0) {
+            await interaction.reply({ embeds: [errorEmbed('Error', 'Panel not found.')], ephemeral: true });
+            return;
+          }
+
+          const posResult = await client.db.pool.query(
+            'SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM ticket_categories WHERE panel_id = $1',
+            [panelId]
+          );
+          const position = posResult.rows[0].next_pos;
+
+          await client.db.pool.query(
+            `INSERT INTO ticket_categories (panel_id, guild_id, name, emoji, description, support_role_ids, position)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [panelId, interaction.guild!.id, name, emoji, description, [supportRole.id], position]
+          );
+
+          await interaction.reply({
+            embeds: [successEmbed('Category Added',
+              `Category **${emoji} ${name}** added to panel ${panelId}.\n` +
+              `Re-send the panel with \`/ticket panel send\` to update the Discord message.`
+            )],
+            ephemeral: true,
+          });
+          break;
+        }
+
+        case 'list': {
+          const panelId = interaction.options.getInteger('panel_id', true);
+          const cats = await client.db.pool.query(
+            'SELECT * FROM ticket_categories WHERE panel_id = $1 AND guild_id = $2 ORDER BY position',
+            [panelId, interaction.guild!.id]
+          );
+
+          if (cats.rows.length === 0) {
+            await interaction.reply({
+              embeds: [errorEmbed('No Categories', `No categories in panel ${panelId}. Add with \`/ticket category add\`.`)],
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const embed = new EmbedBuilder()
+            .setColor(COLORS.PRIMARY)
+            .setTitle(`Categories in Panel ${panelId}`)
+            .setDescription(cats.rows.map((c: any) =>
+              `**ID ${c.id}** — ${c.emoji || ''} ${c.name}: ${c.description || '(no description)'}`
+            ).join('\n'));
+
+          await interaction.reply({ embeds: [embed], ephemeral: true });
+          break;
+        }
+      }
+      return;
+    }
+
+    // ---- Ticket management subcommands ----
+    switch (subcommand) {
+      case 'close': {
+        const ticket = await client.db.pool.query(
+          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = 'open'`,
+          [interaction.guild!.id, interaction.channel!.id]
+        );
+        if (ticket.rows.length === 0) {
+          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
           return;
         }
 
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
+        const confirmBtn = new ButtonBuilder()
+          .setCustomId(`ticket_close_confirm:${ticket.rows[0].id}:${encodeURIComponent(reason)}`)
+          .setLabel('Confirm Close')
+          .setEmoji('🔒')
+          .setStyle(ButtonStyle.Danger);
+        const cancelBtn = new ButtonBuilder()
+          .setCustomId('ticket_close_cancel')
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary);
+
         await interaction.reply({
           embeds: [new EmbedBuilder()
             .setColor(COLORS.WARNING)
-            .setTitle('🔒 Ticket Closing')
-            .setDescription(`This ticket will be closed in 5 seconds...\n**Reason:** ${reason}`)
-          ]
+            .setTitle('🔒 Close Ticket?')
+            .setDescription(`**Reason:** ${reason}\n\nClick confirm to close this ticket.`)
+          ],
+          components: [new ActionRowBuilder<ButtonBuilder>().addComponents(confirmBtn, cancelBtn)],
         });
-
-        // Update ticket status
-        await client.db.pool.query(
-          `UPDATE tickets SET status = 'closed', closed_by = $3, closed_at = NOW(), close_reason = $4
-           WHERE id = $1 AND guild_id = $2`,
-          [ticket.rows[0].id, interaction.guild!.id, interaction.user.id, reason]
-        );
-
-        // Delete channel after delay
-        setTimeout(async () => {
-          try {
-            await (interaction.channel as TextChannel).delete();
-          } catch {
-            // Channel may already be deleted
-          }
-        }, 5000);
         break;
       }
 
       case 'add': {
         const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = $3',
-          [interaction.guild!.id, interaction.channel!.id, 'open']
+          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
+          [interaction.guild!.id, interaction.channel!.id]
         );
-
         if (ticket.rows.length === 0) {
-          await interaction.reply({
-            embeds: [errorEmbed('Error', 'This is not a ticket channel.')],
-            ephemeral: true
-          });
+          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
           return;
         }
-
         const user = interaction.options.getUser('user', true);
-        const channel = interaction.channel as TextChannel;
-
-        await channel.permissionOverwrites.create(user, {
+        const ch = interaction.channel as TextChannel;
+        await ch.permissionOverwrites.create(user, {
           ViewChannel: true,
           SendMessages: true,
           ReadMessageHistory: true,
         });
-
-        await interaction.reply({
-          embeds: [successEmbed('User Added', `${user} has been added to this ticket.`)]
-        });
+        await interaction.reply({ embeds: [successEmbed('User Added', `${user} has been added to this ticket.`)] });
         break;
       }
 
       case 'remove': {
         const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = $3',
-          [interaction.guild!.id, interaction.channel!.id, 'open']
+          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
+          [interaction.guild!.id, interaction.channel!.id]
         );
-
         if (ticket.rows.length === 0) {
-          await interaction.reply({
-            embeds: [errorEmbed('Error', 'This is not a ticket channel.')],
-            ephemeral: true
-          });
+          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
           return;
         }
-
         const user = interaction.options.getUser('user', true);
-        const channel = interaction.channel as TextChannel;
-
-        await channel.permissionOverwrites.delete(user);
-
-        await interaction.reply({
-          embeds: [successEmbed('User Removed', `${user} has been removed from this ticket.`)]
-        });
+        await (interaction.channel as TextChannel).permissionOverwrites.delete(user);
+        await interaction.reply({ embeds: [successEmbed('User Removed', `${user} has been removed from this ticket.`)] });
         break;
       }
 
       case 'rename': {
         const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = $3',
-          [interaction.guild!.id, interaction.channel!.id, 'open']
+          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
+          [interaction.guild!.id, interaction.channel!.id]
         );
-
         if (ticket.rows.length === 0) {
-          await interaction.reply({
-            embeds: [errorEmbed('Error', 'This is not a ticket channel.')],
-            ephemeral: true
-          });
+          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
           return;
         }
-
         const name = interaction.options.getString('name', true);
-        const channel = interaction.channel as TextChannel;
-
-        await channel.setName(`ticket-${name}`);
-
-        await interaction.reply({
-          embeds: [successEmbed('Ticket Renamed', `Ticket renamed to \`ticket-${name}\`.`)]
-        });
+        await (interaction.channel as TextChannel).setName(`ticket-${name}`);
+        await interaction.reply({ embeds: [successEmbed('Ticket Renamed', `Renamed to \`ticket-${name}\`.`)] });
         break;
       }
 
@@ -262,69 +428,50 @@ const command: Command = {
           'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2',
           [interaction.guild!.id, interaction.channel!.id]
         );
-
         if (ticket.rows.length === 0) {
-          await interaction.reply({
-            embeds: [errorEmbed('Error', 'This is not a ticket channel.')],
-            ephemeral: true
-          });
+          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not a ticket channel.')], ephemeral: true });
           return;
         }
 
         await interaction.deferReply();
+        const ch = interaction.channel as TextChannel;
 
-        // Fetch messages
-        const channel = interaction.channel as TextChannel;
-        const messages = await channel.messages.fetch({ limit: 100 });
-        
-        let transcript = `Ticket Transcript - ${channel.name}\n`;
-        transcript += `Created: ${ticket.rows[0].created_at}\n`;
-        transcript += `User: ${ticket.rows[0].user_id}\n\n`;
-        transcript += '='.repeat(50) + '\n\n';
-
-        const sortedMessages = [...messages.values()].reverse();
-        for (const msg of sortedMessages) {
-          const time = msg.createdAt.toISOString();
-          transcript += `[${time}] ${msg.author.tag}: ${msg.content}\n`;
-          if (msg.attachments.size > 0) {
-            transcript += `  Attachments: ${msg.attachments.map(a => a.url).join(', ')}\n`;
-          }
+        // Paginate to get all messages
+        const allMessages: any[] = [];
+        let lastId: string | undefined;
+        while (true) {
+          const batch = await ch.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
+          if (batch.size === 0) break;
+          allMessages.push(...batch.values());
+          lastId = batch.last()?.id;
+          if (batch.size < 100) break;
         }
+        allMessages.reverse();
 
-        const buffer = Buffer.from(transcript, 'utf-8');
+        const { buildTranscript } = await import('../utils/ticketUtils.js');
+        const text = buildTranscript(ch.name, ticket.rows[0].user_id, ticket.rows[0].created_at, allMessages);
 
         await interaction.editReply({
-          content: '📝 Ticket transcript generated:',
-          files: [{
-            attachment: buffer,
-            name: `transcript-${channel.name}.txt`
-          }]
+          content: '📝 Ticket transcript:',
+          files: [{ attachment: Buffer.from(text, 'utf-8'), name: `transcript-${ch.name}.txt` }],
         });
         break;
       }
 
       case 'claim': {
         const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = $3',
-          [interaction.guild!.id, interaction.channel!.id, 'open']
+          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status = 'open'`,
+          [interaction.guild!.id, interaction.channel!.id]
         );
-
         if (ticket.rows.length === 0) {
-          await interaction.reply({
-            embeds: [errorEmbed('Error', 'This is not a ticket channel.')],
-            ephemeral: true
-          });
+          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
           return;
         }
-
         await client.db.pool.query(
-          'UPDATE tickets SET claimed_by = $3 WHERE id = $1 AND guild_id = $2',
+          `UPDATE tickets SET claimed_by = $3, status = 'claimed' WHERE id = $1 AND guild_id = $2`,
           [ticket.rows[0].id, interaction.guild!.id, interaction.user.id]
         );
-
-        await interaction.reply({
-          embeds: [successEmbed('Ticket Claimed', `${interaction.user} has claimed this ticket.`)]
-        });
+        await interaction.reply({ embeds: [successEmbed('Ticket Claimed', `${interaction.user} has claimed this ticket.`)] });
         break;
       }
     }
