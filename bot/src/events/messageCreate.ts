@@ -26,7 +26,7 @@ export default {
         `UPDATE tickets SET last_activity = NOW(), warned_inactive = FALSE
          WHERE channel_id = $1 AND guild_id = $2 AND status IN ('open','claimed')`,
         [message.channel.id, message.guild.id]
-      ).catch(() => {}); // ignore errors
+      ).catch((e) => logger.debug('ticket activity update failed:', e));
     }
   },
 };

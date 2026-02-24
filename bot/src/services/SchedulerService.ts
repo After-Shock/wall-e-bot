@@ -44,6 +44,7 @@ interface ScheduledTask {
 export class SchedulerService {
   /** Interval handle for the background check loop */
   private checkInterval: NodeJS.Timeout | null = null;
+  private autoCloseInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(private client: WallEClient) {}
 
@@ -61,7 +62,7 @@ export class SchedulerService {
     this.checkScheduledTasks();
 
     // Check for inactive tickets every hour
-    setInterval(() => { this.checkAutoClose(); }, 60 * 60 * 1000);
+    this.autoCloseInterval = setInterval(() => { this.checkAutoClose(); }, 60 * 60 * 1000);
     this.checkAutoClose(); // run on start too
 
     logger.info('Scheduler service started');
@@ -71,6 +72,10 @@ export class SchedulerService {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
+    }
+    if (this.autoCloseInterval) {
+      clearInterval(this.autoCloseInterval);
+      this.autoCloseInterval = null;
     }
   }
 
@@ -180,7 +185,7 @@ export class SchedulerService {
             await this.client.db.pool.query(
               `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
                close_reason = 'Auto-closed due to inactivity' WHERE id = $1`,
-              [ticket.id, this.client.user!.id]
+              [ticket.id, this.client.user?.id ?? 'auto-close']
             );
 
             // Try to move to closed category
@@ -193,7 +198,7 @@ export class SchedulerService {
             if (panelData.rows[0]?.category_closed_id) {
               try {
                 await channel.setParent(panelData.rows[0].category_closed_id, { lockPermissions: false });
-                await channel.setName(`closed-${channel.name}`);
+                await channel.setName(`closed-${channel.name}`.substring(0, 100));
               } catch { /* Ignore if already closed */ }
             } else {
               setTimeout(async () => {
