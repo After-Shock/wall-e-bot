@@ -162,31 +162,80 @@ CREATE TABLE IF NOT EXISTS auto_roles (
   UNIQUE(guild_id, role_id)
 );
 
--- Ticket config table
+-- Ticket config table (global server settings)
 CREATE TABLE IF NOT EXISTS ticket_config (
   id SERIAL PRIMARY KEY,
   guild_id VARCHAR(20) UNIQUE NOT NULL,
-  channel_id VARCHAR(20),
-  category_id VARCHAR(20),
-  support_role_id VARCHAR(20),
-  panel_title VARCHAR(200),
-  panel_description TEXT,
+  transcript_channel_id VARCHAR(20),
+  max_tickets_per_user INTEGER DEFAULT 1,
+  auto_close_hours INTEGER DEFAULT 0,
+  welcome_message TEXT DEFAULT 'Welcome! Please describe your issue and a staff member will assist you shortly.',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Ticket panels (one per panel message; a guild can have many)
+CREATE TABLE IF NOT EXISTS ticket_panels (
+  id SERIAL PRIMARY KEY,
+  guild_id VARCHAR(20) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  style VARCHAR(20) DEFAULT 'channel',
+  panel_type VARCHAR(20) DEFAULT 'buttons',
+  panel_channel_id VARCHAR(20),
+  panel_message_id VARCHAR(20),
+  category_open_id VARCHAR(20),
+  category_closed_id VARCHAR(20),
+  overflow_category_id VARCHAR(20),
+  channel_name_template VARCHAR(100) DEFAULT '{type}-{number}',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Ticket categories (buttons or dropdown options within a panel)
+CREATE TABLE IF NOT EXISTS ticket_categories (
+  id SERIAL PRIMARY KEY,
+  panel_id INTEGER REFERENCES ticket_panels(id) ON DELETE CASCADE,
+  guild_id VARCHAR(20) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  emoji VARCHAR(10),
+  description VARCHAR(200),
+  support_role_ids TEXT[] DEFAULT '{}',
+  observer_role_ids TEXT[] DEFAULT '{}',
+  position INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Form fields per category (up to 5 — Discord modal limit)
+CREATE TABLE IF NOT EXISTS ticket_form_fields (
+  id SERIAL PRIMARY KEY,
+  category_id INTEGER REFERENCES ticket_categories(id) ON DELETE CASCADE,
+  label VARCHAR(45) NOT NULL,
+  placeholder VARCHAR(100),
+  min_length INTEGER DEFAULT 0,
+  max_length INTEGER DEFAULT 1024,
+  style VARCHAR(10) DEFAULT 'short',
+  required BOOLEAN DEFAULT TRUE,
+  position INTEGER DEFAULT 0
 );
 
 -- Tickets table
 CREATE TABLE IF NOT EXISTS tickets (
   id SERIAL PRIMARY KEY,
   guild_id VARCHAR(20) NOT NULL,
+  panel_id INTEGER REFERENCES ticket_panels(id),
+  category_id INTEGER REFERENCES ticket_categories(id),
   channel_id VARCHAR(20) NOT NULL,
+  thread_id VARCHAR(20),
   user_id VARCHAR(20) NOT NULL,
   ticket_number INTEGER NOT NULL,
+  topic TEXT,
   status VARCHAR(20) DEFAULT 'open',
   claimed_by VARCHAR(20),
   closed_by VARCHAR(20),
   closed_at TIMESTAMP,
   close_reason TEXT,
+  transcript_message_id VARCHAR(20),
+  last_activity TIMESTAMP DEFAULT NOW(),
+  warned_inactive BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -215,6 +264,11 @@ CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders(remind_at) WHERE
 CREATE INDEX IF NOT EXISTS idx_scheduled_messages_next ON scheduled_messages(next_run) WHERE enabled = TRUE;
 CREATE INDEX IF NOT EXISTS idx_temp_bans_unban ON temp_bans(unban_at) WHERE unbanned = FALSE;
 CREATE INDEX IF NOT EXISTS idx_tickets_guild_user ON tickets(guild_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_panels_guild ON ticket_panels(guild_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_categories_panel ON ticket_categories(panel_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_form_fields_category ON ticket_form_fields(category_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(guild_id, status);
+CREATE INDEX IF NOT EXISTS idx_tickets_last_activity ON tickets(last_activity) WHERE status = 'open';
 `;
 
 async function migrate() {
