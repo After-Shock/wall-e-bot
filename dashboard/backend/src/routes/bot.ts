@@ -1,9 +1,18 @@
-import { Router, Request, Response } from 'express';
-import { requireAuth, AuthenticatedRequest } from '../middleware/auth.js';
+import { Router } from 'express';
+import axios from 'axios';
+import { requireAuth, requireGuildAccess, AuthenticatedRequest } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const botRouter = Router();
+
+const DISCORD_API = 'https://discord.com/api/v10';
+
+function botHeaders() {
+  const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
+  if (!token) throw new Error('Bot token not configured');
+  return { Authorization: `Bot ${token}`, 'Content-Type': 'application/json' };
+}
 
 // Get bot info
 botRouter.get('/info', asyncHandler(async (req, res) => {
@@ -37,17 +46,90 @@ botRouter.get('/stats', asyncHandler(async (req, res) => {
   }
 }));
 
-// Update bot nickname for a guild
-botRouter.patch('/guilds/:guildId/nickname', requireAuth, asyncHandler(async (req, res) => {
+// Update bot nickname for a guild (per-server, not global)
+botRouter.patch('/guilds/:guildId/nickname', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     const { nickname } = req.body;
 
-    // This would use the Discord API to update the bot's nickname
-    // For now, we'll just acknowledge the request
-    res.json({ success: true, nickname });
-  } catch (error) {
-    logger.error('Error updating nickname:', error);
-    res.status(500).json({ error: 'Failed to update nickname' });
+    if (nickname !== undefined && nickname !== null && typeof nickname !== 'string') {
+      res.status(400).json({ error: 'nickname must be a string or null' });
+      return;
+    }
+    if (nickname && nickname.length > 32) {
+      res.status(400).json({ error: 'Nickname must be 32 characters or fewer' });
+      return;
+    }
+
+    // PATCH /guilds/{guildId}/members/@me — sets bot's own nickname in this guild
+    await axios.patch(
+      `${DISCORD_API}/guilds/${guildId}/members/@me`,
+      { nick: nickname || null },
+      { headers: botHeaders() }
+    );
+
+    logger.info('Bot nickname updated', { guildId, nickname });
+    res.json({ success: true, nickname: nickname || null });
+  } catch (error: any) {
+    const discordMsg = error?.response?.data?.message;
+    logger.error('Error updating bot nickname:', { error: discordMsg || error });
+    res.status(error?.response?.status || 500).json({
+      error: discordMsg || 'Failed to update nickname',
+    });
+  }
+}));
+
+// Update bot avatar (global — applies across all servers)
+botRouter.patch('/avatar', requireAuth, asyncHandler(async (req, res) => {
+  try {
+    const { imageUrl } = req.body;
+
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      res.status(400).json({ error: 'imageUrl is required' });
+      return;
+    }
+
+    // Validate it looks like a URL
+    let parsed: URL;
+    try { parsed = new URL(imageUrl); } catch {
+      res.status(400).json({ error: 'imageUrl must be a valid URL' });
+      return;
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      res.status(400).json({ error: 'imageUrl must use http or https' });
+      return;
+    }
+
+    // Fetch the image
+    const imageRes = await axios.get(imageUrl, {
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      maxContentLength: 8 * 1024 * 1024, // 8MB Discord limit
+    });
+
+    const contentType = imageRes.headers['content-type'] || 'image/png';
+    if (!contentType.startsWith('image/')) {
+      res.status(400).json({ error: 'URL does not point to an image' });
+      return;
+    }
+
+    const base64 = Buffer.from(imageRes.data).toString('base64');
+    const dataUri = `data:${contentType};base64,${base64}`;
+
+    // PATCH /users/@me — sets bot's global avatar
+    await axios.patch(
+      `${DISCORD_API}/users/@me`,
+      { avatar: dataUri },
+      { headers: botHeaders() }
+    );
+
+    logger.info('Bot avatar updated');
+    res.json({ success: true });
+  } catch (error: any) {
+    const discordMsg = error?.response?.data?.message;
+    logger.error('Error updating bot avatar:', { error: discordMsg || error });
+    res.status(error?.response?.status || 500).json({
+      error: discordMsg || 'Failed to update avatar',
+    });
   }
 }));

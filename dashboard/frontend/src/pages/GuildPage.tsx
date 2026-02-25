@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings } from 'lucide-react';
+import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings, Loader2, Image } from 'lucide-react';
 import { useState } from 'react';
 
 interface ModulesConfig {
@@ -186,22 +186,7 @@ export default function GuildPage() {
             )}
 
             {activeTab === 'customization' && (
-              <div>
-                <h2 className="text-xl font-semibold mb-6">Bot Customization</h2>
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Bot Nickname</label>
-                    <input
-                      type="text"
-                      className="input max-w-xs"
-                      placeholder="Wall-E"
-                    />
-                    <p className="text-sm text-discord-light mt-1">
-                      Customize the bot&apos;s nickname in this server
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <CustomizationTab guildId={guildId!} />
             )}
 
             <div className="mt-8 pt-6 border-t border-discord-darker flex justify-end">
@@ -217,6 +202,119 @@ export default function GuildPage() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Customization Tab ────────────────────────────────────────────────────────
+
+function CustomizationTab({ guildId }: { guildId: string }) {
+  const [nickname, setNickname] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [nickSaving, setNickSaving] = useState(false);
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [nickMsg, setNickMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [avatarMsg, setAvatarMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const saveNickname = async () => {
+    setNickSaving(true);
+    setNickMsg(null);
+    try {
+      await api.patch(`/api/bot/guilds/${guildId}/nickname`, { nickname });
+      setNickMsg({ type: 'success', text: nickname ? `Nickname set to "${nickname}"` : 'Nickname cleared' });
+    } catch (e: any) {
+      setNickMsg({ type: 'error', text: e?.response?.data?.error || 'Failed to update nickname' });
+    } finally {
+      setNickSaving(false);
+    }
+  };
+
+  const saveAvatar = async () => {
+    if (!avatarUrl.trim()) return;
+    setAvatarSaving(true);
+    setAvatarMsg(null);
+    try {
+      await api.patch('/api/bot/avatar', { imageUrl: avatarUrl });
+      setAvatarMsg({ type: 'success', text: 'Avatar updated! Changes may take a moment to appear.' });
+      setAvatarUrl('');
+    } catch (e: any) {
+      setAvatarMsg({ type: 'error', text: e?.response?.data?.error || 'Failed to update avatar' });
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold mb-6">Bot Customization</h2>
+      <div className="space-y-8">
+
+        {/* Nickname */}
+        <div>
+          <label className="block text-sm font-medium mb-2">Server Nickname</label>
+          <div className="flex items-center gap-3 max-w-sm">
+            <input
+              type="text"
+              value={nickname}
+              onChange={e => setNickname(e.target.value)}
+              className="input flex-1"
+              placeholder="Wall-E"
+              maxLength={32}
+            />
+            <button
+              onClick={saveNickname}
+              disabled={nickSaving}
+              className="btn btn-primary flex items-center gap-2 shrink-0"
+            >
+              {nickSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save
+            </button>
+          </div>
+          <p className="text-sm text-discord-light mt-1">
+            Changes the bot's name only in this server. Leave blank to clear the nickname.
+          </p>
+          {nickMsg && (
+            <p className={`text-sm mt-2 ${nickMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+              {nickMsg.text}
+            </p>
+          )}
+        </div>
+
+        {/* Avatar */}
+        <div>
+          <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+            <Image className="w-4 h-4" />
+            Bot Avatar
+            <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">Global — applies to all servers</span>
+          </label>
+          <div className="flex items-center gap-3 max-w-lg">
+            <input
+              type="url"
+              value={avatarUrl}
+              onChange={e => setAvatarUrl(e.target.value)}
+              className="input flex-1"
+              placeholder="https://example.com/avatar.png"
+            />
+            <button
+              onClick={saveAvatar}
+              disabled={avatarSaving || !avatarUrl.trim()}
+              className="btn btn-primary flex items-center gap-2 shrink-0"
+            >
+              {avatarSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Apply
+            </button>
+          </div>
+          <p className="text-sm text-discord-light mt-1">
+            Paste a direct link to a PNG, JPG, or GIF (max 8MB). Discord rate-limits avatar changes to ~2 per hour.
+          </p>
+          {avatarMsg && (
+            <p className={`text-sm mt-2 ${avatarMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+              {avatarMsg.text}
+            </p>
+          )}
+        </div>
+
       </div>
     </div>
   );
