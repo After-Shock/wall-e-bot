@@ -36,6 +36,7 @@ import TicketsPage from './pages/guild/TicketsPage';
 import AnalyticsPage from './pages/guild/AnalyticsPage';
 import AdvancedAutomodPage from './pages/guild/AdvancedAutomodPage';
 import BackupPage from './pages/guild/BackupPage';
+import SyncPage from './pages/guild/SyncPage';
 
 function App() {
   return (
@@ -111,6 +112,9 @@ function App() {
 
           {/* Backup & Restore (Premium) */}
           <Route path="backup" element={<BackupPage />} />
+
+          {/* Sync Settings */}
+          <Route path="sync" element={<SyncPage />} />
 
           {/* Settings */}
           <Route path="settings" element={<GuildPage />} />

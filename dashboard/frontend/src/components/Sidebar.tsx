@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Database,
   Crown,
+  RefreshCw,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -140,6 +141,11 @@ const getNavItems = (guildId: string): NavItem[] => [
     href: `/dashboard/${guildId}/backup`,
     icon: Database,
     badge: 'Premium',
+  },
+  {
+    name: 'Sync Settings',
+    href: `/dashboard/${guildId}/sync`,
+    icon: RefreshCw,
   },
   {
     name: 'Settings',
