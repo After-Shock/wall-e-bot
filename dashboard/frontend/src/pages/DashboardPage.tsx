@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -14,6 +14,7 @@ interface Guild {
 
 export default function DashboardPage() {
   const { user, loading: authLoading, login } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: guilds, isLoading } = useQuery({
     queryKey: ['guilds'],
@@ -22,7 +23,19 @@ export default function DashboardPage() {
       return response.data;
     },
     enabled: !!user,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
+
+  function openAddBot(url: string) {
+    const popup = window.open(url, '_blank', 'width=500,height=800');
+    const timer = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(timer);
+        queryClient.invalidateQueries({ queryKey: ['guilds'] });
+      }
+    }, 500);
+  }
 
   if (authLoading || isLoading) {
     return (
@@ -91,15 +104,13 @@ export default function DashboardPage() {
                 Manage
               </Link>
             ) : (
-              <a
-                href={inviteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => openAddBot(inviteUrl)}
                 className="btn btn-secondary flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 Add Bot
-              </a>
+              </button>
             )}
           </div>
         ))}

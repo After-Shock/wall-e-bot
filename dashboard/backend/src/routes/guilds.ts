@@ -62,9 +62,15 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
     // Store guilds in session for permission checking
     (authReq.user as any).guilds = guilds;
 
-    // Get bot's guilds to check where bot is present
-    const botGuildsResult = await db.query('SELECT guild_id FROM guild_configs');
-    const botGuildIds = new Set(botGuildsResult.rows.map(r => r.guild_id));
+    // Get bot's actual guilds from Discord API using the bot token
+    const botGuildsResponse = await fetch('https://discord.com/api/v10/users/@me/guilds', {
+      headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+    });
+    const botGuildIds = new Set<string>(
+      botGuildsResponse.ok
+        ? (await botGuildsResponse.json() as { id: string }[]).map(g => g.id)
+        : []
+    );
 
     const guildsWithBotStatus = manageableGuilds.map((guild) => ({
       id: guild.id,
