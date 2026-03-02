@@ -1,13 +1,27 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { requireAuth, requireGuildAccess, AuthenticatedRequest } from '../middleware/auth.js';
+import { requireAuth, requireGuildAccess, AuthenticatedRequest, AuthenticatedUser } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { stripServerIds } from '@wall-e/shared';
 import { rateLimitByGuild, RateLimitPresets } from '../middleware/rateLimit.js';
 import { guildConfigService, validationService } from '../services/index.js';
 import * as analyticsService from '../services/analyticsService.js';
 import * as backupService from '../services/backupService.js';
 import { z } from 'zod';
+
+// Helper: check if user has manage access to a guild
+function userHasGuildAccess(user: AuthenticatedUser, guildId: string): boolean {
+  if (!user.guilds) return false;
+  const guild = user.guilds.find(g => g.id === guildId);
+  if (!guild) return false;
+  const permissions = BigInt(guild.permissions);
+  const MANAGE_GUILD = BigInt(0x20);
+  const ADMINISTRATOR = BigInt(0x8);
+  return guild.owner ||
+    (permissions & MANAGE_GUILD) === MANAGE_GUILD ||
+    (permissions & ADMINISTRATOR) === ADMINISTRATOR;
+}
 
 export const guildsRouter = Router();
 
@@ -1161,3 +1175,55 @@ guildsRouter.get('/:guildId/tickets', requireAuth, requireGuildAccess, asyncHand
     res.status(500).json({ error: 'Failed to fetch tickets' });
   }
 }));
+
+// Copy settings from one guild to another
+guildsRouter.post(
+  '/:guildId/copy-from/:sourceGuildId',
+  requireAuth,
+  requireGuildAccess,  // checks :guildId (target)
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const targetGuildId = req.params.guildId;
+    const { sourceGuildId } = req.params;
+
+    // Guard: same guild
+    if (targetGuildId === sourceGuildId) {
+      res.status(400).json({ error: 'Cannot copy settings to the same server' });
+      return;
+    }
+
+    // Guard: user must also have access to source guild
+    if (!userHasGuildAccess(authReq.user!, sourceGuildId)) {
+      res.status(403).json({ error: "You don't have permission to access the source server" });
+      return;
+    }
+
+    // Fetch source config
+    const sourceResult = await db.query(
+      'SELECT config FROM guild_configs WHERE guild_id = $1',
+      [sourceGuildId]
+    );
+
+    if (sourceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Source server has no configuration' });
+      return;
+    }
+
+    const sourceConfig = sourceResult.rows[0].config;
+
+    // Strip server-specific IDs
+    const cleanedConfig = stripServerIds(sourceConfig);
+
+    // Upsert to target guild
+    await db.query(
+      `INSERT INTO guild_configs (guild_id, config, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (guild_id)
+       DO UPDATE SET config = $2, updated_at = NOW()`,
+      [targetGuildId, JSON.stringify(cleanedConfig)]
+    );
+
+    logger.info(`Guild config copied from ${sourceGuildId} to ${targetGuildId}`);
+    res.json({ success: true, config: cleanedConfig });
+  })
+);
