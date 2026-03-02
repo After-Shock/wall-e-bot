@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
+import connectRedis from 'connect-redis';
+import Redis from 'ioredis';
 import passport from 'passport';
 import { Strategy as DiscordStrategy } from 'passport-discord';
 import { logger } from './utils/logger.js';
@@ -18,6 +20,10 @@ const PORT = process.env.PORT || 3001;
 // Trust the first proxy (Traefik) so secure cookies work behind HTTPS termination
 app.set('trust proxy', 1);
 
+// Redis session store
+const RedisStore = connectRedis(session);
+const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379');
+
 // Middleware
 app.use(helmet());
 app.use(cors({
@@ -28,6 +34,7 @@ app.use(express.json());
 
 // Session
 app.use(session({
+  store: new RedisStore({ client: redis }),
   secret: process.env.SESSION_SECRET || 'super-secret-key',
   resave: false,
   saveUninitialized: false,

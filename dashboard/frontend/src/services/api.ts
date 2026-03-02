@@ -8,8 +8,8 @@ export const api = axios.create({
 api.interceptors.response.use(
   response => response,
   error => {
-    if (error.response?.status === 401) {
-      // Redirect to login if unauthorized
+    // Redirect to login on 401 only for authenticated API calls (not the /auth/me check itself)
+    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/')) {
       window.location.href = '/auth/login';
     }
     return Promise.reject(error);
