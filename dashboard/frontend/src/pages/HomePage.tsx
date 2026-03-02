@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Star, MessageSquare, Settings, Bot, Zap, Plus, LogIn } from 'lucide-react';
 
 // Bot invite URL with required permissions
@@ -49,8 +50,15 @@ const features = [
 ];
 
 export default function HomePage() {
-  const { user, login } = useAuth();
+  const { user, loading, login } = useAuth();
+  const navigate = useNavigate();
   const inviteUrl = getInviteUrl();
+
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/dashboard');
+    }
+  }, [user, loading, navigate]);
 
   return (
     <div>
