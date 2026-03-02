@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Copy, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
+import type { AxiosError } from 'axios';
 import api from '../../api/axios';
 
 interface Guild {
@@ -54,8 +55,8 @@ export default function SyncPage() {
         // Invalidate guild config so other pages reflect new settings
         queryClient.invalidateQueries({ queryKey: ['guild', guildId] });
       },
-      onError: (error: any) => {
-        setErrorMessage(error?.response?.data?.error ?? 'Failed to copy settings. Please try again.');
+      onError: (error: AxiosError<{ error: string }>) => {
+        setErrorMessage(error.response?.data?.error ?? 'Failed to copy settings. Please try again.');
         setSuccessMessage('');
       },
     });
@@ -105,13 +106,18 @@ export default function SyncPage() {
         ) : (
           <>
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <label htmlFor="source-guild" className="block text-sm font-medium mb-2">
                 Copy settings from:
               </label>
               <select
+                id="source-guild"
                 className="w-full bg-discord-dark border border-discord-darker rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-discord-blurple"
                 value={selectedSourceId}
-                onChange={(e) => setSelectedSourceId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedSourceId(e.target.value);
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
               >
                 <option value="">— Select a server —</option>
                 {eligibleSources.map((guild) => (
