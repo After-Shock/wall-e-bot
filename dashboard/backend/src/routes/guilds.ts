@@ -1181,6 +1181,7 @@ guildsRouter.post(
   '/:guildId/copy-from/:sourceGuildId',
   requireAuth,
   requireGuildAccess,  // checks :guildId (target)
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const targetGuildId = req.params.guildId;
@@ -1193,37 +1194,43 @@ guildsRouter.post(
     }
 
     // Guard: user must also have access to source guild
-    if (!userHasGuildAccess(authReq.user!, sourceGuildId)) {
+    if (!authReq.user?.guilds) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+    if (!userHasGuildAccess(authReq.user, sourceGuildId)) {
       res.status(403).json({ error: "You don't have permission to access the source server" });
       return;
     }
 
-    // Fetch source config
-    const sourceResult = await db.query(
-      'SELECT config FROM guild_configs WHERE guild_id = $1',
-      [sourceGuildId]
-    );
+    try {
+      // Fetch source config
+      const sourceResult = await db.query(
+        'SELECT config FROM guild_configs WHERE guild_id = $1',
+        [sourceGuildId]
+      );
 
-    if (sourceResult.rows.length === 0) {
-      res.status(404).json({ error: 'Source server has no configuration' });
-      return;
+      if (sourceResult.rows.length === 0) {
+        res.status(404).json({ error: 'Source server has no configuration' });
+        return;
+      }
+
+      const sourceConfig = sourceResult.rows[0].config;
+      const cleanedConfig = stripServerIds(sourceConfig);
+
+      await db.query(
+        `INSERT INTO guild_configs (guild_id, config, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (guild_id)
+         DO UPDATE SET config = $2, updated_at = NOW()`,
+        [targetGuildId, JSON.stringify(cleanedConfig)]
+      );
+
+      logger.info('Guild config copied', { sourceGuildId, targetGuildId, userId: authReq.user!.id });
+      res.json({ success: true, config: cleanedConfig });
+    } catch (error) {
+      logger.error('Error copying guild config:', { sourceGuildId, targetGuildId, error });
+      res.status(500).json({ error: 'Failed to copy guild settings' });
     }
-
-    const sourceConfig = sourceResult.rows[0].config;
-
-    // Strip server-specific IDs
-    const cleanedConfig = stripServerIds(sourceConfig);
-
-    // Upsert to target guild
-    await db.query(
-      `INSERT INTO guild_configs (guild_id, config, updated_at)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (guild_id)
-       DO UPDATE SET config = $2, updated_at = NOW()`,
-      [targetGuildId, JSON.stringify(cleanedConfig)]
-    );
-
-    logger.info(`Guild config copied from ${sourceGuildId} to ${targetGuildId}`);
-    res.json({ success: true, config: cleanedConfig });
   })
 );
