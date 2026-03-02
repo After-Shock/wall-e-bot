@@ -76,3 +76,32 @@ export function formatNumber(num: number): string {
   }
   return num.toString();
 }
+
+/**
+ * Recursively strips server-specific Discord IDs from a guild config object.
+ *
+ * Any key ending with 'ChannelId' or 'RoleId' (case-insensitive) is set to null.
+ * This prevents invalid references when copying a config to a different guild.
+ */
+export function stripServerIds<T extends object>(obj: T): T {
+  if (Array.isArray(obj)) {
+    return obj.map((item) =>
+      item && typeof item === 'object' ? stripServerIds(item) : item
+    ) as unknown as T;
+  }
+
+  const result = {} as T;
+
+  for (const key of Object.keys(obj) as (keyof T)[]) {
+    const value = obj[key];
+    if (/channelid$|roleid$/i.test(key as string)) {
+      result[key] = null as unknown as T[keyof T];
+    } else if (value && typeof value === 'object') {
+      result[key] = stripServerIds(value as object) as T[keyof T];
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
