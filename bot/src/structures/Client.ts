@@ -170,8 +170,8 @@ export class WallEClient extends Client {
 
     for (const folder of commandFolders) {
       const folderPath = join(commandsPath, folder);
-      const commandFiles = readdirSync(folderPath).filter(file => 
-        file.endsWith('.js') || file.endsWith('.ts')
+      const commandFiles = readdirSync(folderPath).filter(file =>
+        (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
       );
 
       for (const file of commandFiles) {
@@ -197,8 +197,8 @@ export class WallEClient extends Client {
    */
   private async loadEvents() {
     const eventsPath = join(__dirname, '..', 'events');
-    const eventFiles = readdirSync(eventsPath).filter(file => 
-      file.endsWith('.js') || file.endsWith('.ts')
+    const eventFiles = readdirSync(eventsPath).filter(file =>
+      (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
     );
 
     for (const file of eventFiles) {
