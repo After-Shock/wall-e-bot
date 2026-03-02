@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
 import connectRedis from 'connect-redis';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import passport from 'passport';
 import { Strategy as DiscordStrategy } from 'passport-discord';
 import { logger } from './utils/logger.js';

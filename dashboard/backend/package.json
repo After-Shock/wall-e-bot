@@ -34,6 +34,7 @@
     "@types/passport": "^1.0.16",
     "@types/passport-discord": "^0.1.11",
     "@types/pg": "^8.10.9",
-    "tsx": "^4.7.0"
+    "tsx": "^4.7.0",
+    "@types/connect-redis": "^0.0.23"
   }
 }
