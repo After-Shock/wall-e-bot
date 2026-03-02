@@ -15,6 +15,9 @@ import { db } from './db/index.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust the first proxy (Traefik) so secure cookies work behind HTTPS termination
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet());
 app.use(cors({
@@ -30,6 +33,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : false,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   },
 }));
