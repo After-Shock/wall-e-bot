@@ -9,6 +9,8 @@ interface Guild {
   id: string;
   name: string;
   icon: string | null;
+  owner: boolean;
+  permissions: string;
   botPresent: boolean;
 }
 
@@ -28,10 +30,15 @@ export default function SyncPage() {
     },
   });
 
-  // Other guilds where the bot is present (excluding current guild)
-  const eligibleSources = guilds?.filter(
-    (g) => g.id !== guildId && g.botPresent
-  ) ?? [];
+  // Other guilds where the bot is present and the user has manage access (excluding current guild)
+  const eligibleSources = guilds?.filter((g) => {
+    if (g.id === guildId || !g.botPresent) return false;
+    if (g.owner) return true;
+    const perms = BigInt(g.permissions);
+    const MANAGE_GUILD = BigInt(0x20);
+    const ADMINISTRATOR = BigInt(0x8);
+    return (perms & MANAGE_GUILD) === MANAGE_GUILD || (perms & ADMINISTRATOR) === ADMINISTRATOR;
+  }) ?? [];
 
   const copyMutation = useMutation({
     mutationFn: async (sourceGuildId: string) => {
@@ -55,8 +62,9 @@ export default function SyncPage() {
         // Invalidate guild config so other pages reflect new settings
         queryClient.invalidateQueries({ queryKey: ['guild', guildId] });
       },
-      onError: (error: AxiosError<{ error: string }>) => {
-        setErrorMessage(error.response?.data?.error ?? 'Failed to copy settings. Please try again.');
+      onError: (error: Error) => {
+        const axiosError = error as AxiosError<{ error: string }>;
+        setErrorMessage(axiosError.response?.data?.error ?? 'Failed to copy settings. Please try again.');
         setSuccessMessage('');
       },
     });

@@ -4,7 +4,7 @@ import { requireAuth, requireGuildAccess, AuthenticatedRequest, AuthenticatedUse
 import { logger } from '../utils/logger.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { stripServerIds } from '@wall-e/shared';
-import { rateLimitByGuild, RateLimitPresets } from '../middleware/rateLimit.js';
+import { rateLimitByGuild, rateLimitByUser, RateLimitPresets } from '../middleware/rateLimit.js';
 import { guildConfigService, validationService } from '../services/index.js';
 import * as analyticsService from '../services/analyticsService.js';
 import * as backupService from '../services/backupService.js';
@@ -1181,7 +1181,7 @@ guildsRouter.post(
   '/:guildId/copy-from/:sourceGuildId',
   requireAuth,
   requireGuildAccess,  // checks :guildId (target)
-  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  rateLimitByUser({ max: 3, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const targetGuildId = req.params.guildId;
@@ -1227,7 +1227,7 @@ guildsRouter.post(
       );
 
       logger.info('Guild config copied', { sourceGuildId, targetGuildId, userId: authReq.user!.id });
-      res.json({ success: true, config: cleanedConfig });
+      res.json({ success: true });
     } catch (error) {
       logger.error('Error copying guild config:', { sourceGuildId, targetGuildId, error });
       res.status(500).json({ error: 'Failed to copy guild settings' });
