@@ -53,5 +53,7 @@ describe('stripServerIds', () => {
     const config = { channelId: null, roleId: undefined, prefix: '!' };
     const result = stripServerIds(config as any);
     expect(result.prefix).toBe('!');
+    expect(result.channelId).toBeNull();  // already null → stays null
+    expect(result.roleId).toBeNull();     // undefined → nulled (matched by pattern)
   });
 });

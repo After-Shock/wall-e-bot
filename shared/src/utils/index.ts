@@ -82,6 +82,9 @@ export function formatNumber(num: number): string {
  *
  * Any key ending with 'ChannelId' or 'RoleId' (case-insensitive) is set to null.
  * This prevents invalid references when copying a config to a different guild.
+ *
+ * @note TypeScript return type `T` does not reflect the nulled ID fields.
+ * Runtime values of keys matching the ID pattern will be `null`.
  */
 export function stripServerIds<T extends object>(obj: T): T {
   if (Array.isArray(obj)) {
@@ -96,7 +99,9 @@ export function stripServerIds<T extends object>(obj: T): T {
     const value = obj[key];
     if (/channelid$|roleid$/i.test(key as string)) {
       result[key] = null as unknown as T[keyof T];
-    } else if (value && typeof value === 'object') {
+    } else if (Array.isArray(value)) {
+      result[key] = stripServerIds(value as unknown as object) as T[keyof T];
+    } else if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
       result[key] = stripServerIds(value as object) as T[keyof T];
     } else {
       result[key] = value;
