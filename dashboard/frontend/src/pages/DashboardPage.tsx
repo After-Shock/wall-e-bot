@@ -43,7 +43,8 @@ export default function DashboardPage() {
     );
   }
 
-  const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${import.meta.env.VITE_DISCORD_CLIENT_ID}&permissions=8&scope=bot%20applications.commands`;
+  // Kick, Ban, Manage Channels/Roles/Webhooks, Moderate Members, Messages, Reactions, Embeds
+  const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${import.meta.env.VITE_DISCORD_CLIENT_ID}&permissions=1102494166230&scope=bot%20applications.commands`;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -91,7 +92,7 @@ export default function DashboardPage() {
               </Link>
             ) : (
               <a
-                href={`${inviteUrl}&guild_id=${guild.id}`}
+                href={inviteUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-secondary flex items-center gap-2"

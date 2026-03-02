@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { Shield, Star, MessageSquare, Settings, Bot, Zap, Plus, LogIn } from 'lucide-react';
 
 // Bot invite URL with required permissions
-// Permissions: Administrator (8) - or customize as needed
-const BOT_PERMISSIONS = '8';
+// Kick, Ban, Manage Channels/Roles/Webhooks, Moderate Members, Messages, Reactions, Embeds
+const BOT_PERMISSIONS = '1102494166230';
 const BOT_SCOPES = 'bot%20applications.commands';
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
 
