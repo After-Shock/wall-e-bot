@@ -261,6 +261,10 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 -- Add label column to reaction_roles if not exists
 ALTER TABLE reaction_roles ADD COLUMN IF NOT EXISTS label VARCHAR(100);
 
+-- Stack group: panels sharing a group name deploy together as one Discord message
+ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_group VARCHAR(50);
+ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_position INTEGER DEFAULT 0;
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
 CREATE INDEX IF NOT EXISTS idx_guild_members_xp ON guild_members(guild_id, total_xp DESC);

@@ -41,6 +41,8 @@ interface Panel {
   category_closed_id: string;
   overflow_category_id: string;
   channel_name_template: string;
+  stack_group?: string;
+  stack_position?: number;
   categories?: Category[];
   _expanded?: boolean;
 }
@@ -324,6 +326,11 @@ export default function TicketsPage() {
                   <span className="text-xs text-discord-light bg-discord-dark px-2 py-0.5 rounded">
                     {panel.style} / {panel.panel_type}
                   </span>
+                  {panel.stack_group && (
+                    <span className="text-xs bg-discord-blurple/20 text-discord-blurple px-2 py-0.5 rounded flex items-center gap-1">
+                      Stack: {panel.stack_group}
+                    </span>
+                  )}
                   <span className="text-xs text-discord-light">
                     {panel.categories?.length || 0} categories
                   </span>
@@ -421,6 +428,24 @@ export default function TicketsPage() {
                         className="input w-full"
                         placeholder="Used when open category hits 50 channels"
                       />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block font-medium mb-1">Stack Group</label>
+                      <input
+                        defaultValue={panel.stack_group || ''}
+                        onBlur={async e => {
+                          if (!guildId || !panel.id) return;
+                          const val = e.target.value.trim() || null;
+                          const updated = await ticketApi.updatePanel(guildId, panel.id, { stack_group: val });
+                          setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
+                        }}
+                        className="input w-full"
+                        placeholder="e.g. main-tickets (leave blank for standalone)"
+                      />
+                      <p className="text-xs text-discord-light mt-1">
+                        Panels sharing the same stack group name deploy together as one Discord message.
+                        Use <code className="bg-discord-dark px-1 rounded">/ticket panel send</code> with any panel in the group.
+                      </p>
                     </div>
                   </div>
 

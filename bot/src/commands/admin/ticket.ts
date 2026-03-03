@@ -158,65 +158,97 @@ const command: Command = {
             return;
           }
 
-          const panel = panelResult.rows[0];
+          const rootPanel = panelResult.rows[0];
 
+          // Determine the set of panels to include: stack group (sorted) or just this panel
+          let panelsToSend: any[];
+          if (rootPanel.stack_group) {
+            const stackResult = await client.db.pool.query(
+              'SELECT * FROM ticket_panels WHERE guild_id = $1 AND stack_group = $2 ORDER BY stack_position, id',
+              [interaction.guild!.id, rootPanel.stack_group]
+            );
+            panelsToSend = stackResult.rows;
+          } else {
+            panelsToSend = [rootPanel];
+          }
+
+          // Fetch categories for all panels at once
+          const allPanelIds = panelsToSend.map((p: any) => p.id);
           const catResult = await client.db.pool.query(
-            'SELECT * FROM ticket_categories WHERE panel_id = $1 ORDER BY position',
-            [panelId]
+            'SELECT * FROM ticket_categories WHERE panel_id = ANY($1::int[]) ORDER BY panel_id, position',
+            [allPanelIds]
           );
-          const categories = catResult.rows;
+          const catsByPanel: Record<number, any[]> = {};
+          for (const cat of catResult.rows) {
+            if (!catsByPanel[cat.panel_id]) catsByPanel[cat.panel_id] = [];
+            catsByPanel[cat.panel_id].push(cat);
+          }
+
+          // Build embed description across all panels
+          const descParts: string[] = [];
+          for (const p of panelsToSend) {
+            const cats = catsByPanel[p.id] || [];
+            if (cats.length > 0) {
+              descParts.push(`**${p.name}**\n${cats.map((c: any) => `${c.emoji || '📋'} **${c.name}**${c.description ? ` — ${c.description}` : ''}`).join('\n')}`);
+            } else {
+              descParts.push(`**${p.name}**\nClick below to open a ticket.`);
+            }
+          }
 
           const embed = new EmbedBuilder()
             .setColor(COLORS.PRIMARY)
-            .setTitle(`🎫 ${panel.name}`)
-            .setDescription(
-              categories.length > 0
-                ? `Select a category below to open a ticket.\n\n${categories.map((c: any) => `${c.emoji || '📋'} **${c.name}** — ${c.description || ''}`).join('\n')}`
-                : 'Click the button below to open a support ticket.'
-            )
+            .setTitle('🎫 Open a Ticket')
+            .setDescription(descParts.join('\n\n'))
             .setFooter({ text: 'Wall-E Ticket System' });
 
-          let components: ActionRowBuilder<any>[] = [];
-
-          if (categories.length === 0) {
-            const btn = new ButtonBuilder()
-              .setCustomId(`ticket_open:${panelId}:0`)
-              .setLabel('Open Ticket')
-              .setEmoji('🎫')
-              .setStyle(ButtonStyle.Primary);
-            components = [new ActionRowBuilder<ButtonBuilder>().addComponents(btn)];
-          } else if (panel.panel_type === 'dropdown') {
-            const select = new StringSelectMenuBuilder()
-              .setCustomId(`ticket_select:${panelId}`)
-              .setPlaceholder('Select ticket type...')
-              .addOptions(categories.map((c: any) =>
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(c.name)
-                  .setValue(c.id.toString())
-                  .setDescription((c.description || c.name).substring(0, 100))
-                  .setEmoji(c.emoji || '📋')
-              ));
-            components = [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)];
-          } else {
-            const buttons = categories.slice(0, 5).map((c: any) =>
-              new ButtonBuilder()
-                .setCustomId(`ticket_open:${panelId}:${c.id}`)
-                .setLabel(c.name.substring(0, 80))
-                .setEmoji(c.emoji || '🎫')
-                .setStyle(ButtonStyle.Primary)
-            );
-            components = [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)];
+          // Build one ActionRow per panel (Discord limit: 5 rows)
+          const components: ActionRowBuilder<any>[] = [];
+          for (const p of panelsToSend.slice(0, 5)) {
+            const cats = catsByPanel[p.id] || [];
+            if (p.panel_type === 'dropdown' && cats.length > 0) {
+              const select = new StringSelectMenuBuilder()
+                .setCustomId(`ticket_select:${p.id}`)
+                .setPlaceholder(`${p.name} — select type...`)
+                .addOptions(cats.map((c: any) =>
+                  new StringSelectMenuOptionBuilder()
+                    .setLabel(c.name)
+                    .setValue(c.id.toString())
+                    .setDescription((c.description || c.name).substring(0, 100))
+                    .setEmoji(c.emoji || '📋')
+                ));
+              components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select));
+            } else if (cats.length > 0) {
+              const buttons = cats.slice(0, 5).map((c: any) =>
+                new ButtonBuilder()
+                  .setCustomId(`ticket_open:${p.id}:${c.id}`)
+                  .setLabel(c.name.substring(0, 80))
+                  .setEmoji(c.emoji || '🎫')
+                  .setStyle(ButtonStyle.Primary)
+              );
+              components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons));
+            } else {
+              const btn = new ButtonBuilder()
+                .setCustomId(`ticket_open:${p.id}:0`)
+                .setLabel(p.name.substring(0, 80))
+                .setEmoji('🎫')
+                .setStyle(ButtonStyle.Primary);
+              components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn));
+            }
           }
 
           const msg = await channel.send({ embeds: [embed], components });
 
-          await client.db.pool.query(
-            'UPDATE ticket_panels SET panel_channel_id = $1, panel_message_id = $2 WHERE id = $3',
-            [channel.id, msg.id, panelId]
-          );
+          // Record message ID on all panels in the stack
+          for (const p of panelsToSend) {
+            await client.db.pool.query(
+              'UPDATE ticket_panels SET panel_channel_id = $1, panel_message_id = $2 WHERE id = $3',
+              [channel.id, msg.id, p.id]
+            );
+          }
 
+          const stackNote = panelsToSend.length > 1 ? ` (${panelsToSend.length} panels stacked)` : '';
           await interaction.reply({
-            embeds: [successEmbed('Panel Sent', `Panel sent to ${channel}.`)],
+            embeds: [successEmbed('Panel Sent', `Panel sent to ${channel}${stackNote}.`)],
             ephemeral: true,
           });
           break;
