@@ -13,6 +13,7 @@ import { guildsRouter } from './routes/guilds.js';
 import { usersRouter } from './routes/users.js';
 import { botRouter } from './routes/bot.js';
 import { adminRouter } from './routes/admin.js';
+import { customCommandsRouter } from './routes/customCommands.js';
 import { db } from './db/index.js';
 
 const app = express();
@@ -88,6 +89,7 @@ app.use('/api/guilds', guildsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/bot', botRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/guilds/:guildId/custom-commands', customCommandsRouter);
 
 // Health check
 app.get('/health', (req, res) => {
