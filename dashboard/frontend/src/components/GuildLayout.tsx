@@ -1,5 +1,6 @@
 import { Outlet, useParams, Link } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../services/api';
 import Sidebar from './Sidebar';
 import { ArrowLeft, Server } from 'lucide-react';
 
@@ -11,10 +12,17 @@ interface Guild {
 
 export default function GuildLayout() {
   const { guildId } = useParams<{ guildId: string }>();
-  const queryClient = useQueryClient();
 
-  const guilds = queryClient.getQueryData<Guild[]>(['guilds']);
-  const guild = guilds?.find(g => g.id === guildId) ?? { id: guildId ?? '', name: 'Server', icon: null };
+  const { data: guilds } = useQuery<Guild[]>({
+    queryKey: ['guilds'],
+    queryFn: async () => {
+      const response = await api.get<Guild[]>('/api/guilds');
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const guild = guilds?.find(g => g.id === guildId) ?? { id: guildId ?? '', name: '', icon: null };
 
   return (
     <div className="flex min-h-[calc(100vh-64px)]">
@@ -45,7 +53,7 @@ export default function GuildLayout() {
                 </div>
               )}
               <div>
-                <h1 className="font-semibold text-lg">{guild?.name}</h1>
+                <h1 className="font-semibold text-lg">{guild?.name || <span className="inline-block w-32 h-4 bg-discord-dark rounded animate-pulse" />}</h1>
                 <p className="text-sm text-discord-light">Server Dashboard</p>
               </div>
             </div>

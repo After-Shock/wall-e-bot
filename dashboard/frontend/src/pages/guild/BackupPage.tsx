@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Database,
@@ -38,10 +38,11 @@ export default function BackupPage() {
       return response.data;
     },
     enabled: !!guildId,
-    onSuccess: (data) => {
-      setLocalConfig(data);
-    },
   });
+
+  useEffect(() => {
+    if (config) setLocalConfig(config);
+  }, [config]);
 
   // Fetch backups list
   const {

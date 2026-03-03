@@ -582,7 +582,19 @@ guildsRouter.get(
     const { guildId } = req.params;
 
     try {
-      const overview = await analyticsService.getOverview(guildId);
+      const [overview, discordRes] = await Promise.all([
+        analyticsService.getOverview(guildId),
+        fetch(`https://discord.com/api/v10/guilds/${guildId}?with_counts=true`, {
+          headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+        }),
+      ]);
+
+      // Use Discord API for accurate member/online counts
+      if (discordRes.ok) {
+        const discordGuild = await discordRes.json() as any;
+        overview.totalMembers = discordGuild.approximate_member_count ?? overview.totalMembers;
+      }
+
       res.json(overview);
     } catch (error) {
       logger.error('Error fetching analytics overview:', { guildId, error });
