@@ -141,6 +141,8 @@ const command: Command = {
           ignoredChannels: [],
         },
       };
+    } else {
+      config.guildId = interaction.guild!.id;
     }
 
     switch (subcommand) {

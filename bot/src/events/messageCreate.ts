@@ -31,7 +31,6 @@ export default {
       if (message.guild && message.channel.isTextBased() && 'send' in message.channel) {
         const config = await client.db.getGuildConfig(message.guild.id);
         const prefix = config?.prefix ?? '!';
-        logger.info(`[cmd-debug] content="${message.content}" prefix="${prefix}" starts=${message.content.startsWith(prefix)}`);
         if (message.content.startsWith(prefix)) {
           const rawName = message.content.slice(prefix.length).trim().split(/\s+/)[0];
           if (rawName) {

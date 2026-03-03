@@ -146,10 +146,10 @@ export class DatabaseService {
    */
   async getGuildConfig(guildId: string): Promise<GuildConfig | null> {
     const result = await this.pool.query(
-      'SELECT * FROM guild_configs WHERE guild_id = $1',
+      'SELECT config FROM guild_configs WHERE guild_id = $1',
       [guildId]
     );
-    return result.rows[0] || null;
+    return result.rows[0]?.config || null;
   }
 
   /**
