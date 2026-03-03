@@ -23,7 +23,7 @@ export async function getConfig(guildId: string): Promise<any | null> {
   try {
     const result = await db.query<GuildConfigRow>(
       'SELECT config FROM guild_configs WHERE guild_id = $1',
-      [guildId]
+      [guildId],
     );
 
     if (result.rows.length === 0) {
@@ -49,7 +49,7 @@ export async function getConfigSection(guildId: string, section: string): Promis
       `SELECT config -> $2 AS section_data
        FROM guild_configs
        WHERE guild_id = $1`,
-      [guildId, section]
+      [guildId, section],
     );
 
     if (result.rows.length === 0) {
@@ -74,7 +74,7 @@ export async function getConfigSection(guildId: string, section: string): Promis
 export async function updateConfigSection(
   guildId: string,
   section: string,
-  data: any
+  data: any,
 ): Promise<any> {
   try {
     // Use PostgreSQL's JSONB || operator for deep merge
@@ -89,7 +89,7 @@ export async function updateConfigSection(
          ),
          updated_at = NOW()
        RETURNING config -> $2 AS updated_section`,
-      [guildId, section, JSON.stringify(data)]
+      [guildId, section, JSON.stringify(data)],
     );
 
     return result.rows[0];
@@ -206,7 +206,7 @@ export async function initializeConfig(guildId: string): Promise<any> {
        VALUES ($1, $2, NOW(), NOW())
        ON CONFLICT (guild_id) DO NOTHING
        RETURNING config`,
-      [guildId, JSON.stringify(defaultConfig)]
+      [guildId, JSON.stringify(defaultConfig)],
     );
 
     if (result.rows.length === 0) {

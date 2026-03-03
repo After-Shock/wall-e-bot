@@ -12,7 +12,7 @@ usersRouter.get('/me', requireAuth, asyncHandler(async (req, res) => {
   try {
     const result = await db.query(
       'SELECT discord_id, username, discriminator, avatar, created_at FROM users WHERE discord_id = $1',
-      [authReq.user!.id]
+      [authReq.user!.id],
     );
 
     if (result.rows.length === 0) {
@@ -39,7 +39,7 @@ usersRouter.get('/me/stats', requireAuth, asyncHandler(async (req, res) => {
         MAX(level) as highest_level
        FROM guild_members 
        WHERE user_id = $1`,
-      [authReq.user!.id]
+      [authReq.user!.id],
     );
 
     res.json(result.rows[0] || {

@@ -4,7 +4,7 @@ import {
   User, 
   TextChannel, 
   EmbedBuilder,
-  PermissionFlagsBits 
+  PermissionFlagsBits, 
 } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { COLORS, formatDuration } from '@wall-e/shared';
@@ -17,14 +17,14 @@ export class ModerationService {
     guild: Guild,
     target: GuildMember | User,
     moderator: GuildMember,
-    reason: string
+    reason: string,
   ): Promise<{ success: boolean; warningCount: number; error?: string }> {
     try {
       const warningCount = await this.client.db.addWarning(
         guild.id,
         target.id,
         moderator.id,
-        reason
+        reason,
       );
 
       await this.client.db.logModAction(
@@ -32,7 +32,7 @@ export class ModerationService {
         target.id,
         moderator.id,
         'warn',
-        reason
+        reason,
       );
 
       // Check for auto-punishment thresholds
@@ -59,10 +59,10 @@ export class ModerationService {
           const dmEmbed = new EmbedBuilder()
             .setColor(COLORS.WARNING)
             .setTitle(`⚠️ Warning in ${guild.name}`)
-            .setDescription(`You have been warned by a moderator.`)
+            .setDescription('You have been warned by a moderator.')
             .addFields(
               { name: 'Reason', value: reason },
-              { name: 'Total Warnings', value: warningCount.toString() }
+              { name: 'Total Warnings', value: warningCount.toString() },
             )
             .setTimestamp();
 
@@ -85,7 +85,7 @@ export class ModerationService {
     guild: Guild,
     target: GuildMember,
     moderator: GuildMember,
-    reason: string
+    reason: string,
   ): Promise<{ success: boolean; error?: string }> {
     if (!target.kickable) {
       return { success: false, error: 'Cannot kick this user' };
@@ -126,7 +126,7 @@ export class ModerationService {
     target: GuildMember | User,
     moderator: GuildMember,
     reason: string,
-    deleteMessageDays = 0
+    deleteMessageDays = 0,
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const member = target instanceof GuildMember ? target : null;
@@ -154,7 +154,7 @@ export class ModerationService {
 
       await guild.members.ban(target, { 
         reason, 
-        deleteMessageSeconds: deleteMessageDays * 24 * 60 * 60 
+        deleteMessageSeconds: deleteMessageDays * 24 * 60 * 60, 
       });
 
       await this.client.db.logModAction(guild.id, target.id, moderator.id, 'ban', reason);
@@ -171,7 +171,7 @@ export class ModerationService {
     guild: Guild,
     userId: string,
     moderator: GuildMember,
-    reason: string
+    reason: string,
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await guild.members.unban(userId, reason);
@@ -190,7 +190,7 @@ export class ModerationService {
     target: GuildMember,
     moderator: GuildMember,
     duration: number, // milliseconds
-    reason: string
+    reason: string,
   ): Promise<{ success: boolean; error?: string }> {
     if (!target.moderatable) {
       return { success: false, error: 'Cannot timeout this user' };
@@ -207,7 +207,7 @@ export class ModerationService {
             .setTitle(`🔇 Timed out in ${guild.name}`)
             .addFields(
               { name: 'Reason', value: reason },
-              { name: 'Duration', value: formatDuration(duration) }
+              { name: 'Duration', value: formatDuration(duration) },
             )
             .setTimestamp();
 
@@ -233,7 +233,7 @@ export class ModerationService {
     guild: Guild,
     target: GuildMember,
     moderator: GuildMember,
-    reason: string
+    reason: string,
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await target.timeout(null, reason);
@@ -253,7 +253,7 @@ export class ModerationService {
     target: GuildMember | User,
     moderator: GuildMember,
     reason: string,
-    duration?: number
+    duration?: number,
   ): Promise<void> {
     const config = await this.client.db.getGuildConfig(guild.id);
     if (!config?.moderation?.modLogChannelId) return;
@@ -276,7 +276,7 @@ export class ModerationService {
       .addFields(
         { name: 'User', value: `${target.toString()} (${target.id})`, inline: true },
         { name: 'Moderator', value: moderator.toString(), inline: true },
-        { name: 'Reason', value: reason }
+        { name: 'Reason', value: reason },
       )
       .setTimestamp();
 

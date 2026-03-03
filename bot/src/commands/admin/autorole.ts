@@ -55,7 +55,7 @@ const command: Command = {
         if (role.position >= interaction.guild!.members.me!.roles.highest.position) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'I cannot assign this role as it is higher than or equal to my highest role.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -63,7 +63,7 @@ const command: Command = {
         if (role.managed) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'This role is managed by an integration and cannot be assigned.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -72,13 +72,13 @@ const command: Command = {
           `INSERT INTO auto_roles (guild_id, role_id, delay_minutes, include_bots)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT (guild_id, role_id) DO UPDATE SET delay_minutes = $3, include_bots = $4`,
-          [interaction.guild!.id, role.id, delay, includeBots]
+          [interaction.guild!.id, role.id, delay, includeBots],
         );
 
         await interaction.reply({
           embeds: [successEmbed('Auto-Role Added', 
-            `${role} will be auto-assigned to new members${delay > 0 ? ` after ${delay} minute(s)` : ' immediately'}.${includeBots ? ' (Including bots)' : ''}`
-          )]
+            `${role} will be auto-assigned to new members${delay > 0 ? ` after ${delay} minute(s)` : ' immediately'}.${includeBots ? ' (Including bots)' : ''}`,
+          )],
         });
         break;
       }
@@ -88,19 +88,19 @@ const command: Command = {
 
         const result = await client.db.pool.query(
           'DELETE FROM auto_roles WHERE guild_id = $1 AND role_id = $2 RETURNING id',
-          [interaction.guild!.id, role.id]
+          [interaction.guild!.id, role.id],
         );
 
         if (result.rowCount === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'This role is not set as an auto-role.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
 
         await interaction.reply({
-          embeds: [successEmbed('Auto-Role Removed', `${role} will no longer be auto-assigned.`)]
+          embeds: [successEmbed('Auto-Role Removed', `${role} will no longer be auto-assigned.`)],
         });
         break;
       }
@@ -108,13 +108,13 @@ const command: Command = {
       case 'list': {
         const result = await client.db.pool.query(
           'SELECT * FROM auto_roles WHERE guild_id = $1',
-          [interaction.guild!.id]
+          [interaction.guild!.id],
         );
 
         if (result.rows.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('No Auto-Roles', 'No auto-roles have been configured.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -136,11 +136,11 @@ const command: Command = {
       case 'clear': {
         await client.db.pool.query(
           'DELETE FROM auto_roles WHERE guild_id = $1',
-          [interaction.guild!.id]
+          [interaction.guild!.id],
         );
 
         await interaction.reply({
-          embeds: [successEmbed('Auto-Roles Cleared', 'All auto-roles have been removed.')]
+          embeds: [successEmbed('Auto-Roles Cleared', 'All auto-roles have been removed.')],
         });
         break;
       }

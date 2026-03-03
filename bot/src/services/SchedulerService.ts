@@ -91,7 +91,7 @@ export class SchedulerService {
   private async applyBotActivity() {
     try {
       const result = await this.client.db.pool.query(
-        "SELECT value FROM bot_settings WHERE key = 'activity'"
+        "SELECT value FROM bot_settings WHERE key = 'activity'",
       );
       const data = result.rows[0]?.value;
       if (!data?.text) return;
@@ -116,7 +116,7 @@ export class SchedulerService {
       const result = await this.client.db.pool.query(
         `SELECT * FROM scheduled_messages 
          WHERE enabled = true AND next_run <= $1`,
-        [now]
+        [now],
       );
 
       for (const task of result.rows as ScheduledTask[]) {
@@ -157,7 +157,7 @@ export class SchedulerService {
         // One-time task, disable it
         await this.client.db.pool.query(
           'UPDATE scheduled_messages SET enabled = false, last_run = NOW() WHERE id = $1',
-          [task.id]
+          [task.id],
         );
         return;
       }
@@ -165,7 +165,7 @@ export class SchedulerService {
       // Update last_run and next_run
       await this.client.db.pool.query(
         'UPDATE scheduled_messages SET last_run = NOW(), next_run = $2 WHERE id = $1',
-        [task.id, nextRun]
+        [task.id, nextRun],
       );
 
       logger.info(`Executed scheduled task ${task.id} in guild ${task.guild_id}`);
@@ -179,7 +179,7 @@ export class SchedulerService {
       // Get global config for all guilds with auto-close enabled
       const configs = await this.client.db.pool.query(
         `SELECT guild_id, auto_close_hours FROM ticket_config
-         WHERE auto_close_hours > 0`
+         WHERE auto_close_hours > 0`,
       );
 
       for (const config of configs.rows) {
@@ -192,7 +192,7 @@ export class SchedulerService {
            WHERE t.guild_id = $1
              AND t.status IN ('open', 'claimed')
              AND t.last_activity < NOW() - INTERVAL '1 hour' * $2`,
-          [guild_id, auto_close_hours]
+          [guild_id, auto_close_hours],
         );
 
         const guild = this.client.guilds.cache.get(guild_id);
@@ -208,14 +208,14 @@ export class SchedulerService {
               embeds: [new EmbedBuilder()
                 .setColor(COLORS.ERROR)
                 .setTitle('🔒 Ticket Auto-Closed')
-                .setDescription('This ticket has been automatically closed due to inactivity.')
+                .setDescription('This ticket has been automatically closed due to inactivity.'),
               ],
             });
 
             await this.client.db.pool.query(
               `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
                close_reason = 'Auto-closed due to inactivity' WHERE id = $1`,
-              [ticket.id, this.client.user?.id ?? 'auto-close']
+              [ticket.id, this.client.user?.id ?? 'auto-close'],
             );
 
             // Try to move to closed category
@@ -223,7 +223,7 @@ export class SchedulerService {
               `SELECT tp.category_closed_id FROM tickets t
                JOIN ticket_panels tp ON t.panel_id = tp.id
                WHERE t.id = $1`,
-              [ticket.id]
+              [ticket.id],
             );
             if (panelData.rows[0]?.category_closed_id) {
               try {
@@ -242,14 +242,14 @@ export class SchedulerService {
                 .setColor(COLORS.WARNING)
                 .setTitle('⚠️ Inactivity Warning')
                 .setDescription(
-                  `This ticket will be automatically closed in **1 hour** due to inactivity.\n` +
-                  `Send a message to keep it open.`
-                )
+                  'This ticket will be automatically closed in **1 hour** due to inactivity.\n' +
+                  'Send a message to keep it open.',
+                ),
               ],
             });
             await this.client.db.pool.query(
               'UPDATE tickets SET warned_inactive = TRUE WHERE id = $1',
-              [ticket.id]
+              [ticket.id],
             );
           }
         }
@@ -312,7 +312,7 @@ export class SchedulerService {
       cronExpression?: string;
       runAt?: Date;
       createdBy: string;
-    }
+    },
   ): Promise<number> {
     let nextRun: Date;
     
@@ -340,8 +340,8 @@ export class SchedulerService {
         options.intervalMinutes,
         options.cronExpression,
         nextRun,
-        options.createdBy
-      ]
+        options.createdBy,
+      ],
     );
 
     return result.rows[0].id;
@@ -350,7 +350,7 @@ export class SchedulerService {
   async deleteScheduledMessage(guildId: string, taskId: number): Promise<boolean> {
     const result = await this.client.db.pool.query(
       'DELETE FROM scheduled_messages WHERE id = $1 AND guild_id = $2 RETURNING id',
-      [taskId, guildId]
+      [taskId, guildId],
     );
     return result.rowCount! > 0;
   }
@@ -358,7 +358,7 @@ export class SchedulerService {
   async listScheduledMessages(guildId: string): Promise<ScheduledTask[]> {
     const result = await this.client.db.pool.query(
       'SELECT * FROM scheduled_messages WHERE guild_id = $1 ORDER BY next_run',
-      [guildId]
+      [guildId],
     );
     return result.rows;
   }

@@ -5,7 +5,7 @@
  */
 export function resolveChannelName(
   template: string,
-  vars: { type: string; number: number; username: string; userid: string }
+  vars: { type: string; number: number; username: string; userid: string },
 ): string {
   const sanitize = (s: string) =>
     s.toLowerCase()
@@ -36,7 +36,7 @@ export function buildTranscript(
   channelName: string,
   userId: string,
   createdAt: Date,
-  messages: TranscriptMessage[]
+  messages: TranscriptMessage[],
 ): string {
   let transcript = `Ticket Transcript - ${channelName}\n`;
   transcript += `Created: ${createdAt.toISOString()}\n`;

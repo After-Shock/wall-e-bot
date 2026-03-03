@@ -40,7 +40,7 @@ export function modEmbed(action: string, target: string, moderator: string, reas
     .addFields(
       { name: 'User', value: target, inline: true },
       { name: 'Moderator', value: moderator, inline: true },
-      { name: 'Reason', value: reason || 'No reason provided' }
+      { name: 'Reason', value: reason || 'No reason provided' },
     )
     .setTimestamp();
 }

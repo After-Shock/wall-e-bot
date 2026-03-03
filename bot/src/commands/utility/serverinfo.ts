@@ -30,7 +30,7 @@ const command: Command = {
         { name: '🎭 Roles', value: guild.roles.cache.size.toString(), inline: true },
         { name: '💬 Channels', value: `${textChannels} Text • ${voiceChannels} Voice • ${categories} Categories`, inline: false },
         { name: '🔒 Verification Level', value: guild.verificationLevel.toString(), inline: true },
-        { name: '🚀 Boost Level', value: `Level ${guild.premiumTier} (${guild.premiumSubscriptionCount || 0} boosts)`, inline: true }
+        { name: '🚀 Boost Level', value: `Level ${guild.premiumTier} (${guild.premiumSubscriptionCount || 0} boosts)`, inline: true },
       )
       .setTimestamp();
 

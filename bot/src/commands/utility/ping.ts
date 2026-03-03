@@ -18,7 +18,7 @@ const command: Command = {
       .setTitle('🏓 Pong!')
       .addFields(
         { name: '📡 Roundtrip', value: `${roundtrip}ms`, inline: true },
-        { name: '💓 WebSocket', value: `${wsLatency}ms`, inline: true }
+        { name: '💓 WebSocket', value: `${wsLatency}ms`, inline: true },
       )
       .setTimestamp();
 

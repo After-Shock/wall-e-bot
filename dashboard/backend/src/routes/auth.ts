@@ -10,7 +10,7 @@ authRouter.get('/callback',
   passport.authenticate('discord', { failureRedirect: '/' }),
   (req: Request, res: Response) => {
     res.redirect(`${process.env.DASHBOARD_URL || 'http://localhost:3000'}/dashboard`);
-  }
+  },
 );
 
 authRouter.get('/logout', (req: Request, res: Response) => {

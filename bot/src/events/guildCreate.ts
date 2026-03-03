@@ -24,7 +24,7 @@ export default {
          added_by_username = COALESCE(guild_whitelist.added_by_username, EXCLUDED.added_by_username),
          expires_at = COALESCE(guild_whitelist.expires_at, EXCLUDED.expires_at),
          left_at = NULL`,
-      [guild.id, guild.name, guild.icon, guild.memberCount, guild.ownerId, guildOwner?.username ?? null]
+      [guild.id, guild.name, guild.icon, guild.memberCount, guild.ownerId, guildOwner?.username ?? null],
     ).catch(e => logger.error('Failed to add guild to whitelist:', e));
 
     // DM the bot owner about the new pending guild
@@ -35,7 +35,7 @@ export default {
         await owner.send(
           `📥 **New server added bot:** ${guild.name} (${guild.id})\n` +
           `Members: ${guild.memberCount}\n` +
-          `Status: **pending** — approve or blacklist in the admin panel.`
+          'Status: **pending** — approve or blacklist in the admin panel.',
         );
       } catch {
         // Owner has DMs disabled
@@ -45,7 +45,7 @@ export default {
     // If blacklisted, leave immediately
     const result = await client.db.pool.query(
       'SELECT status FROM guild_whitelist WHERE guild_id = $1',
-      [guild.id]
+      [guild.id],
     ).catch(() => null);
 
     if (result?.rows[0]?.status === 'blacklisted') {

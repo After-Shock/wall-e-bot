@@ -12,10 +12,10 @@ adminRouter.use(requireAuth, requireBotOwner);
 // GET /api/admin/stats — overall bot stats
 adminRouter.get('/stats', asyncHandler(async (req, res) => {
   const [guilds, users, pending, expiringSoon] = await Promise.all([
-    db.query(`SELECT COUNT(*) FROM guild_whitelist WHERE left_at IS NULL`),
-    db.query(`SELECT COUNT(*) FROM guild_members`),
-    db.query(`SELECT COUNT(*) FROM guild_whitelist WHERE status = 'pending' AND left_at IS NULL`),
-    db.query(`SELECT COUNT(*) FROM guild_whitelist WHERE status = 'approved' AND permanent = FALSE AND expires_at BETWEEN NOW() AND NOW() + INTERVAL '30 days' AND left_at IS NULL`),
+    db.query('SELECT COUNT(*) FROM guild_whitelist WHERE left_at IS NULL'),
+    db.query('SELECT COUNT(*) FROM guild_members'),
+    db.query('SELECT COUNT(*) FROM guild_whitelist WHERE status = \'pending\' AND left_at IS NULL'),
+    db.query('SELECT COUNT(*) FROM guild_whitelist WHERE status = \'approved\' AND permanent = FALSE AND expires_at BETWEEN NOW() AND NOW() + INTERVAL \'30 days\' AND left_at IS NULL'),
   ]);
   res.json({
     totalGuilds: parseInt(guilds.rows[0].count),
@@ -31,7 +31,7 @@ adminRouter.get('/guilds', asyncHandler(async (req, res) => {
     `SELECT guild_id, guild_name, guild_icon, member_count, status, added_at, approved_at, left_at,
             added_by, added_by_username, expires_at, permanent
      FROM guild_whitelist
-     ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, added_at DESC`
+     ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, added_at DESC`,
   );
   res.json(result.rows.map(r => ({
     id: r.guild_id,
@@ -53,8 +53,8 @@ adminRouter.get('/guilds', asyncHandler(async (req, res) => {
 adminRouter.post('/guilds/:guildId/approve', asyncHandler(async (req, res) => {
   const { guildId } = req.params;
   await db.query(
-    `UPDATE guild_whitelist SET status = 'approved', approved_at = NOW() WHERE guild_id = $1`,
-    [guildId]
+    'UPDATE guild_whitelist SET status = \'approved\', approved_at = NOW() WHERE guild_id = $1',
+    [guildId],
   );
   logger.info(`Admin approved guild ${guildId}`);
   res.json({ success: true });
@@ -64,8 +64,8 @@ adminRouter.post('/guilds/:guildId/approve', asyncHandler(async (req, res) => {
 adminRouter.post('/guilds/:guildId/blacklist', asyncHandler(async (req, res) => {
   const { guildId } = req.params;
   await db.query(
-    `UPDATE guild_whitelist SET status = 'blacklisted' WHERE guild_id = $1`,
-    [guildId]
+    'UPDATE guild_whitelist SET status = \'blacklisted\' WHERE guild_id = $1',
+    [guildId],
   );
   // Tell bot to leave via Discord API
   const leaveRes = await fetch(`https://discord.com/api/v10/users/@me/guilds/${guildId}`, {
@@ -91,8 +91,8 @@ adminRouter.delete('/guilds/:guildId', asyncHandler(async (req, res) => {
 adminRouter.post('/guilds/:guildId/extend', asyncHandler(async (req, res) => {
   const { guildId } = req.params;
   await db.query(
-    `UPDATE guild_whitelist SET expires_at = GREATEST(expires_at, NOW()) + INTERVAL '1 year' WHERE guild_id = $1`,
-    [guildId]
+    'UPDATE guild_whitelist SET expires_at = GREATEST(expires_at, NOW()) + INTERVAL \'1 year\' WHERE guild_id = $1',
+    [guildId],
   );
   logger.info(`Admin extended subscription for guild ${guildId}`);
   res.json({ success: true });
@@ -102,8 +102,8 @@ adminRouter.post('/guilds/:guildId/extend', asyncHandler(async (req, res) => {
 adminRouter.post('/guilds/:guildId/permanent', asyncHandler(async (req, res) => {
   const { guildId } = req.params;
   const result = await db.query(
-    `UPDATE guild_whitelist SET permanent = NOT permanent WHERE guild_id = $1 RETURNING permanent`,
-    [guildId]
+    'UPDATE guild_whitelist SET permanent = NOT permanent WHERE guild_id = $1 RETURNING permanent',
+    [guildId],
   );
   logger.info(`Admin toggled permanent for guild ${guildId}: ${result.rows[0]?.permanent}`);
   res.json({ permanent: result.rows[0]?.permanent ?? false });

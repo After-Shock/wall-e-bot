@@ -12,7 +12,7 @@ export default {
       client.db.pool.query(
         `UPDATE guild_members SET left_at = NOW()
          WHERE guild_id = $1 AND user_id = $2`,
-        [member.guild.id, member.id]
+        [member.guild.id, member.id],
       ).catch(() => {});
 
       const config = await client.db.getGuildConfig(member.guild.id);

@@ -110,7 +110,7 @@ export class DatabaseService {
   async queryWithRetry(
     query: string,
     params: unknown[],
-    maxRetries = 3
+    maxRetries = 3,
   ): Promise<pg.QueryResult> {
     let lastError: Error | undefined;
     
@@ -147,7 +147,7 @@ export class DatabaseService {
   async getGuildConfig(guildId: string): Promise<GuildConfig | null> {
     const result = await this.pool.query(
       'SELECT config FROM guild_configs WHERE guild_id = $1',
-      [guildId]
+      [guildId],
     );
     return result.rows[0]?.config || null;
   }
@@ -163,14 +163,14 @@ export class DatabaseService {
       `INSERT INTO guild_configs (guild_id, config)
        VALUES ($1, $2)
        ON CONFLICT (guild_id) DO UPDATE SET config = $2, updated_at = NOW()`,
-      [config.guildId, JSON.stringify(config)]
+      [config.guildId, JSON.stringify(config)],
     );
   }
 
   async getMember(guildId: string, odiscordId: string): Promise<GuildMember | null> {
     const result = await this.pool.query(
       'SELECT * FROM guild_members WHERE guild_id = $1 AND user_id = $2',
-      [guildId, odiscordId]
+      [guildId, odiscordId],
     );
     return result.rows[0] || null;
   }
@@ -185,7 +185,7 @@ export class DatabaseService {
          total_xp = COALESCE($5, guild_members.total_xp),
          message_count = COALESCE($6, guild_members.message_count),
          updated_at = NOW()`,
-      [guildId, odiscordId, data.xp, data.level, data.totalXp, data.messageCount]
+      [guildId, odiscordId, data.xp, data.level, data.totalXp, data.messageCount],
     );
   }
 
@@ -218,7 +218,7 @@ export class DatabaseService {
            last_xp_gain = NOW(),
            joined_at = COALESCE(guild_members.joined_at, NOW())
          RETURNING xp, level, total_xp`,
-        [guildId, userId, xp]
+        [guildId, userId, xp],
       );
 
       const { xp: newXp, level, total_xp } = result.rows[0];
@@ -231,7 +231,7 @@ export class DatabaseService {
       if (leveledUp) {
         await client.query(
           'UPDATE guild_members SET level = $3 WHERE guild_id = $1 AND user_id = $2',
-          [guildId, userId, newLevel]
+          [guildId, userId, newLevel],
         );
       }
 
@@ -246,7 +246,7 @@ export class DatabaseService {
        WHERE guild_id = $1 
        ORDER BY total_xp DESC 
        LIMIT $2`,
-      [guildId, limit]
+      [guildId, limit],
     );
     return result.rows;
   }
@@ -264,13 +264,13 @@ export class DatabaseService {
       await client.query(
         `INSERT INTO warnings (guild_id, user_id, moderator_id, reason)
          VALUES ($1, $2, $3, $4)`,
-        [guildId, userId, moderatorId, reason]
+        [guildId, userId, moderatorId, reason],
       );
       
       // Get accurate count within the same transaction
       const countResult = await client.query(
         'SELECT COUNT(*)::int as count FROM warnings WHERE guild_id = $1 AND user_id = $2 AND active = true',
-        [guildId, userId]
+        [guildId, userId],
       );
       
       return countResult.rows[0].count;
@@ -282,7 +282,7 @@ export class DatabaseService {
       `SELECT * FROM warnings 
        WHERE guild_id = $1 AND user_id = $2 AND active = true 
        ORDER BY created_at DESC`,
-      [guildId, odiscordId]
+      [guildId, odiscordId],
     );
     return result.rows;
   }
@@ -290,7 +290,7 @@ export class DatabaseService {
   async clearWarnings(guildId: string, odiscordId: string) {
     await this.pool.query(
       'UPDATE warnings SET active = false WHERE guild_id = $1 AND user_id = $2',
-      [guildId, odiscordId]
+      [guildId, odiscordId],
     );
   }
 
@@ -298,7 +298,7 @@ export class DatabaseService {
     await this.pool.query(
       `INSERT INTO mod_actions (guild_id, target_id, moderator_id, action, reason, duration)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [guildId, targetId, moderatorId, action, reason, duration]
+      [guildId, targetId, moderatorId, action, reason, duration],
     );
   }
 
@@ -320,20 +320,20 @@ export class DatabaseService {
   async createTicket(
     guildId: string,
     channelId: string,
-    userId: string
+    userId: string,
   ): Promise<{ ticketId: number; ticketNumber: number }> {
     return this.transaction(async (client) => {
       // Lock the tickets table for this guild to prevent race conditions
       // on ticket number generation
       await client.query(
         'SELECT 1 FROM tickets WHERE guild_id = $1 FOR UPDATE',
-        [guildId]
+        [guildId],
       );
 
       // Get next ticket number
       const numberResult = await client.query(
         'SELECT COALESCE(MAX(ticket_number), 0) + 1 as next FROM tickets WHERE guild_id = $1',
-        [guildId]
+        [guildId],
       );
       const ticketNumber = numberResult.rows[0].next;
 
@@ -342,7 +342,7 @@ export class DatabaseService {
         `INSERT INTO tickets (guild_id, channel_id, user_id, ticket_number)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        [guildId, channelId, userId, ticketNumber]
+        [guildId, channelId, userId, ticketNumber],
       );
 
       return {
@@ -360,7 +360,7 @@ export class DatabaseService {
       `SELECT channel_id FROM tickets 
        WHERE guild_id = $1 AND user_id = $2 AND status = 'open'
        LIMIT 1`,
-      [guildId, userId]
+      [guildId, userId],
     );
 
     if (result.rows.length > 0) {
@@ -394,7 +394,7 @@ export class DatabaseService {
        ORDER BY next_run
        LIMIT $1
        FOR UPDATE SKIP LOCKED`,
-      [limit]
+      [limit],
     );
     return result.rows;
   }
@@ -406,13 +406,13 @@ export class DatabaseService {
     if (nextRun) {
       await this._pool.query(
         'UPDATE scheduled_messages SET last_run = NOW(), next_run = $2 WHERE id = $1',
-        [taskId, nextRun]
+        [taskId, nextRun],
       );
     } else {
       // One-time task, disable it
       await this._pool.query(
         'UPDATE scheduled_messages SET last_run = NOW(), enabled = false WHERE id = $1',
-        [taskId]
+        [taskId],
       );
     }
   }

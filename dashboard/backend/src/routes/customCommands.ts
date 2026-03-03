@@ -28,7 +28,7 @@ customCommandsRouter.get('/', asyncHandler(async (req, res) => {
     `SELECT id, name, response, embed_response, embed_color, cooldown,
             delete_command, case_sensitive, trigger_on_edit, enabled, uses, created_at
      FROM custom_commands WHERE guild_id = $1 ORDER BY name`,
-    [guildId]
+    [guildId],
   );
   res.json(result.rows);
 }));
@@ -45,7 +45,7 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
 
   const existing = await db.query(
     'SELECT id FROM custom_commands WHERE guild_id = $1 AND name = $2',
-    [guildId, d.name]
+    [guildId, d.name],
   );
   if (existing.rows.length > 0) {
     res.status(409).json({ error: `Command "${d.name}" already exists` });
@@ -60,7 +60,7 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
      RETURNING *`,
     [guildId, d.name, d.response, d.embed_response, d.embed_color ?? null,
      d.cooldown, d.delete_command, d.case_sensitive, d.trigger_on_edit,
-     d.enabled, (req as any).user?.discord_id ?? 'dashboard']
+     d.enabled, (req as any).user?.discord_id ?? 'dashboard'],
   );
   logger.info(`Custom command created: ${d.name} in ${guildId}`);
   res.status(201).json(result.rows[0]);
@@ -87,7 +87,7 @@ customCommandsRouter.patch('/:commandId', asyncHandler(async (req, res) => {
   const result = await db.query(
     `UPDATE custom_commands SET ${setClauses}, updated_at = NOW()
      WHERE id = $1 AND guild_id = $2 RETURNING *`,
-    [commandId, guildId, ...values]
+    [commandId, guildId, ...values],
   );
   if (result.rows.length === 0) {
     res.status(404).json({ error: 'Command not found' });
@@ -101,7 +101,7 @@ customCommandsRouter.delete('/:commandId', asyncHandler(async (req, res) => {
   const { guildId, commandId } = req.params;
   const result = await db.query(
     'DELETE FROM custom_commands WHERE id = $1 AND guild_id = $2 RETURNING name',
-    [commandId, guildId]
+    [commandId, guildId],
   );
   if (result.rows.length === 0) {
     res.status(404).json({ error: 'Command not found' });

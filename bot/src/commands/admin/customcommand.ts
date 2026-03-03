@@ -93,13 +93,13 @@ const command: Command = {
         // Check if command already exists
         const existing = await client.db.pool.query(
           'SELECT id FROM custom_commands WHERE guild_id = $1 AND name = $2',
-          [interaction.guild!.id, name]
+          [interaction.guild!.id, name],
         );
 
         if (existing.rows.length > 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', `Command \`${name}\` already exists. Use \`/customcommand edit\` to modify it.`)],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -107,13 +107,13 @@ const command: Command = {
         await client.db.pool.query(
           `INSERT INTO custom_commands (guild_id, name, response, embed_response, embed_color, cooldown, delete_command, created_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [interaction.guild!.id, name, response, embed, embedColor, cooldown, deleteTrigger, interaction.user.id]
+          [interaction.guild!.id, name, response, embed, embedColor, cooldown, deleteTrigger, interaction.user.id],
         );
 
         const guildConfig = await client.db.getGuildConfig(interaction.guild!.id);
         const prefix = guildConfig?.prefix ?? '!';
         await interaction.reply({
-          embeds: [successEmbed('Command Created', `Custom command \`${name}\` has been created!\n\nUse it with: \`${prefix}${name}\``)]
+          embeds: [successEmbed('Command Created', `Custom command \`${name}\` has been created!\n\nUse it with: \`${prefix}${name}\``)],
         });
         break;
       }
@@ -123,19 +123,19 @@ const command: Command = {
 
         const result = await client.db.pool.query(
           'DELETE FROM custom_commands WHERE guild_id = $1 AND name = $2 RETURNING id',
-          [interaction.guild!.id, name]
+          [interaction.guild!.id, name],
         );
 
         if (result.rowCount === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', `Command \`${name}\` not found.`)],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
 
         await interaction.reply({
-          embeds: [successEmbed('Command Deleted', `Custom command \`${name}\` has been deleted.`)]
+          embeds: [successEmbed('Command Deleted', `Custom command \`${name}\` has been deleted.`)],
         });
         break;
       }
@@ -143,13 +143,13 @@ const command: Command = {
       case 'list': {
         const result = await client.db.pool.query(
           'SELECT name, uses, created_at FROM custom_commands WHERE guild_id = $1 ORDER BY uses DESC',
-          [interaction.guild!.id]
+          [interaction.guild!.id],
         );
 
         if (result.rows.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('No Commands', 'No custom commands have been created yet.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -158,7 +158,7 @@ const command: Command = {
           .setColor(COLORS.PRIMARY)
           .setTitle('📝 Custom Commands')
           .setDescription(result.rows.map((cmd, i) => 
-            `**${i + 1}.** \`${cmd.name}\` - ${cmd.uses} uses`
+            `**${i + 1}.** \`${cmd.name}\` - ${cmd.uses} uses`,
           ).join('\n'))
           .setFooter({ text: `${result.rows.length} command(s)` });
 
@@ -171,13 +171,13 @@ const command: Command = {
 
         const result = await client.db.pool.query(
           'SELECT * FROM custom_commands WHERE guild_id = $1 AND name = $2',
-          [interaction.guild!.id, name]
+          [interaction.guild!.id, name],
         );
 
         if (result.rows.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', `Command \`${name}\` not found.`)],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -192,7 +192,7 @@ const command: Command = {
             { name: 'Cooldown', value: `${cmd.cooldown}s`, inline: true },
             { name: 'Embed', value: cmd.embed_response ? 'Yes' : 'No', inline: true },
             { name: 'Created By', value: `<@${cmd.created_by}>`, inline: true },
-            { name: 'Created', value: `<t:${Math.floor(new Date(cmd.created_at).getTime() / 1000)}:R>`, inline: true }
+            { name: 'Created', value: `<t:${Math.floor(new Date(cmd.created_at).getTime() / 1000)}:R>`, inline: true },
           );
 
         await interaction.reply({ embeds: [embed] });
@@ -228,7 +228,7 @@ const command: Command = {
         if (updates.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'No changes specified.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -236,19 +236,19 @@ const command: Command = {
         const result = await client.db.pool.query(
           `UPDATE custom_commands SET ${updates.join(', ')}, updated_at = NOW() 
            WHERE guild_id = $1 AND name = $2 RETURNING id`,
-          values
+          values,
         );
 
         if (result.rowCount === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', `Command \`${name}\` not found.`)],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
 
         await interaction.reply({
-          embeds: [successEmbed('Command Updated', `Custom command \`${name}\` has been updated.`)]
+          embeds: [successEmbed('Command Updated', `Custom command \`${name}\` has been updated.`)],
         });
         break;
       }

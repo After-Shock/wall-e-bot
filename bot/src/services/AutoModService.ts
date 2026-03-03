@@ -1,7 +1,6 @@
 import { Message, GuildMember, TextChannel, EmbedBuilder } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
-import type { AutoModConfig } from '@wall-e/shared';
-import { COLORS } from '@wall-e/shared';
+import { COLORS, type AutoModConfig } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
 
 export class AutoModService {
@@ -18,7 +17,7 @@ export class AutoModService {
     if (config.ignoredChannels?.includes(message.channel.id)) return false;
     
     const hasIgnoredRole = config.ignoredRoles?.some(roleId => 
-      message.member!.roles.cache.has(roleId)
+      message.member!.roles.cache.has(roleId),
     );
     if (hasIgnoredRole) return false;
 
@@ -41,7 +40,7 @@ export class AutoModService {
     const count = await this.client.cache.incrementSpamTracker(
       message.guild!.id,
       message.author.id,
-      interval
+      interval,
     );
 
     if (count > maxMessages) {
@@ -57,7 +56,7 @@ export class AutoModService {
 
     const content = message.content.toLowerCase();
     const hasBlockedWord = config.wordFilter.words.some(word => 
-      content.includes(word.toLowerCase())
+      content.includes(word.toLowerCase()),
     );
 
     if (hasBlockedWord) {
@@ -65,7 +64,7 @@ export class AutoModService {
         message, 
         config.wordFilter.action, 
         'Blocked word detected',
-        config.wordFilter.muteDuration
+        config.wordFilter.muteDuration,
       );
       return true;
     }
@@ -85,7 +84,7 @@ export class AutoModService {
       try {
         const domain = new URL(url).hostname;
         return !config.linkFilter!.allowedDomains.some(allowed => 
-          domain.endsWith(allowed)
+          domain.endsWith(allowed),
         );
       } catch {
         return true;
@@ -125,7 +124,7 @@ export class AutoModService {
     message: Message,
     action: string,
     reason: string,
-    muteDuration?: number
+    muteDuration?: number,
   ): Promise<void> {
     try {
       // Always try to delete the message first
@@ -138,7 +137,7 @@ export class AutoModService {
           message.guild!,
           message.member!,
           message.guild!.members.me!,
-          `[AutoMod] ${reason}`
+          `[AutoMod] ${reason}`,
         );
       } else if (action === 'mute' && muteDuration) {
         await this.client.moderation.timeout(
@@ -146,7 +145,7 @@ export class AutoModService {
           message.member!,
           message.guild!.members.me!,
           muteDuration * 60 * 1000, // Convert minutes to ms
-          `[AutoMod] ${reason}`
+          `[AutoMod] ${reason}`,
         );
       }
 
@@ -160,13 +159,13 @@ export class AutoModService {
   private async logAutoModAction(
     message: Message,
     action: string,
-    reason: string
+    reason: string,
   ): Promise<void> {
     const config = await this.client.db.getGuildConfig(message.guild!.id);
     if (!config?.moderation?.modLogChannelId) return;
 
     const channel = message.guild!.channels.cache.get(
-      config.moderation.modLogChannelId
+      config.moderation.modLogChannelId,
     ) as TextChannel;
     if (!channel) return;
 
@@ -178,7 +177,7 @@ export class AutoModService {
         { name: 'Channel', value: message.channel.toString(), inline: true },
         { name: 'Action', value: action, inline: true },
         { name: 'Reason', value: reason },
-        { name: 'Message Content', value: message.content.substring(0, 1000) || 'N/A' }
+        { name: 'Message Content', value: message.content.substring(0, 1000) || 'N/A' },
       )
       .setTimestamp();
 

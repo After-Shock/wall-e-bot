@@ -40,7 +40,7 @@ const command: Command = {
     if (!duration) {
       await interaction.reply({
         embeds: [errorEmbed('Error', 'Invalid duration format. Use formats like: 1d, 1w, 30d')],
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
@@ -49,7 +49,7 @@ const command: Command = {
     if (duration > 365 * 24 * 60 * 60 * 1000) {
       await interaction.reply({
         embeds: [errorEmbed('Error', 'Ban duration cannot exceed 1 year.')],
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
@@ -57,7 +57,7 @@ const command: Command = {
     if (target.id === interaction.user.id) {
       await interaction.reply({
         embeds: [errorEmbed('Error', 'You cannot ban yourself.')],
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
@@ -65,7 +65,7 @@ const command: Command = {
     if (target.id === client.user?.id) {
       await interaction.reply({
         embeds: [errorEmbed('Error', 'I cannot ban myself.')],
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
@@ -74,7 +74,7 @@ const command: Command = {
     if (member && !member.bannable) {
       await interaction.reply({
         embeds: [errorEmbed('Error', 'I cannot ban this user.')],
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
@@ -87,7 +87,7 @@ const command: Command = {
         .addFields(
           { name: 'Reason', value: reason },
           { name: 'Duration', value: formatDuration(duration) },
-          { name: 'Expires', value: `<t:${Math.floor((Date.now() + duration) / 1000)}:R>` }
+          { name: 'Expires', value: `<t:${Math.floor((Date.now() + duration) / 1000)}:R>` },
         )
         .setTimestamp();
 
@@ -99,7 +99,7 @@ const command: Command = {
     // Ban the user
     await interaction.guild!.members.ban(target, {
       reason: `[Tempban: ${formatDuration(duration)}] ${reason}`,
-      deleteMessageSeconds: deleteDays * 24 * 60 * 60
+      deleteMessageSeconds: deleteDays * 24 * 60 * 60,
     });
 
     // Schedule unban
@@ -107,7 +107,7 @@ const command: Command = {
     await client.db.pool.query(
       `INSERT INTO temp_bans (guild_id, user_id, moderator_id, reason, duration, unban_at)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [interaction.guild!.id, target.id, interaction.user.id, reason, duration, unbanAt]
+      [interaction.guild!.id, target.id, interaction.user.id, reason, duration, unbanAt],
     );
 
     // Log the action
@@ -117,7 +117,7 @@ const command: Command = {
       interaction.user.id,
       'tempban',
       reason,
-      duration
+      duration,
     );
 
     const embed = new EmbedBuilder()
@@ -127,7 +127,7 @@ const command: Command = {
         { name: 'User', value: `${target.tag} (${target.id})`, inline: true },
         { name: 'Duration', value: formatDuration(duration), inline: true },
         { name: 'Expires', value: `<t:${Math.floor(unbanAt.getTime() / 1000)}:R>`, inline: true },
-        { name: 'Reason', value: reason }
+        { name: 'Reason', value: reason },
       )
       .setTimestamp();
 

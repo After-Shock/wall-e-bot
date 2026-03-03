@@ -159,7 +159,7 @@ const command: Command = {
         await client.cache.invalidateGuildConfig(interaction.guild!.id);
 
         await interaction.reply({
-          embeds: [successEmbed('Welcome Messages Configured', `Welcome messages will be sent to ${channel}.\n\n**Preview:**\n${message.replace('{user}', interaction.user.toString()).replace('{server}', interaction.guild!.name).replace('{memberCount}', interaction.guild!.memberCount.toString())}`)]
+          embeds: [successEmbed('Welcome Messages Configured', `Welcome messages will be sent to ${channel}.\n\n**Preview:**\n${message.replace('{user}', interaction.user.toString()).replace('{server}', interaction.guild!.name).replace('{memberCount}', interaction.guild!.memberCount.toString())}`)],
         });
         break;
       }
@@ -175,7 +175,7 @@ const command: Command = {
         await client.cache.invalidateGuildConfig(interaction.guild!.id);
 
         await interaction.reply({
-          embeds: [successEmbed('Mod Log Configured', `Moderation actions will be logged in ${channel}.`)]
+          embeds: [successEmbed('Mod Log Configured', `Moderation actions will be logged in ${channel}.`)],
         });
         break;
       }
@@ -194,7 +194,7 @@ const command: Command = {
         await client.cache.invalidateGuildConfig(interaction.guild!.id);
 
         await interaction.reply({
-          embeds: [successEmbed('Leveling System', `Leveling has been **${enabled ? 'enabled' : 'disabled'}**.${channel ? `\nLevel up messages will be sent to ${channel}.` : ''}`)]
+          embeds: [successEmbed('Leveling System', `Leveling has been **${enabled ? 'enabled' : 'disabled'}**.${channel ? `\nLevel up messages will be sent to ${channel}.` : ''}`)],
         });
         break;
       }
@@ -222,7 +222,7 @@ const command: Command = {
             { name: '⭐ Premium', value: config.premium ? 'Yes' : 'No', inline: true },
             { name: '📦 Modules', value: Object.entries(config.modules).map(([k, v]) => `${v ? '✅' : '❌'} ${k}`).join('\n') },
             { name: '👋 Welcome Channel', value: config.welcome.channelId ? `<#${config.welcome.channelId}>` : 'Not set', inline: true },
-            { name: '📋 Mod Log Channel', value: config.moderation.modLogChannelId ? `<#${config.moderation.modLogChannelId}>` : 'Not set', inline: true }
+            { name: '📋 Mod Log Channel', value: config.moderation.modLogChannelId ? `<#${config.moderation.modLogChannelId}>` : 'Not set', inline: true },
           )
           .setFooter({ text: 'Use /setup <category> to configure settings' });
 

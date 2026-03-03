@@ -31,7 +31,7 @@ const command: Command = {
         .setDescription(command.data.description)
         .addFields(
           { name: 'Cooldown', value: `${command.cooldown || 0} seconds`, inline: true },
-          { name: 'Guild Only', value: command.guildOnly ? 'Yes' : 'No', inline: true }
+          { name: 'Guild Only', value: command.guildOnly ? 'Yes' : 'No', inline: true },
         );
 
       await interaction.reply({ embeds: [embed] });

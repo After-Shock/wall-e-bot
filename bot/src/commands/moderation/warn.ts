@@ -53,12 +53,12 @@ const command: Command = {
           interaction.guild!,
           member || target,
           interaction.member as GuildMember,
-          reason
+          reason,
         );
 
         if (result.success) {
           await interaction.reply({
-            embeds: [successEmbed('User Warned', `**${target.tag}** has been warned.\n**Reason:** ${reason}\n**Total Warnings:** ${result.warningCount}`)]
+            embeds: [successEmbed('User Warned', `**${target.tag}** has been warned.\n**Reason:** ${reason}\n**Total Warnings:** ${result.warningCount}`)],
           });
         } else {
           await interaction.reply({ embeds: [errorEmbed('Error', result.error || 'Failed to warn user.')], ephemeral: true });

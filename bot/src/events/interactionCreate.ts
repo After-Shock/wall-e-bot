@@ -61,7 +61,7 @@ export default {
 
         const panelResult = await client.db.pool.query(
           'SELECT * FROM ticket_panels WHERE id = $1 AND guild_id = $2',
-          [panelId, interaction.guild!.id]
+          [panelId, interaction.guild!.id],
         );
         if (panelResult.rows.length === 0) {
           await interaction.reply({ content: '❌ Panel not found.', ephemeral: true });
@@ -70,18 +70,18 @@ export default {
 
         const catResult = await client.db.pool.query(
           'SELECT * FROM ticket_categories WHERE id = $1',
-          [categoryId]
+          [categoryId],
         );
 
         const configResult = await client.db.pool.query(
           'SELECT * FROM ticket_config WHERE guild_id = $1',
-          [interaction.guild!.id]
+          [interaction.guild!.id],
         );
 
         // Resolve field_<id> keys back to human-readable labels
         const fieldsResult = await client.db.pool.query(
           'SELECT * FROM ticket_form_fields WHERE category_id = $1 ORDER BY position',
-          [categoryId]
+          [categoryId],
         );
         const labeledAnswers: Record<string, string> = {};
         for (const field of fieldsResult.rows) {
@@ -98,7 +98,7 @@ export default {
           panelResult.rows[0],
           catResult.rows[0] || null,
           configResult.rows[0] || { max_tickets_per_user: 1, welcome_message: '' },
-          labeledAnswers
+          labeledAnswers,
         );
       }
       return;
@@ -110,7 +110,7 @@ export default {
       if (!isOwner) {
         const wl = await client.db.pool.query(
           'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-          [interaction.guildId]
+          [interaction.guildId],
         ).catch(() => null);
         const row = wl?.rows[0];
         const status = row?.status;
@@ -167,7 +167,7 @@ export default {
       if (member && 'permissions' in member && member.permissions instanceof PermissionsBitField) {
         const permissions = member.permissions as PermissionsBitField;
         const missingPerms = command.permissions.filter(
-          perm => !permissions.has(perm)
+          perm => !permissions.has(perm),
         );
 
         if (missingPerms.length > 0) {
@@ -199,14 +199,14 @@ export default {
       const isAllowed = await client.cache.getRateLimit(
         cooldownKey,
         1, // Allow 1 request
-        cooldownSeconds
+        cooldownSeconds,
       );
       
       if (!isAllowed) {
         await interaction.reply({
           embeds: [errorEmbed(
             '⏱️ Cooldown', 
-            `Please wait **${cooldownSeconds}** seconds before using this command again.`
+            `Please wait **${cooldownSeconds}** seconds before using this command again.`,
           )],
           ephemeral: true,
         });
@@ -230,7 +230,7 @@ export default {
           await interaction.reply({
             embeds: [errorEmbed(
               '⏱️ Cooldown', 
-              `Please wait **${timeLeft.toFixed(1)}** seconds before using this command again.`
+              `Please wait **${timeLeft.toFixed(1)}** seconds before using this command again.`,
             )],
             ephemeral: true,
           });

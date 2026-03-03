@@ -13,7 +13,7 @@ export default {
     // Whitelist check (same as messageCreate)
     const wl = await client.db.pool.query(
       'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-      [newMessage.guild.id]
+      [newMessage.guild.id],
     ).catch(() => null);
     const wlRow = wl?.rows[0];
     const expired = !wlRow?.permanent && wlRow?.expires_at && new Date(wlRow.expires_at) < new Date();
@@ -38,7 +38,7 @@ export default {
            AND enabled = TRUE
            AND trigger_on_edit = TRUE
            AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)`,
-        [newMessage.guild.id, rawName]
+        [newMessage.guild.id, rawName],
       );
       if (result.rows.length === 0) return;
 
@@ -56,7 +56,7 @@ export default {
 
       client.db.pool.query(
         'UPDATE custom_commands SET uses = uses + 1 WHERE guild_id = $1 AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)',
-        [newMessage.guild.id, rawName]
+        [newMessage.guild.id, rawName],
       ).catch(() => {});
     } catch (error) {
       logger.error('Error in messageUpdate custom command handler:', error);

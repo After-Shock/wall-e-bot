@@ -11,7 +11,7 @@ export const logger = winston.createLogger({
   format: combine(
     errors({ stack: true }),
     timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    logFormat
+    logFormat,
   ),
   transports: [
     new winston.transports.Console({
@@ -19,10 +19,10 @@ export const logger = winston.createLogger({
     }),
     new winston.transports.File({ 
       filename: 'logs/error.log', 
-      level: 'error' 
+      level: 'error', 
     }),
     new winston.transports.File({ 
-      filename: 'logs/combined.log' 
+      filename: 'logs/combined.log', 
     }),
   ],
 });

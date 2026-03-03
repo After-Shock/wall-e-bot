@@ -95,11 +95,11 @@ async function handleTicketOpen(
   client: WallEClient,
   interaction: ButtonInteraction,
   panelId: number,
-  categoryId: number
+  categoryId: number,
 ) {
   const panelResult = await client.db.pool.query(
     'SELECT * FROM ticket_panels WHERE id = $1 AND guild_id = $2',
-    [panelId, interaction.guild!.id]
+    [panelId, interaction.guild!.id],
   );
   if (panelResult.rows.length === 0) {
     await interaction.reply({ content: '❌ Panel not found.', ephemeral: true });
@@ -111,20 +111,20 @@ async function handleTicketOpen(
   if (categoryId > 0) {
     const catResult = await client.db.pool.query(
       'SELECT * FROM ticket_categories WHERE id = $1 AND panel_id = $2',
-      [categoryId, panelId]
+      [categoryId, panelId],
     );
     category = catResult.rows[0] || null;
   }
 
   const configResult = await client.db.pool.query(
     'SELECT * FROM ticket_config WHERE guild_id = $1',
-    [interaction.guild!.id]
+    [interaction.guild!.id],
   );
   const config = configResult.rows[0] || { max_tickets_per_user: 1, welcome_message: '' };
 
   const openTickets = await client.db.pool.query(
-    `SELECT id, channel_id FROM tickets WHERE guild_id = $1 AND user_id = $2 AND status IN ('open', 'claimed')`,
-    [interaction.guild!.id, interaction.user.id]
+    'SELECT id, channel_id FROM tickets WHERE guild_id = $1 AND user_id = $2 AND status IN (\'open\', \'claimed\')',
+    [interaction.guild!.id, interaction.user.id],
   );
   if (openTickets.rows.length >= (config.max_tickets_per_user || 1)) {
     await interaction.reply({
@@ -138,7 +138,7 @@ async function handleTicketOpen(
   if (category) {
     const fieldsResult = await client.db.pool.query(
       'SELECT * FROM ticket_form_fields WHERE category_id = $1 ORDER BY position LIMIT 5',
-      [categoryId]
+      [categoryId],
     );
     const fields = fieldsResult.rows;
 
@@ -175,13 +175,13 @@ export async function createTicketChannel(
   panel: any,
   category: any | null,
   config: any,
-  formAnswers: Record<string, string> | null
+  formAnswers: Record<string, string> | null,
 ) {
   await interaction.deferReply({ ephemeral: true });
 
   const numResult = await client.db.pool.query(
     'SELECT COALESCE(MAX(ticket_number), 0) + 1 as next FROM tickets WHERE guild_id = $1',
-    [interaction.guild!.id]
+    [interaction.guild!.id],
   );
   const ticketNumber = numResult.rows[0].next;
 
@@ -248,7 +248,7 @@ export async function createTicketChannel(
 
     if (panel.category_open_id) {
       const channelCount = interaction.guild!.channels.cache.filter(
-        (c: any) => c.parentId === panel.category_open_id
+        (c: any) => c.parentId === panel.category_open_id,
       ).size;
       if (channelCount >= 50 && panel.overflow_category_id) {
         channelOptions.parent = panel.overflow_category_id;
@@ -270,7 +270,7 @@ export async function createTicketChannel(
         interaction.user.id,
         ticketNumber,
         formAnswers ? JSON.stringify(formAnswers) : null,
-      ]
+      ],
     );
     const ticketId = insertResult.rows[0].id;
 
@@ -279,7 +279,7 @@ export async function createTicketChannel(
       .setTitle(`🎫 Ticket #${ticketNumber.toString().padStart(4, '0')}${category ? ` — ${category.name}` : ''}`)
       .setDescription(
         `Hello ${interaction.user}!\n\n` +
-        (config.welcome_message || 'A staff member will be with you shortly.\nPlease describe your issue in detail.')
+        (config.welcome_message || 'A staff member will be with you shortly.\nPlease describe your issue in detail.'),
       )
       .setTimestamp();
 
@@ -308,7 +308,7 @@ export async function createTicketChannel(
 
     try {
       await interaction.user.send(
-        `🎫 **Ticket Created**\nYour support ticket has been opened in **${interaction.guild!.name}**: **${ticketChannel.name}**`
+        `🎫 **Ticket Created**\nYour support ticket has been opened in **${interaction.guild!.name}**: **${ticketChannel.name}**`,
       );
     } catch {
       // User has DMs disabled
@@ -325,7 +325,7 @@ async function handleTicketCloseConfirm(
   client: WallEClient,
   interaction: ButtonInteraction,
   ticketId: number,
-  reason: string
+  reason: string,
 ) {
   const ticketResult = await client.db.pool.query(
     `SELECT t.*, tp.category_closed_id, tc.transcript_channel_id
@@ -333,7 +333,7 @@ async function handleTicketCloseConfirm(
      LEFT JOIN ticket_panels tp ON t.panel_id = tp.id
      LEFT JOIN ticket_config tc ON t.guild_id = tc.guild_id
      WHERE t.id = $1 AND t.guild_id = $2 AND t.status IN ('open','claimed')`,
-    [ticketId, interaction.guild!.id]
+    [ticketId, interaction.guild!.id],
   );
 
   if (ticketResult.rows.length === 0) {
@@ -346,7 +346,7 @@ async function handleTicketCloseConfirm(
     embeds: [new EmbedBuilder()
       .setColor(COLORS.WARNING)
       .setTitle('🔒 Closing Ticket...')
-      .setDescription(`Reason: ${reason}`)
+      .setDescription(`Reason: ${reason}`),
     ],
     components: [],
   });
@@ -357,6 +357,7 @@ async function handleTicketCloseConfirm(
     // Paginate all messages for transcript
     const allMessages: any[] = [];
     let lastId: string | undefined;
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const batch = await channel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
       if (batch.size === 0) break;
@@ -394,14 +395,14 @@ async function handleTicketCloseConfirm(
     await client.db.pool.query(
       `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
        close_reason = $3, transcript_message_id = $4 WHERE id = $1`,
-      [ticketId, interaction.user.id, reason, transcriptMsgId]
+      [ticketId, interaction.user.id, reason, transcriptMsgId],
     );
 
     // DM the user
     try {
       const ticketUser = await client.users.fetch(t.user_id);
       await ticketUser.send(
-        `🔒 **Ticket Closed**\nYour ticket **${channel.name}** in **${interaction.guild!.name}** has been closed.\n**Reason:** ${reason}`
+        `🔒 **Ticket Closed**\nYour ticket **${channel.name}** in **${interaction.guild!.name}** has been closed.\n**Reason:** ${reason}`,
       );
     } catch {
       // User has DMs disabled
@@ -448,7 +449,7 @@ async function handleReactionRoleSelect(client: WallEClient, interaction: String
     const selectedRoles = interaction.values;
     const allRoles = await client.db.pool.query(
       'SELECT role_id FROM reaction_roles WHERE message_id = $1',
-      [interaction.message.id]
+      [interaction.message.id],
     );
     const allRoleIds = allRoles.rows.map((r: any) => r.role_id);
     for (const roleId of allRoleIds) {
@@ -470,8 +471,8 @@ async function handleReactionRoleSelect(client: WallEClient, interaction: String
 
 async function handleLegacyTicketClose(client: WallEClient, interaction: ButtonInteraction) {
   const ticket = await client.db.pool.query(
-    `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
-    [interaction.guild!.id, interaction.channel!.id]
+    'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
+    [interaction.guild!.id, interaction.channel!.id],
   );
   if (ticket.rows.length === 0) {
     await interaction.reply({ content: '❌ This is not a ticket channel.', ephemeral: true });
@@ -490,7 +491,7 @@ async function handleLegacyTicketClose(client: WallEClient, interaction: ButtonI
     embeds: [new EmbedBuilder()
       .setColor(COLORS.WARNING)
       .setTitle('🔒 Close Ticket?')
-      .setDescription('Click confirm to close this ticket.')
+      .setDescription('Click confirm to close this ticket.'),
     ],
     components: [new ActionRowBuilder<ButtonBuilder>().addComponents(confirmBtn, cancelBtn)],
   });

@@ -69,7 +69,7 @@ botRouter.patch('/activity', requireAuth, asyncHandler(async (req, res) => {
   await db.query(
     `INSERT INTO bot_settings (key, value) VALUES ('activity', $1)
      ON CONFLICT (key) DO UPDATE SET value = $1`,
-    [JSON.stringify({ type, text: text || '' })]
+    [JSON.stringify({ type, text: text || '' })],
   );
   logger.info('Bot activity updated', { type, text });
   res.json({ success: true });
@@ -94,7 +94,7 @@ botRouter.patch('/guilds/:guildId/nickname', requireAuth, requireGuildAccess, as
     await axios.patch(
       `${DISCORD_API}/guilds/${guildId}/members/@me`,
       { nick: nickname || null },
-      { headers: botHeaders() }
+      { headers: botHeaders() },
     );
 
     logger.info('Bot nickname updated', { guildId, nickname });
@@ -149,7 +149,7 @@ botRouter.patch('/avatar', requireAuth, asyncHandler(async (req, res) => {
     await axios.patch(
       `${DISCORD_API}/users/@me`,
       { avatar: dataUri },
-      { headers: botHeaders() }
+      { headers: botHeaders() },
     );
 
     logger.info('Bot avatar updated');

@@ -12,7 +12,7 @@ export default {
     if (message.guild) {
       const wl = await client.db.pool.query(
         'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-        [message.guild.id]
+        [message.guild.id],
       ).catch(() => null);
       const wlRow = wl?.rows[0];
       const expired = !wlRow?.permanent && wlRow?.expires_at && new Date(wlRow.expires_at) < new Date();
@@ -40,7 +40,7 @@ export default {
                WHERE guild_id = $1
                  AND enabled = TRUE
                  AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)`,
-              [message.guild.id, rawName]
+              [message.guild.id, rawName],
             );
             if (result.rows.length > 0) {
               const cmd = result.rows[0];
@@ -60,7 +60,7 @@ export default {
 
               client.db.pool.query(
                 'UPDATE custom_commands SET uses = uses + 1 WHERE guild_id = $1 AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)',
-                [message.guild.id, rawName]
+                [message.guild.id, rawName],
               ).catch(() => {});
             }
           }
@@ -80,14 +80,14 @@ export default {
       client.db.pool.query(
         `INSERT INTO message_logs (guild_id, channel_id, channel_name, user_id, username)
          VALUES ($1, $2, $3, $4, $5)`,
-        [guildId, channelId, channelName, message.author.id, message.author.username]
+        [guildId, channelId, channelName, message.author.id, message.author.username],
       ).catch((e) => logger.debug('message_logs insert failed:', e));
 
       // Update ticket last_activity (fire-and-forget)
       client.db.pool.query(
         `UPDATE tickets SET last_activity = NOW(), warned_inactive = FALSE
          WHERE channel_id = $1 AND guild_id = $2 AND status IN ('open','claimed')`,
-        [channelId, guildId]
+        [channelId, guildId],
       ).catch((e) => logger.debug('ticket activity update failed:', e));
     }
   },

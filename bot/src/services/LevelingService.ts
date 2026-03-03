@@ -22,7 +22,7 @@ export class LevelingService {
     if (!member) return;
 
     const hasIgnoredRole = levelingConfig.ignoredRoles?.some(roleId => 
-      member.roles.cache.has(roleId)
+      member.roles.cache.has(roleId),
     );
     if (hasIgnoredRole) return;
 
@@ -30,7 +30,7 @@ export class LevelingService {
     const canGain = await this.client.cache.canGainXp(
       message.guild.id, 
       message.author.id, 
-      levelingConfig.xpCooldown || XP_COOLDOWN
+      levelingConfig.xpCooldown || XP_COOLDOWN,
     );
     
     if (!canGain) return;
@@ -38,7 +38,7 @@ export class LevelingService {
     // Calculate XP with multipliers
     let xp = randomInt(
       levelingConfig.xpPerMessage?.min || XP_PER_MESSAGE.min,
-      levelingConfig.xpPerMessage?.max || XP_PER_MESSAGE.max
+      levelingConfig.xpPerMessage?.max || XP_PER_MESSAGE.max,
     );
 
     // Apply role multipliers
@@ -61,7 +61,7 @@ export class LevelingService {
     message: Message, 
     member: GuildMember, 
     newLevel: number, 
-    config: { levelUpChannel?: string; levelUpMessage?: string; roleRewards?: Array<{ level: number; roleId: string; removeOnHigherLevel: boolean }> }
+    config: { levelUpChannel?: string; levelUpMessage?: string; roleRewards?: Array<{ level: number; roleId: string; removeOnHigherLevel: boolean }> },
   ): Promise<void> {
     // Handle role rewards
     for (const reward of config.roleRewards || []) {

@@ -16,6 +16,7 @@ const MENTION_PATTERN = /@(everyone|here|&\d{17,20})/g;
 /**
  * Characters that could cause issues in messages.
  */
+// eslint-disable-next-line no-control-regex
 const UNSAFE_CHARS = /[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g;
 
 /**
@@ -45,6 +46,7 @@ export function sanitizeCommandResponse(input: string, maxLength = 2000): string
     .replace(/@everyone/gi, '@\u200Beveryone')
     .replace(/@here/gi, '@\u200Bhere')
     // Remove invisible characters (except the one we just added)
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001F\u007F-\u009F\uFEFF]/g, '')
     // Remove excessive newlines
     .replace(/\n{4,}/g, '\n\n\n')

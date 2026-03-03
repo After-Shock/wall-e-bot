@@ -133,7 +133,7 @@ export async function fetchGuildFromAnyShard(guildId: string): Promise<unknown |
         ownerId: guild.ownerId,
       };
     },
-    { context: { guildId } }
+    { context: { guildId } },
   );
 
   return results.find((r) => r !== null) ?? null;
@@ -159,7 +159,7 @@ async function shutdown(signal: string) {
       } catch {
         // Shard may already be dead
       }
-    })
+    }),
   );
 
   console.log('👋 All shards shut down');

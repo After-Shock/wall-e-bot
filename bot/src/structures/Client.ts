@@ -171,7 +171,7 @@ export class WallEClient extends Client {
     for (const folder of commandFolders) {
       const folderPath = join(commandsPath, folder);
       const commandFiles = readdirSync(folderPath).filter(file =>
-        (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
+        (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts'),
       );
 
       for (const file of commandFiles) {
@@ -198,7 +198,7 @@ export class WallEClient extends Client {
   private async loadEvents() {
     const eventsPath = join(__dirname, '..', 'events');
     const eventFiles = readdirSync(eventsPath).filter(file =>
-      (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
+      (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts'),
     );
 
     for (const file of eventFiles) {
@@ -236,7 +236,7 @@ export class WallEClient extends Client {
     // PUT replaces all commands (safer than PATCH for consistency)
     await rest.put(
       Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!),
-      { body: commands }
+      { body: commands },
     );
     
     logger.info('Successfully deployed application commands');

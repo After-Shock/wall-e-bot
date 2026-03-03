@@ -40,7 +40,7 @@ const command: Command = {
         { name: '🏆 Rank', value: `#${rank}`, inline: true },
         { name: '⭐ Level', value: level.toString(), inline: true },
         { name: '✨ Total XP', value: formatNumber(xp), inline: true },
-        { name: 'Progress to Next Level', value: `${progressBar} ${progress}%\n${formatNumber(xp)} / ${formatNumber(xpForNext)} XP` }
+        { name: 'Progress to Next Level', value: `${progressBar} ${progress}%\n${formatNumber(xp)} / ${formatNumber(xpForNext)} XP` },
       )
       .setFooter({ text: `${ordinal(rank)} place on the leaderboard` })
       .setTimestamp();

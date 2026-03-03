@@ -183,6 +183,9 @@ export interface StarboardConfig {
   emoji: string;
   selfStar: boolean;
   ignoredChannels: string[];
+  embedColor?: string;
+  ignoreBots?: boolean;
+  ignoreNsfw?: boolean;
 }
 
 export interface ReactionRole {

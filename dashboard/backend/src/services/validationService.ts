@@ -262,7 +262,7 @@ export function validateConfig<T>(schema: z.ZodType<T>, data: any): T {
  */
 export function safeValidateConfig<T>(
   schema: z.ZodType<T>,
-  data: any
+  data: any,
 ): { success: true; data: T } | { success: false; error: z.ZodError } {
   const result = schema.safeParse(data);
   if (result.success) {

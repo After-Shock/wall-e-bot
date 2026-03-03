@@ -37,7 +37,7 @@ interface ValidationResult<T> {
  */
 export async function validateGuild(
   client: Client,
-  guildId: string
+  guildId: string,
 ): Promise<ValidationResult<Guild>> {
   try {
     // Try cache first
@@ -70,7 +70,7 @@ export async function validateGuild(
 export async function validateChannel(
   guild: Guild,
   channelId: string,
-  requiredType?: ChannelType
+  requiredType?: ChannelType,
 ): Promise<ValidationResult<GuildChannel>> {
   try {
     // Try cache first
@@ -110,7 +110,7 @@ export async function validateChannel(
  */
 export async function validateRole(
   guild: Guild,
-  roleId: string
+  roleId: string,
 ): Promise<ValidationResult<Role>> {
   try {
     // Try cache first
@@ -152,7 +152,7 @@ export async function validateRole(
  */
 export async function validateMember(
   guild: Guild,
-  userId: string
+  userId: string,
 ): Promise<ValidationResult<GuildMember>> {
   try {
     // Try cache first
@@ -183,7 +183,7 @@ export async function validateMember(
  */
 export function checkBotPermissions(
   channel: GuildChannel,
-  permissions: bigint[]
+  permissions: bigint[],
 ): { hasPermissions: boolean; missing: string[] } {
   const botMember = channel.guild.members.me;
   
@@ -220,7 +220,7 @@ export function checkBotPermissions(
  */
 export async function safeSend(
   channel: TextChannel,
-  content: string | { content?: string; embeds?: any[]; components?: any[] }
+  content: string | { content?: string; embeds?: any[]; components?: any[] },
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Check if channel still exists and is text-based
@@ -268,7 +268,7 @@ export async function safeSend(
  */
 export async function cleanupGuildData(
   guildId: string,
-  db: { pool: { query: (text: string, params: any[]) => Promise<any> } }
+  db: { pool: { query: (text: string, params: any[]) => Promise<any> } },
 ): Promise<void> {
   logger.info(`Cleaning up data for guild ${guildId}`);
   
@@ -276,14 +276,14 @@ export async function cleanupGuildData(
     // Don't delete immediately - mark as inactive for potential restoration
     // Actual deletion can be done by a scheduled cleanup job after 30 days
     await db.pool.query(
-      `UPDATE guild_configs SET active = false, left_at = NOW() WHERE guild_id = $1`,
-      [guildId]
+      'UPDATE guild_configs SET active = false, left_at = NOW() WHERE guild_id = $1',
+      [guildId],
     );
     
     // Clear scheduled messages for this guild
     await db.pool.query(
-      `UPDATE scheduled_messages SET enabled = false WHERE guild_id = $1`,
-      [guildId]
+      'UPDATE scheduled_messages SET enabled = false WHERE guild_id = $1',
+      [guildId],
     );
     
     logger.info(`Marked guild ${guildId} data as inactive`);

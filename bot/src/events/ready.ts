@@ -35,7 +35,7 @@ export default {
            member_count = EXCLUDED.member_count,
            expires_at = COALESCE(guild_whitelist.expires_at, NOW() + INTERVAL '1 year'),
            left_at = NULL`,
-        [guild.id, guild.name, guild.icon, guild.memberCount]
+        [guild.id, guild.name, guild.icon, guild.memberCount],
       ).catch(e => logger.error('Failed to sync guild to whitelist:', e));
     }
     logger.info('Guild whitelist synced');

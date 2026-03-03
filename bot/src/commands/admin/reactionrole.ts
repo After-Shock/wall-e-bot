@@ -7,7 +7,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
-  ComponentType
+  ComponentType,
 } from 'discord.js';
 import type { Command } from '../../structures/Command.js';
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
@@ -40,7 +40,7 @@ const command: Command = {
             .addChoices(
               { name: 'Buttons', value: 'buttons' },
               { name: 'Dropdown Menu', value: 'dropdown' },
-              { name: 'Reactions', value: 'reactions' }
+              { name: 'Reactions', value: 'reactions' },
             )))
     .addSubcommand(sub =>
       sub.setName('add')
@@ -110,14 +110,14 @@ const command: Command = {
         await client.db.pool.query(
           `INSERT INTO reaction_role_messages (guild_id, channel_id, message_id, title, type)
            VALUES ($1, $2, $3, $4, $5)`,
-          [interaction.guild!.id, channel.id, message.id, title, type]
+          [interaction.guild!.id, channel.id, message.id, title, type],
         );
 
         await interaction.reply({
           embeds: [successEmbed('Reaction Role Created', 
-            `Created reaction role message in ${channel}.\n\nNow use \`/reactionrole add\` to add roles to it.\nMessage ID: \`${message.id}\``
+            `Created reaction role message in ${channel}.\n\nNow use \`/reactionrole add\` to add roles to it.\nMessage ID: \`${message.id}\``,
           )],
-          ephemeral: true
+          ephemeral: true,
         });
         break;
       }
@@ -131,13 +131,13 @@ const command: Command = {
         // Get the reaction role message
         const rrMessage = await client.db.pool.query(
           'SELECT * FROM reaction_role_messages WHERE guild_id = $1 AND message_id = $2',
-          [interaction.guild!.id, messageId]
+          [interaction.guild!.id, messageId],
         );
 
         if (rrMessage.rows.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'Reaction role message not found.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -148,7 +148,7 @@ const command: Command = {
         if (role.position >= interaction.guild!.members.me!.roles.highest.position) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'I cannot assign this role as it is higher than my highest role.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -158,13 +158,13 @@ const command: Command = {
           `INSERT INTO reaction_roles (guild_id, channel_id, message_id, emoji, role_id, label)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (message_id, emoji) DO UPDATE SET role_id = $5, label = $6`,
-          [interaction.guild!.id, rr.channel_id, messageId, emoji, role.id, label]
+          [interaction.guild!.id, rr.channel_id, messageId, emoji, role.id, label],
         );
 
         // Get all roles for this message
         const allRoles = await client.db.pool.query(
           'SELECT * FROM reaction_roles WHERE message_id = $1',
-          [messageId]
+          [messageId],
         );
 
         // Update the message
@@ -187,7 +187,7 @@ const command: Command = {
                   .setCustomId(`rr_${r.role_id}`)
                   .setLabel(r.label)
                   .setEmoji(r.emoji)
-                  .setStyle(ButtonStyle.Secondary)
+                  .setStyle(ButtonStyle.Secondary),
               );
             }
             
@@ -218,7 +218,7 @@ const command: Command = {
 
         await interaction.reply({
           embeds: [successEmbed('Role Added', `Added ${role} with ${emoji} to the reaction role message.`)],
-          ephemeral: true
+          ephemeral: true,
         });
         break;
       }
@@ -229,20 +229,20 @@ const command: Command = {
 
         const result = await client.db.pool.query(
           'DELETE FROM reaction_roles WHERE guild_id = $1 AND message_id = $2 AND role_id = $3 RETURNING emoji',
-          [interaction.guild!.id, messageId, role.id]
+          [interaction.guild!.id, messageId, role.id],
         );
 
         if (result.rowCount === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'Role not found on this message.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
 
         await interaction.reply({
           embeds: [successEmbed('Role Removed', `Removed ${role} from the reaction role message.`)],
-          ephemeral: true
+          ephemeral: true,
         });
         break;
       }
@@ -254,13 +254,13 @@ const command: Command = {
            LEFT JOIN reaction_roles rr ON rrm.message_id = rr.message_id
            WHERE rrm.guild_id = $1
            GROUP BY rrm.id`,
-          [interaction.guild!.id]
+          [interaction.guild!.id],
         );
 
         if (messages.rows.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('No Reaction Roles', 'No reaction role messages found.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -269,7 +269,7 @@ const command: Command = {
           .setColor(COLORS.PRIMARY)
           .setTitle('🎭 Reaction Role Messages')
           .setDescription(messages.rows.map(m => 
-            `**${m.title}**\nChannel: <#${m.channel_id}>\nMessage ID: \`${m.message_id}\`\nRoles: ${m.role_count}\nType: ${m.type}`
+            `**${m.title}**\nChannel: <#${m.channel_id}>\nMessage ID: \`${m.message_id}\`\nRoles: ${m.role_count}\nType: ${m.type}`,
           ).join('\n\n'));
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -282,13 +282,13 @@ const command: Command = {
         // Get message info
         const rrMessage = await client.db.pool.query(
           'SELECT * FROM reaction_role_messages WHERE guild_id = $1 AND message_id = $2',
-          [interaction.guild!.id, messageId]
+          [interaction.guild!.id, messageId],
         );
 
         if (rrMessage.rows.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'Reaction role message not found.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -296,11 +296,11 @@ const command: Command = {
         // Delete from database
         await client.db.pool.query(
           'DELETE FROM reaction_roles WHERE message_id = $1',
-          [messageId]
+          [messageId],
         );
         await client.db.pool.query(
           'DELETE FROM reaction_role_messages WHERE message_id = $1',
-          [messageId]
+          [messageId],
         );
 
         // Try to delete the actual message
@@ -316,7 +316,7 @@ const command: Command = {
 
         await interaction.reply({
           embeds: [successEmbed('Deleted', 'Reaction role message has been deleted.')],
-          ephemeral: true
+          ephemeral: true,
         });
         break;
       }

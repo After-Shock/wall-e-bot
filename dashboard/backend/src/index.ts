@@ -66,7 +66,7 @@ passport.use(new DiscordStrategy({
        ON CONFLICT (discord_id) DO UPDATE SET
          username = $2, discriminator = $3, avatar = $4, email = $5, 
          access_token = $6, refresh_token = $7, updated_at = NOW()`,
-      [profile.id, profile.username, profile.discriminator, profile.avatar, profile.email, accessToken, refreshToken]
+      [profile.id, profile.username, profile.discriminator, profile.avatar, profile.email, accessToken, refreshToken],
     );
 
     return done(null, { ...profile, accessToken, refreshToken });

@@ -19,7 +19,7 @@ export async function createBackup(
     includeRoles?: boolean;
     includeChannels?: boolean;
     includeMembers?: boolean;
-  } = {}
+  } = {},
 ): Promise<Backup> {
   try {
     // Get current guild configuration
@@ -59,7 +59,7 @@ export async function createBackup(
       `INSERT INTO guild_backups (guild_id, name, type, size, created_by, data)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, guild_id, name, type, size, created_at, created_by`,
-      [guildId, name, 'manual', size, userId || null, backupData]
+      [guildId, name, 'manual', size, userId || null, backupData],
     );
 
     const backup: Backup = {
@@ -92,7 +92,7 @@ export async function listBackups(guildId: string): Promise<BackupListItem[]> {
        FROM guild_backups
        WHERE guild_id = $1
        ORDER BY created_at DESC`,
-      [guildId]
+      [guildId],
     );
 
     return result.rows.map(row => ({
@@ -118,7 +118,7 @@ export async function getBackup(backupId: string, guildId: string): Promise<Back
       `SELECT id, guild_id, name, type, size, created_at, created_by, data
        FROM guild_backups
        WHERE id = $1 AND guild_id = $2`,
-      [backupId, guildId]
+      [backupId, guildId],
     );
 
     if (result.rows.length === 0) {
@@ -147,7 +147,7 @@ export async function getBackup(backupId: string, guildId: string): Promise<Back
  */
 export async function restoreBackup(
   backupId: string,
-  guildId: string
+  guildId: string,
 ): Promise<void> {
   try {
     const backup = await getBackup(backupId, guildId);
@@ -161,7 +161,7 @@ export async function restoreBackup(
       `UPDATE guild_configs
        SET config = $1, updated_at = NOW()
        WHERE guild_id = $2`,
-      [backup.data.config, guildId]
+      [backup.data.config, guildId],
     );
 
     logger.info(`Restored backup ${backupId} for guild ${guildId}`);
@@ -180,7 +180,7 @@ export async function deleteBackup(backupId: string, guildId: string): Promise<v
       `DELETE FROM guild_backups
        WHERE id = $1 AND guild_id = $2
        RETURNING id`,
-      [backupId, guildId]
+      [backupId, guildId],
     );
 
     if (result.rows.length === 0) {
@@ -227,7 +227,7 @@ export async function getBackupConfig(guildId: string): Promise<BackupConfig> {
  */
 export async function updateBackupConfig(
   guildId: string,
-  config: Partial<BackupConfig>
+  config: Partial<BackupConfig>,
 ): Promise<BackupConfig> {
   try {
     const updated = await guildConfigService.updateConfigSection(guildId, 'backup', config);
@@ -260,7 +260,7 @@ export async function cleanupOldBackups(guildId: string): Promise<void> {
          ORDER BY created_at DESC
          LIMIT $2
        )`,
-      [guildId, config.maxBackups]
+      [guildId, config.maxBackups],
     );
 
     logger.info(`Cleaned up old backups for guild ${guildId}`);

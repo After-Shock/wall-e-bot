@@ -51,12 +51,12 @@ const command: Command = {
       target,
       interaction.member as GuildMember,
       duration,
-      reason
+      reason,
     );
 
     if (result.success) {
       await interaction.reply({
-        embeds: [successEmbed('User Timed Out', `**${target.user.tag}** has been timed out for **${formatDuration(duration)}**.\n**Reason:** ${reason}`)]
+        embeds: [successEmbed('User Timed Out', `**${target.user.tag}** has been timed out for **${formatDuration(duration)}**.\n**Reason:** ${reason}`)],
       });
     } else {
       await interaction.reply({ embeds: [errorEmbed('Error', result.error || 'Failed to timeout user.')], ephemeral: true });

@@ -17,7 +17,7 @@ async function deployCommands() {
   for (const folder of commandFolders) {
     const folderPath = join(commandsPath, folder);
     const commandFiles = readdirSync(folderPath).filter(file =>
-      (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts')
+      (file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.d.ts'),
     );
 
     for (const file of commandFiles) {

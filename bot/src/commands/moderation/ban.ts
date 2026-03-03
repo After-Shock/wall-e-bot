@@ -47,7 +47,7 @@ const command: Command = {
       member || target,
       interaction.member as GuildMember,
       reason,
-      deleteDays
+      deleteDays,
     );
 
     if (result.success) {

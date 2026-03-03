@@ -32,14 +32,14 @@ const command: Command = {
                 .setDescription('Channel or thread tickets')
                 .addChoices(
                   { name: 'Channel (default)', value: 'channel' },
-                  { name: 'Thread', value: 'thread' }
+                  { name: 'Thread', value: 'thread' },
                 ))
             .addStringOption(opt =>
               opt.setName('type')
                 .setDescription('Buttons or dropdown selector')
                 .addChoices(
                   { name: 'Buttons (default)', value: 'buttons' },
-                  { name: 'Dropdown', value: 'dropdown' }
+                  { name: 'Dropdown', value: 'dropdown' },
                 )))
         .addSubcommand(sub =>
           sub.setName('send')
@@ -127,17 +127,17 @@ const command: Command = {
           const result = await client.db.pool.query(
             `INSERT INTO ticket_panels (guild_id, name, style, panel_type)
              VALUES ($1, $2, $3, $4) RETURNING id`,
-            [interaction.guild!.id, name, style, panelType]
+            [interaction.guild!.id, name, style, panelType],
           );
 
           const panelId = result.rows[0].id;
           await interaction.reply({
             embeds: [successEmbed('Panel Created',
               `Panel **${name}** created (ID: ${panelId}).\n\n` +
-              `Next steps:\n` +
+              'Next steps:\n' +
               `1. Add categories: \`/ticket category add panel_id:${panelId} name:...\`\n` +
-              `2. Configure in dashboard\n` +
-              `3. Send panel: \`/ticket panel send panel_id:${panelId} #channel\``
+              '2. Configure in dashboard\n' +
+              `3. Send panel: \`/ticket panel send panel_id:${panelId} #channel\``,
             )],
             ephemeral: true,
           });
@@ -150,7 +150,7 @@ const command: Command = {
 
           const panelResult = await client.db.pool.query(
             'SELECT * FROM ticket_panels WHERE id = $1 AND guild_id = $2',
-            [panelId, interaction.guild!.id]
+            [panelId, interaction.guild!.id],
           );
 
           if (panelResult.rows.length === 0) {
@@ -165,7 +165,7 @@ const command: Command = {
           if (rootPanel.stack_group) {
             const stackResult = await client.db.pool.query(
               'SELECT * FROM ticket_panels WHERE guild_id = $1 AND stack_group = $2 ORDER BY stack_position, id',
-              [interaction.guild!.id, rootPanel.stack_group]
+              [interaction.guild!.id, rootPanel.stack_group],
             );
             panelsToSend = stackResult.rows;
           } else {
@@ -176,7 +176,7 @@ const command: Command = {
           const allPanelIds = panelsToSend.map((p: any) => p.id);
           const catResult = await client.db.pool.query(
             'SELECT * FROM ticket_categories WHERE panel_id = ANY($1::int[]) ORDER BY panel_id, position',
-            [allPanelIds]
+            [allPanelIds],
           );
           const catsByPanel: Record<number, any[]> = {};
           for (const cat of catResult.rows) {
@@ -214,7 +214,7 @@ const command: Command = {
                     .setLabel(c.name)
                     .setValue(c.id.toString())
                     .setDescription((c.description || c.name).substring(0, 100))
-                    .setEmoji(c.emoji || '📋')
+                    .setEmoji(c.emoji || '📋'),
                 ));
               components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select));
             } else if (cats.length > 0) {
@@ -223,7 +223,7 @@ const command: Command = {
                   .setCustomId(`ticket_open:${p.id}:${c.id}`)
                   .setLabel(c.name.substring(0, 80))
                   .setEmoji(c.emoji || '🎫')
-                  .setStyle(ButtonStyle.Primary)
+                  .setStyle(ButtonStyle.Primary),
               );
               components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons));
             } else {
@@ -242,7 +242,7 @@ const command: Command = {
           for (const p of panelsToSend) {
             await client.db.pool.query(
               'UPDATE ticket_panels SET panel_channel_id = $1, panel_message_id = $2 WHERE id = $3',
-              [channel.id, msg.id, p.id]
+              [channel.id, msg.id, p.id],
             );
           }
 
@@ -257,7 +257,7 @@ const command: Command = {
         case 'list': {
           const panels = await client.db.pool.query(
             'SELECT * FROM ticket_panels WHERE guild_id = $1 ORDER BY id',
-            [interaction.guild!.id]
+            [interaction.guild!.id],
           );
 
           if (panels.rows.length === 0) {
@@ -272,7 +272,7 @@ const command: Command = {
             .setColor(COLORS.PRIMARY)
             .setTitle('Ticket Panels')
             .setDescription(panels.rows.map((p: any) =>
-              `**ID ${p.id}** — ${p.name} (${p.style}/${p.panel_type})`
+              `**ID ${p.id}** — ${p.name} (${p.style}/${p.panel_type})`,
             ).join('\n'));
 
           await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -283,7 +283,7 @@ const command: Command = {
           const panelId = interaction.options.getInteger('panel_id', true);
           const result = await client.db.pool.query(
             'DELETE FROM ticket_panels WHERE id = $1 AND guild_id = $2 RETURNING name',
-            [panelId, interaction.guild!.id]
+            [panelId, interaction.guild!.id],
           );
 
           if (result.rowCount === 0) {
@@ -312,7 +312,7 @@ const command: Command = {
 
           const panelCheck = await client.db.pool.query(
             'SELECT id FROM ticket_panels WHERE id = $1 AND guild_id = $2',
-            [panelId, interaction.guild!.id]
+            [panelId, interaction.guild!.id],
           );
           if (panelCheck.rows.length === 0) {
             await interaction.reply({ embeds: [errorEmbed('Error', 'Panel not found.')], ephemeral: true });
@@ -321,20 +321,20 @@ const command: Command = {
 
           const posResult = await client.db.pool.query(
             'SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM ticket_categories WHERE panel_id = $1',
-            [panelId]
+            [panelId],
           );
           const position = posResult.rows[0].next_pos;
 
           await client.db.pool.query(
             `INSERT INTO ticket_categories (panel_id, guild_id, name, emoji, description, support_role_ids, position)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [panelId, interaction.guild!.id, name, emoji, description, [supportRole.id], position]
+            [panelId, interaction.guild!.id, name, emoji, description, [supportRole.id], position],
           );
 
           await interaction.reply({
             embeds: [successEmbed('Category Added',
               `Category **${emoji} ${name}** added to panel ${panelId}.\n` +
-              `Re-send the panel with \`/ticket panel send\` to update the Discord message.`
+              'Re-send the panel with `/ticket panel send` to update the Discord message.',
             )],
             ephemeral: true,
           });
@@ -345,7 +345,7 @@ const command: Command = {
           const panelId = interaction.options.getInteger('panel_id', true);
           const cats = await client.db.pool.query(
             'SELECT * FROM ticket_categories WHERE panel_id = $1 AND guild_id = $2 ORDER BY position',
-            [panelId, interaction.guild!.id]
+            [panelId, interaction.guild!.id],
           );
 
           if (cats.rows.length === 0) {
@@ -360,7 +360,7 @@ const command: Command = {
             .setColor(COLORS.PRIMARY)
             .setTitle(`Categories in Panel ${panelId}`)
             .setDescription(cats.rows.map((c: any) =>
-              `**ID ${c.id}** — ${c.emoji || ''} ${c.name}: ${c.description || '(no description)'}`
+              `**ID ${c.id}** — ${c.emoji || ''} ${c.name}: ${c.description || '(no description)'}`,
             ).join('\n'));
 
           await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -374,8 +374,8 @@ const command: Command = {
     switch (subcommand) {
       case 'close': {
         const ticket = await client.db.pool.query(
-          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
-          [interaction.guild!.id, interaction.channel!.id]
+          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
+          [interaction.guild!.id, interaction.channel!.id],
         );
         if (ticket.rows.length === 0) {
           await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
@@ -398,7 +398,7 @@ const command: Command = {
           embeds: [new EmbedBuilder()
             .setColor(COLORS.WARNING)
             .setTitle('🔒 Close Ticket?')
-            .setDescription(`**Reason:** ${reason}\n\nClick confirm to close this ticket.`)
+            .setDescription(`**Reason:** ${reason}\n\nClick confirm to close this ticket.`),
           ],
           components: [new ActionRowBuilder<ButtonBuilder>().addComponents(confirmBtn, cancelBtn)],
         });
@@ -407,8 +407,8 @@ const command: Command = {
 
       case 'add': {
         const ticket = await client.db.pool.query(
-          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
-          [interaction.guild!.id, interaction.channel!.id]
+          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
+          [interaction.guild!.id, interaction.channel!.id],
         );
         if (ticket.rows.length === 0) {
           await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
@@ -427,8 +427,8 @@ const command: Command = {
 
       case 'remove': {
         const ticket = await client.db.pool.query(
-          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
-          [interaction.guild!.id, interaction.channel!.id]
+          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
+          [interaction.guild!.id, interaction.channel!.id],
         );
         if (ticket.rows.length === 0) {
           await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
@@ -442,8 +442,8 @@ const command: Command = {
 
       case 'rename': {
         const ticket = await client.db.pool.query(
-          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
-          [interaction.guild!.id, interaction.channel!.id]
+          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
+          [interaction.guild!.id, interaction.channel!.id],
         );
         if (ticket.rows.length === 0) {
           await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
@@ -458,7 +458,7 @@ const command: Command = {
       case 'transcript': {
         const ticket = await client.db.pool.query(
           'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2',
-          [interaction.guild!.id, interaction.channel!.id]
+          [interaction.guild!.id, interaction.channel!.id],
         );
         if (ticket.rows.length === 0) {
           await interaction.reply({ embeds: [errorEmbed('Error', 'This is not a ticket channel.')], ephemeral: true });
@@ -471,6 +471,7 @@ const command: Command = {
         // Paginate to get all messages
         const allMessages: any[] = [];
         let lastId: string | undefined;
+        // eslint-disable-next-line no-constant-condition
         while (true) {
           const batch = await ch.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
           if (batch.size === 0) break;
@@ -492,16 +493,16 @@ const command: Command = {
 
       case 'claim': {
         const ticket = await client.db.pool.query(
-          `SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN ('open', 'claimed')`,
-          [interaction.guild!.id, interaction.channel!.id]
+          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
+          [interaction.guild!.id, interaction.channel!.id],
         );
         if (ticket.rows.length === 0) {
           await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
           return;
         }
         await client.db.pool.query(
-          `UPDATE tickets SET claimed_by = $3, status = 'claimed' WHERE id = $1 AND guild_id = $2`,
-          [ticket.rows[0].id, interaction.guild!.id, interaction.user.id]
+          'UPDATE tickets SET claimed_by = $3, status = \'claimed\' WHERE id = $1 AND guild_id = $2',
+          [ticket.rows[0].id, interaction.guild!.id, interaction.user.id],
         );
         await interaction.reply({ embeds: [successEmbed('Ticket Claimed', `${interaction.user} has claimed this ticket.`)] });
         break;

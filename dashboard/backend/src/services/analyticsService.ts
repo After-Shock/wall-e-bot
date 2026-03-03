@@ -5,7 +5,7 @@ import type {
   GrowthMetrics,
   ChannelActivity,
   MemberActivity,
-  ContentInsights
+  ContentInsights,
 } from '@wall-e/shared';
 
 /**
@@ -25,15 +25,15 @@ export async function getOverview(guildId: string): Promise<AnalyticsOverview> {
 
     // Get total members
     const totalMembersResult = await db.query(
-      `SELECT COUNT(*) as total FROM guild_members WHERE guild_id = $1 AND left_at IS NULL`,
-      [guildId]
+      'SELECT COUNT(*) as total FROM guild_members WHERE guild_id = $1 AND left_at IS NULL',
+      [guildId],
     );
     const totalMembers = parseInt(totalMembersResult.rows[0]?.total || '0');
 
     // Get total messages
     const totalMessagesResult = await db.query(
-      `SELECT COUNT(*) as total FROM message_logs WHERE guild_id = $1`,
-      [guildId]
+      'SELECT COUNT(*) as total FROM message_logs WHERE guild_id = $1',
+      [guildId],
     );
     const totalMessages = parseInt(totalMessagesResult.rows[0]?.total || '0');
 
@@ -41,7 +41,7 @@ export async function getOverview(guildId: string): Promise<AnalyticsOverview> {
     const activeMembersResult = await db.query(
       `SELECT COUNT(DISTINCT user_id) as active FROM message_logs
        WHERE guild_id = $1 AND created_at > $2`,
-      [guildId, sevenDaysAgo]
+      [guildId, sevenDaysAgo],
     );
     const activeMembers = parseInt(activeMembersResult.rows[0]?.active || '0');
 
@@ -49,7 +49,7 @@ export async function getOverview(guildId: string): Promise<AnalyticsOverview> {
     const newMembersResult = await db.query(
       `SELECT COUNT(*) as new FROM guild_members
        WHERE guild_id = $1 AND joined_at > $2`,
-      [guildId, sevenDaysAgo]
+      [guildId, sevenDaysAgo],
     );
     const newMembers = parseInt(newMembersResult.rows[0]?.new || '0');
 
@@ -57,7 +57,7 @@ export async function getOverview(guildId: string): Promise<AnalyticsOverview> {
     const previousMembersResult = await db.query(
       `SELECT COUNT(*) as total FROM guild_members
        WHERE guild_id = $1 AND joined_at < $2 AND (left_at IS NULL OR left_at > $2)`,
-      [guildId, sevenDaysAgo]
+      [guildId, sevenDaysAgo],
     );
     const previousMembers = parseInt(previousMembersResult.rows[0]?.total || '0');
 
@@ -65,7 +65,7 @@ export async function getOverview(guildId: string): Promise<AnalyticsOverview> {
     const previousMessagesResult = await db.query(
       `SELECT COUNT(*) as total FROM message_logs
        WHERE guild_id = $1 AND created_at BETWEEN $2 AND $3`,
-      [guildId, fourteenDaysAgo, sevenDaysAgo]
+      [guildId, fourteenDaysAgo, sevenDaysAgo],
     );
     const previousMessages = parseInt(previousMessagesResult.rows[0]?.total || '0');
 
@@ -73,7 +73,7 @@ export async function getOverview(guildId: string): Promise<AnalyticsOverview> {
     const recentMessagesResult = await db.query(
       `SELECT COUNT(*) as total FROM message_logs
        WHERE guild_id = $1 AND created_at > $2`,
-      [guildId, sevenDaysAgo]
+      [guildId, sevenDaysAgo],
     );
     const recentMessages = parseInt(recentMessagesResult.rows[0]?.total || '0');
 
@@ -106,7 +106,7 @@ export async function getOverview(guildId: string): Promise<AnalyticsOverview> {
  */
 export async function getGrowthMetrics(
   guildId: string,
-  period: 'day' | 'week' | 'month'
+  period: 'day' | 'week' | 'month',
 ): Promise<GrowthMetrics> {
   try {
     const lookback = period === 'day' ? '30 days' : period === 'week' ? '12 weeks' : '12 months';
@@ -151,7 +151,7 @@ export async function getGrowthMetrics(
         ) as leaves
       FROM date_series ds
       ORDER BY ds.date`,
-      [guildId]
+      [guildId],
     );
 
     return {
@@ -176,7 +176,7 @@ export async function getGrowthMetrics(
  */
 export async function getContentInsights(
   guildId: string,
-  days: number = 30
+  days: number = 30,
 ): Promise<ContentInsights> {
   try {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -194,7 +194,7 @@ export async function getContentInsights(
       GROUP BY channel_id, channel_name
       ORDER BY message_count DESC
       LIMIT 10`,
-      [guildId, days, since]
+      [guildId, days, since],
     );
 
     const topChannels: ChannelActivity[] = topChannelsResult.rows.map(row => ({
@@ -219,7 +219,7 @@ export async function getContentInsights(
       GROUP BY ml.user_id, ml.username, gm.joined_at
       ORDER BY message_count DESC
       LIMIT 10`,
-      [guildId, since]
+      [guildId, since],
     );
 
     const topMembers: MemberActivity[] = topMembersResult.rows.map(row => ({
@@ -239,7 +239,7 @@ export async function getContentInsights(
       WHERE guild_id = $1 AND created_at > $2
       GROUP BY hour
       ORDER BY hour`,
-      [guildId, since]
+      [guildId, since],
     );
 
     const peakHours = peakHoursResult.rows.map(row => ({
@@ -256,7 +256,7 @@ export async function getContentInsights(
       WHERE guild_id = $1 AND created_at > $2
       GROUP BY day, EXTRACT(DOW FROM created_at)
       ORDER BY EXTRACT(DOW FROM created_at)`,
-      [guildId, since]
+      [guildId, since],
     );
 
     const peakDays = peakDaysResult.rows.map(row => ({

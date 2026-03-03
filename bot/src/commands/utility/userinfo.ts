@@ -22,14 +22,14 @@ const command: Command = {
       .addFields(
         { name: '🆔 User ID', value: user.id, inline: true },
         { name: '📅 Account Created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-        { name: '🤖 Bot', value: user.bot ? 'Yes' : 'No', inline: true }
+        { name: '🤖 Bot', value: user.bot ? 'Yes' : 'No', inline: true },
       );
 
     if (member) {
       embed.addFields(
         { name: '📥 Joined Server', value: `<t:${Math.floor(member.joinedTimestamp! / 1000)}:R>`, inline: true },
         { name: '🎨 Display Color', value: member.displayHexColor, inline: true },
-        { name: '📛 Nickname', value: member.nickname || 'None', inline: true }
+        { name: '📛 Nickname', value: member.nickname || 'None', inline: true },
       );
 
       const roles = member.roles.cache

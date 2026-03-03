@@ -69,7 +69,7 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
     const botGuildIds = new Set<string>(
       botGuildsResponse.ok
         ? (await botGuildsResponse.json() as { id: string }[]).map(g => g.id)
-        : []
+        : [],
     );
 
     const guildsWithBotStatus = manageableGuilds.map((guild) => ({
@@ -94,7 +94,7 @@ guildsRouter.get('/:guildId', requireAuth, requireGuildAccess, asyncHandler(asyn
     
     const result = await db.query(
       'SELECT * FROM guild_configs WHERE guild_id = $1',
-      [guildId]
+      [guildId],
     );
 
     if (result.rows.length === 0) {
@@ -125,7 +125,7 @@ guildsRouter.patch(
       if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
         res.status(400).json({
           error: 'Validation failed',
-          message: 'Request body must be a valid JSON object'
+          message: 'Request body must be a valid JSON object',
         });
         return;
       }
@@ -133,14 +133,14 @@ guildsRouter.patch(
       // Validate the full config structure if provided
       const validationResult = validationService.safeValidateConfig(
         validationService.GuildConfigSchema,
-        updates
+        updates,
       );
 
       if (!validationResult.success) {
         res.status(400).json({
           error: 'Validation failed',
           message: 'Invalid configuration data',
-          details: validationResult.error.errors
+          details: validationResult.error.errors,
         });
         return;
       }
@@ -149,7 +149,7 @@ guildsRouter.patch(
         `INSERT INTO guild_configs (guild_id, config)
          VALUES ($1, $2)
          ON CONFLICT (guild_id) DO UPDATE SET config = $2, updated_at = NOW()`,
-        [guildId, JSON.stringify(validationResult.data)]
+        [guildId, JSON.stringify(validationResult.data)],
       );
 
       res.json({ success: true, data: validationResult.data });
@@ -157,7 +157,7 @@ guildsRouter.patch(
       logger.error('Error updating guild config:', error);
       res.status(500).json({ error: 'Failed to update guild config' });
     }
-  })
+  }),
 );
 
 // Get guild stats from Discord API
@@ -226,12 +226,12 @@ guildsRouter.get('/:guildId/leaderboard', requireAuth, asyncHandler(async (req, 
        WHERE guild_id = $1
        ORDER BY total_xp DESC
        LIMIT $2 OFFSET $3`,
-      [guildId, limit, offset]
+      [guildId, limit, offset],
     );
 
     const countResult = await db.query(
       'SELECT COUNT(*) FROM guild_members WHERE guild_id = $1',
-      [guildId]
+      [guildId],
     );
 
     res.json({
@@ -281,7 +281,7 @@ async function handleGetConfigSection(
   req: Request,
   res: Response,
   section: string,
-  defaultData: any
+  defaultData: any,
 ) {
   const { guildId } = req.params;
 
@@ -308,7 +308,7 @@ async function handlePatchConfigSection(
   req: Request,
   res: Response,
   section: string,
-  schema: z.ZodTypeAny
+  schema: z.ZodTypeAny,
 ) {
   const { guildId } = req.params;
   const updates = req.body;
@@ -321,7 +321,7 @@ async function handlePatchConfigSection(
       res.status(400).json({
         error: 'Validation failed',
         message: `Invalid ${section} configuration data`,
-        details: validationResult.error.errors
+        details: validationResult.error.errors,
       });
       return;
     }
@@ -330,12 +330,12 @@ async function handlePatchConfigSection(
     const updated = await guildConfigService.updateConfigSection(
       guildId,
       section,
-      validationResult.data
+      validationResult.data,
     );
 
     res.json({
       success: true,
-      data: updated
+      data: updated,
     });
   } catch (error) {
     logger.error(`Error updating ${section} config:`, { guildId, error });
@@ -351,11 +351,11 @@ guildsRouter.get(
   asyncHandler(async (req, res) => {
     const { guildId } = req.params;
     const result = await db.query(
-      `SELECT config->>'prefix' AS prefix FROM guild_configs WHERE guild_id = $1`,
-      [guildId]
+      'SELECT config->>\'prefix\' AS prefix FROM guild_configs WHERE guild_id = $1',
+      [guildId],
     );
     res.json({ prefix: result.rows[0]?.prefix ?? '!' });
-  })
+  }),
 );
 
 guildsRouter.patch(
@@ -378,10 +378,10 @@ guildsRouter.patch(
        ON CONFLICT (guild_id) DO UPDATE
          SET config = guild_configs.config || jsonb_build_object('prefix', $2::text),
              updated_at = NOW()`,
-      [guildId, parsed.data]
+      [guildId, parsed.data],
     );
     res.json({ prefix: parsed.data });
-  })
+  }),
 );
 
 // Welcome Messages Configuration
@@ -397,7 +397,7 @@ guildsRouter.get(
       dmEnabled: false,
       leaveEnabled: false,
     });
-  })
+  }),
 );
 
 guildsRouter.patch(
@@ -410,9 +410,9 @@ guildsRouter.patch(
       req,
       res,
       'welcome',
-      validationService.WelcomeConfigSchema
+      validationService.WelcomeConfigSchema,
     );
-  })
+  }),
 );
 
 // Leveling Configuration
@@ -431,7 +431,7 @@ guildsRouter.get(
       ignoredRoles: [],
       xpMultipliers: [],
     });
-  })
+  }),
 );
 
 guildsRouter.patch(
@@ -444,9 +444,9 @@ guildsRouter.patch(
       req,
       res,
       'leveling',
-      validationService.LevelingConfigSchema
+      validationService.LevelingConfigSchema,
     );
-  })
+  }),
 );
 
 // Moderation Configuration
@@ -463,7 +463,7 @@ guildsRouter.get(
       autoDeleteModCommands: false,
       dmOnAction: true,
     });
-  })
+  }),
 );
 
 guildsRouter.patch(
@@ -476,9 +476,9 @@ guildsRouter.patch(
       req,
       res,
       'moderation',
-      validationService.ModerationConfigSchema
+      validationService.ModerationConfigSchema,
     );
-  })
+  }),
 );
 
 // Auto-Moderation Configuration
@@ -514,7 +514,7 @@ guildsRouter.get(
       ignoredChannels: [],
       ignoredRoles: [],
     });
-  })
+  }),
 );
 
 guildsRouter.patch(
@@ -527,9 +527,9 @@ guildsRouter.patch(
       req,
       res,
       'automod',
-      validationService.AutoModConfigSchema
+      validationService.AutoModConfigSchema,
     );
-  })
+  }),
 );
 
 // Logging Configuration
@@ -557,7 +557,7 @@ guildsRouter.get(
       },
       ignoredChannels: [],
     });
-  })
+  }),
 );
 
 guildsRouter.patch(
@@ -570,9 +570,9 @@ guildsRouter.patch(
       req,
       res,
       'logging',
-      validationService.LoggingConfigSchema
+      validationService.LoggingConfigSchema,
     );
-  })
+  }),
 );
 
 // Starboard Configuration
@@ -588,7 +588,7 @@ guildsRouter.get(
       selfStar: false,
       ignoredChannels: [],
     });
-  })
+  }),
 );
 
 guildsRouter.patch(
@@ -601,9 +601,9 @@ guildsRouter.patch(
       req,
       res,
       'starboard',
-      validationService.StarboardConfigSchema
+      validationService.StarboardConfigSchema,
     );
-  })
+  }),
 );
 
 // ============================================================================
@@ -641,7 +641,7 @@ guildsRouter.get(
       logger.error('Error fetching analytics overview:', { guildId, error });
       res.status(500).json({ error: 'Failed to fetch analytics overview' });
     }
-  })
+  }),
 );
 
 /**
@@ -665,14 +665,14 @@ guildsRouter.get(
     try {
       const growth = await analyticsService.getGrowthMetrics(
         guildId,
-        period as 'day' | 'week' | 'month'
+        period as 'day' | 'week' | 'month',
       );
       res.json(growth);
     } catch (error) {
       logger.error('Error fetching growth metrics:', { guildId, error });
       res.status(500).json({ error: 'Failed to fetch growth metrics' });
     }
-  })
+  }),
 );
 
 /**
@@ -700,7 +700,7 @@ guildsRouter.get(
       logger.error('Error fetching content insights:', { guildId, error });
       res.status(500).json({ error: 'Failed to fetch content insights' });
     }
-  })
+  }),
 );
 
 // ============================================================================
@@ -724,7 +724,7 @@ guildsRouter.get(
       logger.error('Error fetching backup config:', { guildId, error });
       res.status(500).json({ error: 'Failed to fetch backup configuration' });
     }
-  })
+  }),
 );
 
 /**
@@ -743,7 +743,7 @@ guildsRouter.patch(
       // Validate the request body
       const validationResult = validationService.safeValidateConfig(
         validationService.BackupConfigSchema,
-        updates
+        updates,
       );
 
       if (!validationResult.success) {
@@ -757,7 +757,7 @@ guildsRouter.patch(
 
       const updated = await backupService.updateBackupConfig(
         guildId,
-        validationResult.data
+        validationResult.data,
       );
 
       res.json({ success: true, data: updated });
@@ -765,7 +765,7 @@ guildsRouter.patch(
       logger.error('Error updating backup config:', { guildId, error });
       res.status(500).json({ error: 'Failed to update backup configuration' });
     }
-  })
+  }),
 );
 
 /**
@@ -785,7 +785,7 @@ guildsRouter.get(
       logger.error('Error listing backups:', { guildId, error });
       res.status(500).json({ error: 'Failed to list backups' });
     }
-  })
+  }),
 );
 
 /**
@@ -815,7 +815,7 @@ guildsRouter.post(
           includeRoles: !!includeRoles,
           includeChannels: !!includeChannels,
           includeMembers: !!includeMembers,
-        }
+        },
       );
 
       res.json({ success: true, data: backup });
@@ -823,7 +823,7 @@ guildsRouter.post(
       logger.error('Error creating backup:', { guildId, error });
       res.status(500).json({ error: 'Failed to create backup' });
     }
-  })
+  }),
 );
 
 /**
@@ -849,7 +849,7 @@ guildsRouter.get(
       logger.error('Error fetching backup:', { guildId, backupId, error });
       res.status(500).json({ error: 'Failed to fetch backup' });
     }
-  })
+  }),
 );
 
 /**
@@ -870,7 +870,7 @@ guildsRouter.post(
       logger.error('Error restoring backup:', { guildId, backupId, error });
       res.status(500).json({ error: 'Failed to restore backup' });
     }
-  })
+  }),
 );
 
 /**
@@ -891,7 +891,7 @@ guildsRouter.delete(
       logger.error('Error deleting backup:', { guildId, backupId, error });
       res.status(500).json({ error: 'Failed to delete backup' });
     }
-  })
+  }),
 );
 
 // ============================================================================
@@ -927,14 +927,14 @@ guildsRouter.put('/:guildId/ticket-config', requireAuth, requireGuildAccess,
          ON CONFLICT (guild_id) DO UPDATE SET
            transcript_channel_id=$2, max_tickets_per_user=$3,
            auto_close_hours=$4, welcome_message=$5, updated_at=NOW()`,
-        [guildId, transcript_channel_id||null, max_tickets_per_user||1, auto_close_hours||0, welcome_message||'']
+        [guildId, transcript_channel_id||null, max_tickets_per_user||1, auto_close_hours||0, welcome_message||''],
       );
       res.json({ success: true });
     } catch (error) {
       logger.error('Error updating ticket config:', { guildId, error });
       res.status(500).json({ error: 'Failed to update ticket configuration' });
     }
-  })
+  }),
 );
 
 // GET /guilds/:guildId/ticket-panels
@@ -949,7 +949,7 @@ guildsRouter.get('/:guildId/ticket-panels', requireAuth, requireGuildAccess, asy
     const panelIds = panels.rows.map((p: any) => p.id);
     const cats = await db.query(
       'SELECT * FROM ticket_categories WHERE panel_id = ANY($1::int[]) ORDER BY panel_id, position',
-      [panelIds]
+      [panelIds],
     );
     // Group categories by panel_id
     const catsByPanel: Record<number, any[]> = {};
@@ -978,14 +978,14 @@ guildsRouter.post('/:guildId/ticket-panels', requireAuth, requireGuildAccess,
       const r = await db.query(
         `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template,stack_group,stack_position)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template, stack_group||null, stack_position]
+        [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template, stack_group||null, stack_position],
       );
       res.json(r.rows[0]);
     } catch (error) {
       logger.error('Error creating ticket panel:', { guildId, error });
       res.status(500).json({ error: 'Failed to create ticket panel' });
     }
-  })
+  }),
 );
 
 // GET /guilds/:guildId/ticket-panels/:panelId
@@ -996,11 +996,11 @@ guildsRouter.get('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
     if (!panel.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
     const cats = await db.query('SELECT * FROM ticket_categories WHERE panel_id=$1 ORDER BY position', [panelId]);
     const catIds = cats.rows.map((c: any) => c.id);
-    let fieldsByCategory: Record<number, any[]> = {};
+    const fieldsByCategory: Record<number, any[]> = {};
     if (catIds.length > 0) {
       const fields = await db.query(
         'SELECT * FROM ticket_form_fields WHERE category_id = ANY($1::int[]) ORDER BY category_id, position',
-        [catIds]
+        [catIds],
       );
       for (const f of fields.rows) {
         if (!fieldsByCategory[f.category_id]) fieldsByCategory[f.category_id] = [];
@@ -1034,7 +1034,7 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
            stack_group=COALESCE($10,stack_group),
            stack_position=COALESCE($11,stack_position)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template, stack_group??null, stack_position??null]
+        [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template, stack_group??null, stack_position??null],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
       res.json(r.rows[0]);
@@ -1042,7 +1042,7 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
       logger.error('Error updating ticket panel:', { guildId, panelId, error });
       res.status(500).json({ error: 'Failed to update ticket panel' });
     }
-  })
+  }),
 );
 
 // DELETE /guilds/:guildId/ticket-panels/:panelId
@@ -1058,7 +1058,7 @@ guildsRouter.delete('/:guildId/ticket-panels/:panelId', requireAuth, requireGuil
       logger.error('Error deleting ticket panel:', { guildId, panelId, error });
       res.status(500).json({ error: 'Failed to delete ticket panel' });
     }
-  })
+  }),
 );
 
 // POST /guilds/:guildId/ticket-panels/:panelId/categories
@@ -1081,19 +1081,19 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
     try {
       const posResult = await db.query(
         'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_categories WHERE panel_id=$1',
-        [panelId]
+        [panelId],
       );
       const r = await db.query(
         `INSERT INTO ticket_categories (panel_id,guild_id,name,emoji,description,support_role_ids,observer_role_ids,position)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [panelId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, posResult.rows[0].next]
+        [panelId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, posResult.rows[0].next],
       );
       res.json(r.rows[0]);
     } catch (error) {
       logger.error('Error creating ticket category:', { guildId, panelId, error });
       res.status(500).json({ error: 'Failed to create ticket category' });
     }
-  })
+  }),
 );
 
 // PUT /guilds/:guildId/ticket-categories/:categoryId
@@ -1124,7 +1124,7 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
            observer_role_ids=COALESCE($7,observer_role_ids),
            position=COALESCE($8,position)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [categoryId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, position]
+        [categoryId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, position],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
       res.json(r.rows[0]);
@@ -1132,7 +1132,7 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
       logger.error('Error updating ticket category:', { guildId, categoryId, error });
       res.status(500).json({ error: 'Failed to update ticket category' });
     }
-  })
+  }),
 );
 
 // DELETE /guilds/:guildId/ticket-categories/:categoryId
@@ -1148,7 +1148,7 @@ guildsRouter.delete('/:guildId/ticket-categories/:categoryId', requireAuth, requ
       logger.error('Error deleting ticket category:', { guildId, categoryId, error });
       res.status(500).json({ error: 'Failed to delete ticket category' });
     }
-  })
+  }),
 );
 
 // GET /guilds/:guildId/ticket-categories/:categoryId/form-fields
@@ -1162,14 +1162,14 @@ guildsRouter.get('/:guildId/ticket-categories/:categoryId/form-fields', requireA
          JOIN ticket_panels tp ON tc.panel_id = tp.id
          WHERE ff.category_id = $1 AND tp.guild_id = $2
          ORDER BY ff.position`,
-        [categoryId, guildId]
+        [categoryId, guildId],
       );
       res.json(r.rows);
     } catch (error) {
       logger.error('Error fetching form fields:', { guildId, categoryId, error });
       res.status(500).json({ error: 'Failed to fetch form fields' });
     }
-  })
+  }),
 );
 
 // POST /guilds/:guildId/ticket-categories/:categoryId/form-fields
@@ -1188,19 +1188,19 @@ guildsRouter.post('/:guildId/ticket-categories/:categoryId/form-fields', require
       if (!label) { res.status(400).json({ error: 'label is required' }); return; }
       const posResult = await db.query(
         'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_form_fields WHERE category_id=$1',
-        [categoryId]
+        [categoryId],
       );
       const r = await db.query(
         `INSERT INTO ticket_form_fields (category_id,label,placeholder,min_length,max_length,style,required,position)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [categoryId, label, placeholder||null, min_length, max_length, style, required, posResult.rows[0].next]
+        [categoryId, label, placeholder||null, min_length, max_length, style, required, posResult.rows[0].next],
       );
       res.json(r.rows[0]);
     } catch (error) {
       logger.error('Error creating form field:', { guildId, categoryId, error });
       res.status(500).json({ error: 'Failed to create form field' });
     }
-  })
+  }),
 );
 
 // PUT /guilds/:guildId/ticket-form-fields/:fieldId
@@ -1222,7 +1222,7 @@ guildsRouter.put('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGu
              WHERE tp.guild_id = $9
            )
          RETURNING *`,
-        [fieldId, label, placeholder||null, min_length, max_length, style, required, position, guildId]
+        [fieldId, label, placeholder||null, min_length, max_length, style, required, position, guildId],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
       res.json(r.rows[0]);
@@ -1230,7 +1230,7 @@ guildsRouter.put('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGu
       logger.error('Error updating form field:', { guildId, fieldId, error });
       res.status(500).json({ error: 'Failed to update form field' });
     }
-  })
+  }),
 );
 
 // DELETE /guilds/:guildId/ticket-form-fields/:fieldId
@@ -1248,7 +1248,7 @@ guildsRouter.delete('/:guildId/ticket-form-fields/:fieldId', requireAuth, requir
              WHERE tp.guild_id = $2
            )
          RETURNING id`,
-        [fieldId, guildId]
+        [fieldId, guildId],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
       res.json({ success: true });
@@ -1256,7 +1256,7 @@ guildsRouter.delete('/:guildId/ticket-form-fields/:fieldId', requireAuth, requir
       logger.error('Error deleting form field:', { guildId, fieldId, error });
       res.status(500).json({ error: 'Failed to delete form field' });
     }
-  })
+  }),
 );
 
 // GET /guilds/:guildId/tickets
@@ -1322,7 +1322,7 @@ guildsRouter.post(
       // Fetch source config
       const sourceResult = await db.query(
         'SELECT config FROM guild_configs WHERE guild_id = $1',
-        [sourceGuildId]
+        [sourceGuildId],
       );
 
       if (sourceResult.rows.length === 0) {
@@ -1338,7 +1338,7 @@ guildsRouter.post(
          VALUES ($1, $2, NOW())
          ON CONFLICT (guild_id)
          DO UPDATE SET config = $2, updated_at = NOW()`,
-        [targetGuildId, JSON.stringify(cleanedConfig)]
+        [targetGuildId, JSON.stringify(cleanedConfig)],
       );
 
       logger.info('Guild config copied', { sourceGuildId, targetGuildId, userId: authReq.user!.id });
@@ -1347,5 +1347,5 @@ guildsRouter.post(
       logger.error('Error copying guild config:', { sourceGuildId, targetGuildId, error });
       res.status(500).json({ error: 'Failed to copy guild settings' });
     }
-  })
+  }),
 );

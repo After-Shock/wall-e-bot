@@ -75,7 +75,7 @@ const command: Command = {
           if (!intervalMs) {
             await interaction.reply({
               embeds: [errorEmbed('Error', 'Invalid interval format. Use formats like: 10m, 1h, 1d')],
-              ephemeral: true
+              ephemeral: true,
             });
             return;
           }
@@ -105,8 +105,8 @@ const command: Command = {
             embedColor,
             intervalMinutes,
             nextRun,
-            interaction.user.id
-          ]
+            interaction.user.id,
+          ],
         );
 
         const scheduleEmbed = new EmbedBuilder()
@@ -115,14 +115,14 @@ const command: Command = {
           .addFields(
             { name: 'Channel', value: `${channel}`, inline: true },
             { name: 'ID', value: result.rows[0].id.toString(), inline: true },
-            { name: 'First Run', value: `<t:${Math.floor(nextRun.getTime() / 1000)}:R>`, inline: true }
+            { name: 'First Run', value: `<t:${Math.floor(nextRun.getTime() / 1000)}:R>`, inline: true },
           );
 
         if (intervalMinutes) {
           scheduleEmbed.addFields({ 
             name: 'Repeat', 
             value: `Every ${formatDuration(intervalMinutes * 60000)}`, 
-            inline: true 
+            inline: true, 
           });
         } else {
           scheduleEmbed.addFields({ name: 'Repeat', value: 'One-time', inline: true });
@@ -139,13 +139,13 @@ const command: Command = {
           `SELECT * FROM scheduled_messages 
            WHERE guild_id = $1 
            ORDER BY next_run`,
-          [interaction.guild!.id]
+          [interaction.guild!.id],
         );
 
         if (result.rows.length === 0) {
           await interaction.reply({
             embeds: [errorEmbed('No Scheduled Messages', 'No scheduled messages found.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
@@ -172,19 +172,19 @@ const command: Command = {
 
         const result = await client.db.pool.query(
           'DELETE FROM scheduled_messages WHERE id = $1 AND guild_id = $2 RETURNING id',
-          [id, interaction.guild!.id]
+          [id, interaction.guild!.id],
         );
 
         if (result.rowCount === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'Scheduled message not found.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
 
         await interaction.reply({
-          embeds: [successEmbed('Deleted', `Scheduled message #${id} has been deleted.`)]
+          embeds: [successEmbed('Deleted', `Scheduled message #${id} has been deleted.`)],
         });
         break;
       }
@@ -197,20 +197,20 @@ const command: Command = {
            SET enabled = NOT enabled 
            WHERE id = $1 AND guild_id = $2 
            RETURNING enabled`,
-          [id, interaction.guild!.id]
+          [id, interaction.guild!.id],
         );
 
         if (result.rowCount === 0) {
           await interaction.reply({
             embeds: [errorEmbed('Error', 'Scheduled message not found.')],
-            ephemeral: true
+            ephemeral: true,
           });
           return;
         }
 
         const enabled = result.rows[0].enabled;
         await interaction.reply({
-          embeds: [successEmbed('Toggled', `Scheduled message #${id} is now **${enabled ? 'enabled' : 'disabled'}**.`)]
+          embeds: [successEmbed('Toggled', `Scheduled message #${id} is now **${enabled ? 'enabled' : 'disabled'}**.`)],
         });
         break;
       }

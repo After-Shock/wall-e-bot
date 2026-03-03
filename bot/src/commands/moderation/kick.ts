@@ -42,7 +42,7 @@ const command: Command = {
       interaction.guild!,
       target,
       interaction.member as GuildMember,
-      reason
+      reason,
     );
 
     if (result.success) {
