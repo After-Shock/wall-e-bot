@@ -8,6 +8,15 @@ export default {
   async execute(client: WallEClient, message: Message) {
     if (message.author.bot) return;
 
+    // Whitelist check
+    if (message.guild) {
+      const wl = await client.db.pool.query(
+        'SELECT status FROM guild_whitelist WHERE guild_id = $1',
+        [message.guild.id]
+      ).catch(() => null);
+      if (wl?.rows[0]?.status !== 'approved' && message.author.id !== process.env.BOT_OWNER_ID) return;
+    }
+
     try {
       // Run automod first - if it triggers, don't process further
       const automodTriggered = await client.automod.handleMessage(message);

@@ -104,6 +104,27 @@ export default {
       return;
     }
 
+    // Whitelist check — ignore guilds that aren't approved
+    if (interaction.guildId) {
+      const isOwner = interaction.user.id === process.env.BOT_OWNER_ID;
+      if (!isOwner) {
+        const wl = await client.db.pool.query(
+          'SELECT status FROM guild_whitelist WHERE guild_id = $1',
+          [interaction.guildId]
+        ).catch(() => null);
+        const status = wl?.rows[0]?.status;
+        if (status !== 'approved') {
+          if (interaction.isChatInputCommand()) {
+            await interaction.reply({
+              content: '⚠️ This server has not been approved to use this bot. Please contact the bot owner.',
+              ephemeral: true,
+            }).catch(() => {});
+          }
+          return;
+        }
+      }
+    }
+
     // =========================================================================
     // Handle Slash Commands
     // =========================================================================
