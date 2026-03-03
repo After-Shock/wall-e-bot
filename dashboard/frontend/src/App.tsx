@@ -31,6 +31,7 @@ import TriggersPage from './pages/guild/TriggersPage';
 import EmbedBuilderPage from './pages/guild/EmbedBuilderPage';
 import SuggestionsPage from './pages/guild/SuggestionsPage';
 import TicketsPage from './pages/guild/TicketsPage';
+import AdminPage from './pages/AdminPage';
 
 // Premium features
 import AnalyticsPage from './pages/guild/AnalyticsPage';
@@ -47,6 +48,9 @@ function App() {
         
         {/* Server selection */}
         <Route path="dashboard" element={<DashboardPage />} />
+
+        {/* Bot admin panel */}
+        <Route path="admin" element={<AdminPage />} />
         
         {/* Guild-specific pages with sidebar */}
         <Route path="dashboard/:guildId" element={<GuildLayout />}>

@@ -1,6 +1,6 @@
 import { Outlet, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Bot, LogOut, LayoutDashboard } from 'lucide-react';
+import { Bot, LogOut, LayoutDashboard, ShieldAlert } from 'lucide-react';
 
 export default function Layout() {
   const { user, login, logout } = useAuth();
@@ -17,12 +17,21 @@ export default function Layout() {
               </Link>
               
               {user && (
-                <Link 
-                  to="/dashboard" 
+                <Link
+                  to="/dashboard"
                   className="flex items-center gap-2 text-discord-light hover:text-white transition-colors"
                 >
                   <LayoutDashboard className="w-5 h-5" />
                   Dashboard
+                </Link>
+              )}
+              {user && (import.meta.env.VITE_BOT_OWNER_ID || '').split(',').map((s: string) => s.trim()).includes(user.id) && (
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-2 text-discord-light hover:text-white transition-colors"
+                >
+                  <ShieldAlert className="w-5 h-5" />
+                  Admin
                 </Link>
               )}
             </div>

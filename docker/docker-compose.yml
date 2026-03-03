@@ -128,6 +128,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.frontend
       target: production
+      args:
+        - VITE_BOT_OWNER_ID=${BOT_OWNER_ID}
     container_name: wall-e-frontend
     restart: unless-stopped
     ports:
