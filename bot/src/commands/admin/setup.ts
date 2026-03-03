@@ -44,6 +44,16 @@ const command: Command = {
             .setRequired(false)))
     .addSubcommand(subcommand =>
       subcommand
+        .setName('prefix')
+        .setDescription('Set the prefix for custom commands')
+        .addStringOption(option =>
+          option.setName('prefix')
+            .setDescription('New prefix (e.g. !, ?, $, .)')
+            .setMinLength(1)
+            .setMaxLength(5)
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
         .setName('view')
         .setDescription('View current server configuration'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
@@ -183,6 +193,19 @@ const command: Command = {
 
         await interaction.reply({
           embeds: [successEmbed('Leveling System', `Leveling has been **${enabled ? 'enabled' : 'disabled'}**.${channel ? `\nLevel up messages will be sent to ${channel}.` : ''}`)]
+        });
+        break;
+      }
+
+      case 'prefix': {
+        const newPrefix = interaction.options.getString('prefix', true);
+
+        config.prefix = newPrefix;
+        await client.db.upsertGuildConfig(config);
+        await client.cache.invalidateGuildConfig(interaction.guild!.id);
+
+        await interaction.reply({
+          embeds: [successEmbed('Prefix Updated', `Custom command prefix set to \`${newPrefix}\`\n\nExample: \`${newPrefix}rules\``)],
         });
         break;
       }

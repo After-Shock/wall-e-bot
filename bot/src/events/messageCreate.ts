@@ -26,6 +26,43 @@ export default {
 
       // Handle leveling
       await client.leveling.handleMessage(message);
+
+      // Handle custom commands (guild only)
+      if (message.guild && message.channel.isTextBased() && 'send' in message.channel) {
+        const config = await client.db.getGuildConfig(message.guild.id);
+        const prefix = config?.prefix ?? '!';
+        if (message.content.startsWith(prefix)) {
+          const commandName = message.content.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase();
+          if (commandName) {
+            const result = await client.db.pool.query(
+              `SELECT response, embed_response, embed_color, delete_command
+               FROM custom_commands WHERE guild_id = $1 AND name = $2`,
+              [message.guild.id, commandName]
+            );
+            if (result.rows.length > 0) {
+              const cmd = result.rows[0];
+              const channel = message.channel as import('discord.js').TextChannel;
+
+              if (cmd.delete_command) await message.delete().catch(() => {});
+
+              if (cmd.embed_response) {
+                const { EmbedBuilder } = await import('discord.js');
+                const embed = new EmbedBuilder()
+                  .setDescription(cmd.response)
+                  .setColor(cmd.embed_color ?? '#5865F2');
+                await channel.send({ embeds: [embed] });
+              } else {
+                await channel.send(cmd.response);
+              }
+
+              client.db.pool.query(
+                'UPDATE custom_commands SET uses = uses + 1 WHERE guild_id = $1 AND name = $2',
+                [message.guild.id, commandName]
+              ).catch(() => {});
+            }
+          }
+        }
+      }
     } catch (error) {
       logger.error('Error in messageCreate handler:', error);
     }

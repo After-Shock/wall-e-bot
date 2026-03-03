@@ -110,8 +110,10 @@ const command: Command = {
           [interaction.guild!.id, name, response, embed, embedColor, cooldown, deleteTrigger, interaction.user.id]
         );
 
+        const guildConfig = await client.db.getGuildConfig(interaction.guild!.id);
+        const prefix = guildConfig?.prefix ?? '!';
         await interaction.reply({
-          embeds: [successEmbed('Command Created', `Custom command \`${name}\` has been created!\n\nUse it with your prefix: \`!${name}\``)]
+          embeds: [successEmbed('Command Created', `Custom command \`${name}\` has been created!\n\nUse it with: \`${prefix}${name}\``)]
         });
         break;
       }
