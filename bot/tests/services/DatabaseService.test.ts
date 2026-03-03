@@ -59,14 +59,14 @@ describe('DatabaseService', () => {
 
   describe('getGuildConfig', () => {
     it('should return guild config when found', async () => {
-      const mockConfig = { guild_id: '123', config: '{}' };
-      mockQuery.mockResolvedValueOnce({ rows: [mockConfig] });
+      const mockConfigData = { prefix: '!', modules: {} };
+      mockQuery.mockResolvedValueOnce({ rows: [{ config: mockConfigData }] });
 
       const result = await db.getGuildConfig('123');
 
-      expect(result).toEqual(mockConfig);
+      expect(result).toEqual(mockConfigData);
       expect(mockQuery).toHaveBeenCalledWith(
-        'SELECT * FROM guild_configs WHERE guild_id = $1',
+        'SELECT config FROM guild_configs WHERE guild_id = $1',
         ['123']
       );
     });
