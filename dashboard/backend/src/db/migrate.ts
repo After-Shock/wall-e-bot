@@ -294,6 +294,20 @@ CREATE TABLE IF NOT EXISTS message_logs (
 ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS joined_at TIMESTAMP;
 ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS left_at TIMESTAMP;
 
+-- Guild whitelist table (controls which servers can use the bot)
+CREATE TABLE IF NOT EXISTS guild_whitelist (
+  guild_id VARCHAR(20) PRIMARY KEY,
+  guild_name VARCHAR(100) NOT NULL,
+  guild_icon VARCHAR(100),
+  member_count INTEGER DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  added_at TIMESTAMP DEFAULT NOW(),
+  approved_at TIMESTAMP,
+  left_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_guild_whitelist_status ON guild_whitelist(status);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
 CREATE INDEX IF NOT EXISTS idx_guild_members_xp ON guild_members(guild_id, total_xp DESC);
