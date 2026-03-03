@@ -333,6 +333,10 @@ CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(guild_id, status);
 CREATE INDEX IF NOT EXISTS idx_tickets_last_activity ON tickets(last_activity) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS idx_message_logs_guild ON message_logs(guild_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_message_logs_channel ON message_logs(guild_id, channel_id, created_at DESC);
+
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN DEFAULT FALSE;
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS trigger_on_edit BOOLEAN DEFAULT FALSE;
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
 `;
 
 async function migrate() {
