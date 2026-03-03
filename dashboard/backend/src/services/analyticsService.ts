@@ -109,17 +109,17 @@ export async function getGrowthMetrics(
   period: 'day' | 'week' | 'month'
 ): Promise<GrowthMetrics> {
   try {
-    const dataPoints = period === 'day' ? 30 : period === 'week' ? 12 : 12;
-    const interval = period === 'day' ? '1 day' : period === 'week' ? '7 days' : '1 month';
+    const lookback = period === 'day' ? '30 days' : period === 'week' ? '12 weeks' : '12 months';
+    const step = period === 'day' ? '1 day' : period === 'week' ? '7 days' : '1 month';
     const dateFormat = period === 'day' ? 'YYYY-MM-DD' : period === 'week' ? 'YYYY-WW' : 'YYYY-MM';
 
     // Generate date series and get metrics
     const result = await db.query(
       `WITH date_series AS (
         SELECT generate_series(
-          NOW() - INTERVAL '${dataPoints} ${interval}',
+          NOW() - INTERVAL '${lookback}',
           NOW(),
-          INTERVAL '${interval}'
+          INTERVAL '${step}'
         )::date as date
       )
       SELECT
