@@ -96,6 +96,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build shared package
+        run: npm run build -w shared
+
       - name: Run tests
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
@@ -131,6 +134,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Build shared package
+        run: npm run build -w shared
 
       - name: Build all packages
         run: npm run build --workspaces --if-present
