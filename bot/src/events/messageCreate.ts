@@ -32,12 +32,15 @@ export default {
         const config = await client.db.getGuildConfig(message.guild.id);
         const prefix = config?.prefix ?? '!';
         if (message.content.startsWith(prefix)) {
-          const commandName = message.content.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase();
-          if (commandName) {
+          const rawName = message.content.slice(prefix.length).trim().split(/\s+/)[0];
+          if (rawName) {
             const result = await client.db.pool.query(
-              `SELECT response, embed_response, embed_color, delete_command
-               FROM custom_commands WHERE guild_id = $1 AND name = $2`,
-              [message.guild.id, commandName]
+              `SELECT response, embed_response, embed_color, delete_command, case_sensitive
+               FROM custom_commands
+               WHERE guild_id = $1
+                 AND enabled = TRUE
+                 AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)`,
+              [message.guild.id, rawName]
             );
             if (result.rows.length > 0) {
               const cmd = result.rows[0];
@@ -56,8 +59,8 @@ export default {
               }
 
               client.db.pool.query(
-                'UPDATE custom_commands SET uses = uses + 1 WHERE guild_id = $1 AND name = $2',
-                [message.guild.id, commandName]
+                'UPDATE custom_commands SET uses = uses + 1 WHERE guild_id = $1 AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)',
+                [message.guild.id, rawName]
               ).catch(() => {});
             }
           }
