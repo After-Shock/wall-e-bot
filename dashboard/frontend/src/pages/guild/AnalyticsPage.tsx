@@ -11,7 +11,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import api from '../../api/axios';
+import { api } from '../../services/api';
 import type {
   AnalyticsOverview,
   GrowthMetrics,
