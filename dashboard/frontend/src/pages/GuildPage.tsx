@@ -1,8 +1,7 @@
-import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings, Loader2, Image, Activity, Users, Hash, Mic, Tag, Smile, Zap, Calendar, Globe } from 'lucide-react';
+import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings, Loader2, Image, Activity } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 interface ModulesConfig {
@@ -39,23 +38,6 @@ interface ConfigUpdate {
   leveling?: Partial<GuildConfig['config']['leveling']>;
 }
 
-interface GuildStats {
-  id: string;
-  name: string;
-  icon: string | null;
-  description: string | null;
-  ownerId: string;
-  memberCount: number;
-  onlineCount: number;
-  roleCount: number;
-  emojiCount: number;
-  channels: { text: number; voice: number; categories: number };
-  boostLevel: number;
-  boostCount: number;
-  verificationLevel: number;
-  createdAt: string;
-}
-
 export default function GuildPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const queryClient = useQueryClient();
@@ -69,17 +51,7 @@ export default function GuildPage() {
     },
   });
 
-  const { data: stats } = useQuery({
-    queryKey: ['guild-stats', guildId],
-    queryFn: async () => {
-      const response = await api.get<GuildStats>(`/api/guilds/${guildId}/stats`);
-      return response.data;
-    },
-    enabled: activeTab === 'general',
-    staleTime: 60_000,
-  });
-
-  const updateMutation = useMutation({
+const updateMutation = useMutation({
     mutationFn: async (updates: ConfigUpdate) => {
       await api.patch(`/api/guilds/${guildId}`, updates);
     },
@@ -141,28 +113,6 @@ export default function GuildPage() {
             {activeTab === 'general' && (
               <div>
                 <h2 className="text-xl font-semibold mb-6">General Settings</h2>
-
-                {/* Server Stats */}
-                {stats && (
-                  <div className="mb-8">
-                    <h3 className="font-medium mb-4 text-discord-light uppercase text-xs tracking-wider">Server Overview</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                      <StatCard icon={Users} label="Members" value={stats.memberCount.toLocaleString()} sub={`${stats.onlineCount.toLocaleString()} online`} />
-                      <StatCard icon={Hash} label="Text Channels" value={stats.channels.text.toString()} sub={`${stats.channels.voice} voice · ${stats.channels.categories} cat.`} />
-                      <StatCard icon={Tag} label="Roles" value={stats.roleCount.toString()} />
-                      <StatCard icon={Smile} label="Emojis" value={stats.emojiCount.toString()} />
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <StatCard icon={Zap} label="Boost Level" value={`Level ${stats.boostLevel}`} sub={`${stats.boostCount} boosts`} />
-                      <StatCard icon={Globe} label="Verification" value={['None','Low','Med','High','Max'][stats.verificationLevel] ?? stats.verificationLevel.toString()} />
-                      <StatCard icon={Calendar} label="Created" value={new Date(stats.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} />
-                      <StatCard icon={Activity} label="Server ID" value={stats.id} mono />
-                    </div>
-                    {stats.description && (
-                      <p className="mt-3 text-sm text-discord-light italic">{stats.description}</p>
-                    )}
-                  </div>
-                )}
 
                 <div className="space-y-6">
                   <div>
@@ -252,29 +202,6 @@ export default function GuildPage() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-
-function StatCard({ icon: Icon, label, value, sub, mono }: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  sub?: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="bg-discord-darker rounded-lg p-3 flex items-start gap-3">
-      <div className="mt-0.5 text-discord-blurple shrink-0">
-        <Icon className="w-4 h-4" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-discord-light mb-0.5">{label}</p>
-        <p className={`font-semibold text-sm truncate ${mono ? 'font-mono text-xs' : ''}`}>{value}</p>
-        {sub && <p className="text-xs text-discord-light mt-0.5">{sub}</p>}
       </div>
     </div>
   );
