@@ -12,7 +12,7 @@
  * @module services/SchedulerService
  */
 
-import { TextChannel, EmbedBuilder } from 'discord.js';
+import { TextChannel, EmbedBuilder, ActivityType } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
@@ -45,6 +45,7 @@ export class SchedulerService {
   /** Interval handle for the background check loop */
   private checkInterval: NodeJS.Timeout | null = null;
   private autoCloseInterval: ReturnType<typeof setInterval> | null = null;
+  private activityInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(private client: WallEClient) {}
 
@@ -65,6 +66,10 @@ export class SchedulerService {
     this.autoCloseInterval = setInterval(() => { this.checkAutoClose(); }, 60 * 60 * 1000);
     this.checkAutoClose(); // run on start too
 
+    // Apply bot activity status every 5 minutes (re-applies after gateway reconnects)
+    this.activityInterval = setInterval(() => { this.applyBotActivity(); }, 5 * 60 * 1000);
+    this.applyBotActivity(); // apply on start
+
     logger.info('Scheduler service started');
   }
 
@@ -76,6 +81,31 @@ export class SchedulerService {
     if (this.autoCloseInterval) {
       clearInterval(this.autoCloseInterval);
       this.autoCloseInterval = null;
+    }
+    if (this.activityInterval) {
+      clearInterval(this.activityInterval);
+      this.activityInterval = null;
+    }
+  }
+
+  private async applyBotActivity() {
+    try {
+      const result = await this.client.db.pool.query(
+        "SELECT value FROM bot_settings WHERE key = 'activity'"
+      );
+      const data = result.rows[0]?.value;
+      if (!data?.text) return;
+
+      const typeMap: Record<string, ActivityType> = {
+        PLAYING: ActivityType.Playing,
+        WATCHING: ActivityType.Watching,
+        LISTENING: ActivityType.Listening,
+        COMPETING: ActivityType.Competing,
+      };
+      const activityType = typeMap[data.type] ?? ActivityType.Playing;
+      this.client.user?.setActivity(data.text, { type: activityType });
+    } catch (error) {
+      logger.error('Error applying bot activity:', error);
     }
   }
 

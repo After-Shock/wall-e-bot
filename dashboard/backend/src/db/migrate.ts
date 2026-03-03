@@ -252,6 +252,12 @@ CREATE TABLE IF NOT EXISTS temp_bans (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Bot global settings (key-value store)
+CREATE TABLE IF NOT EXISTS bot_settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value JSONB NOT NULL DEFAULT '{}'
+);
+
 -- Add label column to reaction_roles if not exists
 ALTER TABLE reaction_roles ADD COLUMN IF NOT EXISTS label VARCHAR(100);
 

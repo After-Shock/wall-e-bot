@@ -1,8 +1,8 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings, Loader2, Image } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings, Loader2, Image, Activity } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 interface ModulesConfig {
   moderation: boolean;
@@ -212,10 +212,21 @@ export default function GuildPage() {
 function CustomizationTab({ guildId }: { guildId: string }) {
   const [nickname, setNickname] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [activityType, setActivityType] = useState('PLAYING');
+  const [activityText, setActivityText] = useState('');
   const [nickSaving, setNickSaving] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
+  const [activitySaving, setActivitySaving] = useState(false);
   const [nickMsg, setNickMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [avatarMsg, setAvatarMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [activityMsg, setActivityMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    api.get('/api/bot/activity').then(r => {
+      setActivityType(r.data.type || 'PLAYING');
+      setActivityText(r.data.text || '');
+    }).catch(() => {});
+  }, []);
 
   const saveNickname = async () => {
     setNickSaving(true);
@@ -227,6 +238,19 @@ function CustomizationTab({ guildId }: { guildId: string }) {
       setNickMsg({ type: 'error', text: e?.response?.data?.error || 'Failed to update nickname' });
     } finally {
       setNickSaving(false);
+    }
+  };
+
+  const saveActivity = async () => {
+    setActivitySaving(true);
+    setActivityMsg(null);
+    try {
+      await api.patch('/api/bot/activity', { type: activityType, text: activityText });
+      setActivityMsg({ type: 'success', text: 'Activity updated! The bot will apply it within a minute.' });
+    } catch (e: any) {
+      setActivityMsg({ type: 'error', text: e?.response?.data?.error || 'Failed to update activity' });
+    } finally {
+      setActivitySaving(false);
     }
   };
 
@@ -277,6 +301,51 @@ function CustomizationTab({ guildId }: { guildId: string }) {
           {nickMsg && (
             <p className={`text-sm mt-2 ${nickMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
               {nickMsg.text}
+            </p>
+          )}
+        </div>
+
+        {/* Activity Status */}
+        <div>
+          <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            Bot Activity Status
+            <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">Global — applies to all servers</span>
+          </label>
+          <div className="flex items-center gap-3 max-w-lg">
+            <select
+              value={activityType}
+              onChange={e => setActivityType(e.target.value)}
+              className="input w-36 shrink-0"
+            >
+              <option value="PLAYING">Playing</option>
+              <option value="WATCHING">Watching</option>
+              <option value="LISTENING">Listening to</option>
+              <option value="COMPETING">Competing in</option>
+            </select>
+            <input
+              type="text"
+              value={activityText}
+              onChange={e => setActivityText(e.target.value)}
+              className="input flex-1"
+              placeholder="your server"
+              maxLength={128}
+            />
+            <button
+              onClick={saveActivity}
+              disabled={activitySaving}
+              className="btn btn-primary flex items-center gap-2 shrink-0"
+            >
+              {activitySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save
+            </button>
+          </div>
+          <p className="text-sm text-discord-light mt-1">
+            Sets the bot's status line (e.g. "Playing your server"). Leave text blank to clear.
+          </p>
+          {activityMsg && (
+            <p className={`text-sm mt-2 ${activityMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+              {activityMsg.text}
             </p>
           )}
         </div>

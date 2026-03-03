@@ -14,6 +14,7 @@ interface CustomCommand {
   permissions: string[];
   cooldown: number;
   enabled: boolean;
+  group?: string;
 }
 
 const variables = [
@@ -40,9 +41,13 @@ export default function CustomCommandsPage() {
   const [editingCommand, setEditingCommand] = useState<CustomCommand | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+
+  const groups = Array.from(new Set(commands.map(c => c.group).filter(Boolean) as string[]));
 
   const filteredCommands = commands.filter(cmd =>
-    cmd.name.toLowerCase().includes(searchQuery.toLowerCase())
+    cmd.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    (activeGroup === null || cmd.group === activeGroup)
   );
 
   const createNewCommand = () => {
@@ -54,6 +59,7 @@ export default function CustomCommandsPage() {
       permissions: [],
       cooldown: 5,
       enabled: true,
+      group: activeGroup ?? '',
     });
     setShowEditor(true);
   };
@@ -116,6 +122,35 @@ export default function CustomCommandsPage() {
             />
           </div>
 
+          {/* Group Filter Tabs */}
+          {groups.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setActiveGroup(null)}
+                className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                  activeGroup === null
+                    ? 'bg-discord-blurple text-white'
+                    : 'bg-discord-dark text-discord-light hover:text-white'
+                }`}
+              >
+                All
+              </button>
+              {groups.map(g => (
+                <button
+                  key={g}
+                  onClick={() => setActiveGroup(g)}
+                  className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                    activeGroup === g
+                      ? 'bg-discord-blurple text-white'
+                      : 'bg-discord-dark text-discord-light hover:text-white'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Commands List */}
           <div className="space-y-3">
             {filteredCommands.length === 0 ? (
@@ -153,8 +188,13 @@ export default function CustomCommandsPage() {
                         />
                       </button>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <code className="text-discord-blurple font-semibold">!{cmd.name}</code>
+                          {cmd.group && (
+                            <span className="text-xs bg-discord-blurple/20 text-discord-blurple px-2 py-0.5 rounded">
+                              {cmd.group}
+                            </span>
+                          )}
                           {cmd.cooldown > 0 && (
                             <span className="text-xs bg-discord-dark px-2 py-0.5 rounded">
                               {cmd.cooldown}s cooldown
@@ -221,6 +261,17 @@ export default function CustomCommandsPage() {
                   min="0"
                   max="3600"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Group (optional)</label>
+                <input
+                  type="text"
+                  value={editingCommand?.group || ''}
+                  onChange={e => setEditingCommand(prev => prev ? { ...prev, group: e.target.value } : null)}
+                  className="input w-full"
+                  placeholder="e.g. Info, Fun, Utilities"
+                />
+                <p className="text-xs text-discord-light mt-1">Used to organize commands into tabs</p>
               </div>
             </div>
 

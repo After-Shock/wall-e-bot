@@ -97,7 +97,7 @@ export default function TicketsPage() {
         ticketApi.getConfig(guildId),
         ticketApi.getTickets(guildId, { status: 'open,claimed' }),
       ]);
-      setPanels(panelsData);
+      setPanels(panelsData.map((p: Panel) => ({ ...p, _expanded: true })));
       setConfig(configData);
       setActiveTickets(ticketsData);
     } catch (e: any) {

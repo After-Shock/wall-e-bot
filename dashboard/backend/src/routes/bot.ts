@@ -3,6 +3,7 @@ import axios from 'axios';
 import { requireAuth, requireGuildAccess, AuthenticatedRequest } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { db } from '../db/index.js';
 
 export const botRouter = Router();
 
@@ -44,6 +45,34 @@ botRouter.get('/stats', asyncHandler(async (req, res) => {
     logger.error('Error fetching bot stats:', error);
     res.status(500).json({ error: 'Failed to fetch bot stats' });
   }
+}));
+
+// Get bot activity status (global)
+botRouter.get('/activity', requireAuth, asyncHandler(async (req, res) => {
+  const result = await db.query("SELECT value FROM bot_settings WHERE key = 'activity'");
+  const data = result.rows[0]?.value || { type: 'PLAYING', text: '' };
+  res.json(data);
+}));
+
+// Set bot activity status (global — shows in Discord's status bar)
+botRouter.patch('/activity', requireAuth, asyncHandler(async (req, res) => {
+  const { type, text } = req.body;
+  const validTypes = ['PLAYING', 'WATCHING', 'LISTENING', 'COMPETING'];
+  if (!validTypes.includes(type)) {
+    res.status(400).json({ error: `type must be one of: ${validTypes.join(', ')}` });
+    return;
+  }
+  if (text && typeof text !== 'string') {
+    res.status(400).json({ error: 'text must be a string' });
+    return;
+  }
+  await db.query(
+    `INSERT INTO bot_settings (key, value) VALUES ('activity', $1)
+     ON CONFLICT (key) DO UPDATE SET value = $1`,
+    [JSON.stringify({ type, text: text || '' })]
+  );
+  logger.info('Bot activity updated', { type, text });
+  res.json({ success: true });
 }));
 
 // Update bot nickname for a guild (per-server, not global)

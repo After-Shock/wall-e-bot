@@ -1,5 +1,5 @@
 import { Outlet, useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import Sidebar from './Sidebar';
 import { ArrowLeft, Server } from 'lucide-react';
 
@@ -11,27 +11,10 @@ interface Guild {
 
 export default function GuildLayout() {
   const { guildId } = useParams<{ guildId: string }>();
+  const queryClient = useQueryClient();
 
-  const { data: guild, isLoading } = useQuery({
-    queryKey: ['guild-info', guildId],
-    queryFn: async () => {
-      // In production, this would fetch from the API
-      // For now, return a placeholder
-      return {
-        id: guildId,
-        name: 'Your Server',
-        icon: null,
-      } as Guild;
-    },
-  });
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[80vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-discord-blurple"></div>
-      </div>
-    );
-  }
+  const guilds = queryClient.getQueryData<Guild[]>(['guilds']);
+  const guild = guilds?.find(g => g.id === guildId) ?? { id: guildId ?? '', name: 'Server', icon: null };
 
   return (
     <div className="flex min-h-[calc(100vh-64px)]">
