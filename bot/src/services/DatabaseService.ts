@@ -209,13 +209,14 @@ export class DatabaseService {
       // Use UPSERT with row locking to prevent race conditions
       // The ON CONFLICT ... DO UPDATE with RETURNING is atomic
       const result = await client.query(
-        `INSERT INTO guild_members (guild_id, user_id, xp, level, total_xp, message_count, last_xp_gain)
-         VALUES ($1, $2, $3, 0, $3, 1, NOW())
+        `INSERT INTO guild_members (guild_id, user_id, xp, level, total_xp, message_count, last_xp_gain, joined_at)
+         VALUES ($1, $2, $3, 0, $3, 1, NOW(), NOW())
          ON CONFLICT (guild_id, user_id) DO UPDATE SET
            xp = guild_members.xp + $3,
            total_xp = guild_members.total_xp + $3,
            message_count = guild_members.message_count + 1,
-           last_xp_gain = NOW()
+           last_xp_gain = NOW(),
+           joined_at = COALESCE(guild_members.joined_at, NOW())
          RETURNING xp, level, total_xp`,
         [guildId, userId, xp]
       );

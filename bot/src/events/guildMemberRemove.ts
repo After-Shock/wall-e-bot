@@ -8,6 +8,13 @@ export default {
   once: false,
   async execute(client: WallEClient, member: GuildMember | PartialGuildMember) {
     try {
+      // Track leave for analytics (fire-and-forget)
+      client.db.pool.query(
+        `UPDATE guild_members SET left_at = NOW()
+         WHERE guild_id = $1 AND user_id = $2`,
+        [member.guild.id, member.id]
+      ).catch(() => {});
+
       const config = await client.db.getGuildConfig(member.guild.id);
       if (!config?.modules?.welcome || !config.welcome?.leaveEnabled) return;
 

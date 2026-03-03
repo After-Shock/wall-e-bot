@@ -19,13 +19,24 @@ export default {
       logger.error('Error in messageCreate handler:', error);
     }
 
-    // Update ticket last_activity if message is in a ticket channel
     if (message.guild) {
-      // Fire-and-forget — don't await to avoid slowing message handling
+      const guildId = message.guild.id;
+      const channelId = message.channel.id;
+      const channelName = message.channel.isTextBased() && 'name' in message.channel
+        ? message.channel.name : null;
+
+      // Log message for analytics (fire-and-forget)
+      client.db.pool.query(
+        `INSERT INTO message_logs (guild_id, channel_id, channel_name, user_id, username)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [guildId, channelId, channelName, message.author.id, message.author.username]
+      ).catch((e) => logger.debug('message_logs insert failed:', e));
+
+      // Update ticket last_activity (fire-and-forget)
       client.db.pool.query(
         `UPDATE tickets SET last_activity = NOW(), warned_inactive = FALSE
          WHERE channel_id = $1 AND guild_id = $2 AND status IN ('open','claimed')`,
-        [message.channel.id, message.guild.id]
+        [channelId, guildId]
       ).catch((e) => logger.debug('ticket activity update failed:', e));
     }
   },

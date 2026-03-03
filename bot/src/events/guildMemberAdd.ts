@@ -8,6 +8,14 @@ export default {
   once: false,
   async execute(client: WallEClient, member: GuildMember) {
     try {
+      // Track join for analytics (fire-and-forget)
+      client.db.pool.query(
+        `INSERT INTO guild_members (guild_id, user_id, joined_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (guild_id, user_id) DO UPDATE SET joined_at = NOW(), left_at = NULL`,
+        [member.guild.id, member.id]
+      ).catch(() => {});
+
       const config = await client.db.getGuildConfig(member.guild.id);
       if (!config?.modules?.welcome || !config.welcome?.enabled) return;
 
