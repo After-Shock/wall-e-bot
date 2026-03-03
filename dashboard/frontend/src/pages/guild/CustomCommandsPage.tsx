@@ -5,20 +5,31 @@ import { api } from '../../services/api';
 import { Terminal, Plus, Trash2, Search, Save, Edit, Info } from 'lucide-react';
 
 interface CustomCommand {
-  id: string;
+  id: number;
   name: string;
   response: string;
-  embedEnabled: boolean;
-  embed?: {
-    title: string;
-    description: string;
-    color: string;
-  };
-  permissions: string[];
+  embed_response: boolean;
+  embed_color: string | null;
   cooldown: number;
+  delete_command: boolean;
+  case_sensitive: boolean;
+  trigger_on_edit: boolean;
   enabled: boolean;
-  group?: string;
+  uses: number;
+  created_at: string;
 }
+
+const emptyCommand = (): Partial<CustomCommand> => ({
+  name: '',
+  response: '',
+  embed_response: false,
+  embed_color: null,
+  cooldown: 0,
+  delete_command: false,
+  case_sensitive: false,
+  trigger_on_edit: false,
+  enabled: true,
+});
 
 const variables = [
   { name: '{user}', desc: 'User mention' },
@@ -28,6 +39,29 @@ const variables = [
   { name: '{args}', desc: 'All arguments' },
   { name: '{args.1}', desc: 'First argument' },
 ];
+
+function Toggle({ label, description, checked, onChange }: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        <div className="text-xs text-discord-light">{description}</div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative w-10 h-5 rounded-full transition-colors ${checked ? 'bg-green-500' : 'bg-discord-dark'}`}
+      >
+        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      </button>
+    </div>
+  );
+}
 
 export default function CustomCommandsPage() {
   const { guildId } = useParams<{ guildId: string }>();
@@ -53,65 +87,53 @@ export default function CustomCommandsPage() {
     },
   });
 
-  const [commands, setCommands] = useState<CustomCommand[]>([
-    {
-      id: '1',
-      name: 'rules',
-      response: '📜 **Server Rules**\n1. Be respectful\n2. No spam\n3. Have fun!',
-      embedEnabled: false,
-      permissions: [],
-      cooldown: 5,
-      enabled: true,
-    },
-  ]);
-  const [editingCommand, setEditingCommand] = useState<CustomCommand | null>(null);
+  const { data: commands = [], isLoading } = useQuery<CustomCommand[]>({
+    queryKey: ['custom-commands', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/custom-commands`).then(r => r.data),
+  });
+
+  const createCmd = useMutation({
+    mutationFn: (data: Partial<CustomCommand>) =>
+      api.post(`/api/guilds/${guildId}/custom-commands`, data).then(r => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
+  });
+
+  const updateCmd = useMutation({
+    mutationFn: ({ id, ...data }: Partial<CustomCommand> & { id: number }) =>
+      api.patch(`/api/guilds/${guildId}/custom-commands/${id}`, data).then(r => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
+  });
+
+  const deleteCmd = useMutation({
+    mutationFn: (id: number) =>
+      api.delete(`/api/guilds/${guildId}/custom-commands/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
+  });
+
+  const [editingCommand, setEditingCommand] = useState<Partial<CustomCommand> | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeGroup, setActiveGroup] = useState<string | null>(null);
-
-  const groups = Array.from(new Set(commands.map(c => c.group).filter(Boolean) as string[]));
 
   const filteredCommands = commands.filter(cmd =>
-    cmd.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    (activeGroup === null || cmd.group === activeGroup)
+    cmd.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const createNewCommand = () => {
-    setEditingCommand({
-      id: Date.now().toString(),
-      name: '',
-      response: '',
-      embedEnabled: false,
-      permissions: [],
-      cooldown: 5,
-      enabled: true,
-      group: activeGroup ?? '',
-    });
+    setEditingCommand(emptyCommand());
     setShowEditor(true);
   };
 
   const saveCommand = () => {
-    if (!editingCommand || !editingCommand.name) return;
-    
-    setCommands(prev => {
-      const exists = prev.find(c => c.id === editingCommand.id);
-      if (exists) {
-        return prev.map(c => c.id === editingCommand.id ? editingCommand : c);
-      }
-      return [...prev, editingCommand];
-    });
-    setShowEditor(false);
-    setEditingCommand(null);
-  };
-
-  const deleteCommand = (id: string) => {
-    setCommands(prev => prev.filter(c => c.id !== id));
-  };
-
-  const toggleCommand = (id: string) => {
-    setCommands(prev =>
-      prev.map(c => c.id === id ? { ...c, enabled: !c.enabled } : c)
-    );
+    if (!editingCommand?.name || !editingCommand?.response) return;
+    if ((editingCommand as CustomCommand).id) {
+      updateCmd.mutate(editingCommand as CustomCommand, {
+        onSuccess: () => { setShowEditor(false); setEditingCommand(null); },
+      });
+    } else {
+      createCmd.mutate(editingCommand, {
+        onSuccess: () => { setShowEditor(false); setEditingCommand(null); },
+      });
+    }
   };
 
   return (
@@ -176,119 +198,100 @@ export default function CustomCommandsPage() {
             />
           </div>
 
-          {/* Group Filter Tabs */}
-          {groups.length > 0 && (
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setActiveGroup(null)}
-                className={`px-3 py-1.5 rounded text-sm transition-colors ${
-                  activeGroup === null
-                    ? 'bg-discord-blurple text-white'
-                    : 'bg-discord-dark text-discord-light hover:text-white'
-                }`}
-              >
-                All
-              </button>
-              {groups.map(g => (
-                <button
-                  key={g}
-                  onClick={() => setActiveGroup(g)}
-                  className={`px-3 py-1.5 rounded text-sm transition-colors ${
-                    activeGroup === g
-                      ? 'bg-discord-blurple text-white'
-                      : 'bg-discord-dark text-discord-light hover:text-white'
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Commands List */}
-          <div className="space-y-3">
-            {filteredCommands.length === 0 ? (
-              <div className="card text-center py-12">
-                <Terminal className="w-16 h-16 mx-auto text-discord-light mb-4 opacity-50" />
-                <h3 className="text-xl font-semibold mb-2">
-                  {searchQuery ? 'No commands found' : 'No Custom Commands'}
-                </h3>
-                <p className="text-discord-light mb-4">
-                  {searchQuery
-                    ? 'Try a different search term'
-                    : 'Create custom commands for your community'}
-                </p>
-                {!searchQuery && (
-                  <button onClick={createNewCommand} className="btn btn-primary">
-                    Create Your First Command
-                  </button>
-                )}
-              </div>
-            ) : (
-              filteredCommands.map(cmd => (
-                <div key={cmd.id} className="card">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <button
-                        onClick={() => toggleCommand(cmd.id)}
-                        className={`relative w-10 h-5 rounded-full transition-colors ${
-                          cmd.enabled ? 'bg-green-500' : 'bg-discord-dark'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                            cmd.enabled ? 'translate-x-5' : 'translate-x-0.5'
+          {isLoading ? (
+            <div className="card text-center py-12">
+              <div className="w-10 h-10 border-4 border-discord-blurple border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-discord-light">Loading commands...</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredCommands.length === 0 ? (
+                <div className="card text-center py-12">
+                  <Terminal className="w-16 h-16 mx-auto text-discord-light mb-4 opacity-50" />
+                  <h3 className="text-xl font-semibold mb-2">
+                    {searchQuery ? 'No commands found' : 'No Custom Commands'}
+                  </h3>
+                  <p className="text-discord-light mb-4">
+                    {searchQuery
+                      ? 'Try a different search term'
+                      : 'Create custom commands for your community'}
+                  </p>
+                  {!searchQuery && (
+                    <button onClick={createNewCommand} className="btn btn-primary">
+                      Create Your First Command
+                    </button>
+                  )}
+                </div>
+              ) : (
+                filteredCommands.map(cmd => (
+                  <div key={cmd.id} className="card">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => updateCmd.mutate({ id: cmd.id, enabled: !cmd.enabled })}
+                          disabled={updateCmd.isPending}
+                          className={`relative w-10 h-5 rounded-full transition-colors disabled:opacity-50 ${
+                            cmd.enabled ? 'bg-green-500' : 'bg-discord-dark'
                           }`}
-                        />
-                      </button>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <code className="text-discord-blurple font-semibold">{generalConfig?.prefix ?? '!'}{cmd.name}</code>
-                          {cmd.group && (
-                            <span className="text-xs bg-discord-blurple/20 text-discord-blurple px-2 py-0.5 rounded">
-                              {cmd.group}
+                        >
+                          <span
+                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                              cmd.enabled ? 'translate-x-5' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <code className="text-discord-blurple font-semibold">{generalConfig?.prefix ?? '!'}{cmd.name}</code>
+                            {cmd.cooldown > 0 && (
+                              <span className="text-xs bg-discord-dark px-2 py-0.5 rounded">
+                                {cmd.cooldown}s cooldown
+                              </span>
+                            )}
+                            <span className="text-xs text-discord-light">
+                              {cmd.uses} uses
                             </span>
-                          )}
-                          {cmd.cooldown > 0 && (
-                            <span className="text-xs bg-discord-dark px-2 py-0.5 rounded">
-                              {cmd.cooldown}s cooldown
-                            </span>
-                          )}
+                          </div>
+                          <p className="text-sm text-discord-light truncate max-w-md">
+                            {cmd.response.length > 100 ? cmd.response.slice(0, 100) + '...' : cmd.response}
+                          </p>
                         </div>
-                        <p className="text-sm text-discord-light truncate max-w-md">
-                          {cmd.response.slice(0, 100)}...
-                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingCommand(cmd);
+                            setShowEditor(true);
+                          }}
+                          className="btn btn-secondary"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete command "${generalConfig?.prefix ?? '!'}${cmd.name}"? This cannot be undone.`)) {
+                              deleteCmd.mutate(cmd.id);
+                            }
+                          }}
+                          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setEditingCommand(cmd);
-                          setShowEditor(true);
-                        }}
-                        className="btn btn-secondary"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => deleteCommand(cmd.id)}
-                        className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                ))
+              )}
+            </div>
+          )}
         </>
       ) : (
         /* Editor */
         <div className="space-y-6">
           <div className="card">
             <h3 className="font-semibold mb-4">Command Settings</h3>
-            
+
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Command Name</label>
@@ -309,23 +312,12 @@ export default function CustomCommandsPage() {
                 <label className="block text-sm font-medium mb-2">Cooldown (seconds)</label>
                 <input
                   type="number"
-                  value={editingCommand?.cooldown || 0}
+                  value={editingCommand?.cooldown ?? 0}
                   onChange={e => setEditingCommand(prev => prev ? { ...prev, cooldown: parseInt(e.target.value) || 0 } : null)}
                   className="input w-full"
                   min="0"
                   max="3600"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Group (optional)</label>
-                <input
-                  type="text"
-                  value={editingCommand?.group || ''}
-                  onChange={e => setEditingCommand(prev => prev ? { ...prev, group: e.target.value } : null)}
-                  className="input w-full"
-                  placeholder="e.g. Info, Fun, Utilities"
-                />
-                <p className="text-xs text-discord-light mt-1">Used to organize commands into tabs</p>
               </div>
             </div>
 
@@ -335,8 +327,8 @@ export default function CustomCommandsPage() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
-                    checked={!editingCommand?.embedEnabled}
-                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embedEnabled: false } : null)}
+                    checked={!(editingCommand?.embed_response)}
+                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embed_response: false } : null)}
                     className="w-4 h-4"
                   />
                   <span>Plain Text</span>
@@ -344,8 +336,8 @@ export default function CustomCommandsPage() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
-                    checked={editingCommand?.embedEnabled}
-                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embedEnabled: true } : null)}
+                    checked={!!(editingCommand?.embed_response)}
+                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embed_response: true } : null)}
                     className="w-4 h-4"
                   />
                   <span>Embed</span>
@@ -364,6 +356,31 @@ export default function CustomCommandsPage() {
             </div>
           </div>
 
+          {/* Behavior Toggles */}
+          <div className="card">
+            <h3 className="font-semibold mb-2">Behavior</h3>
+            <div className="divide-y divide-discord-dark">
+              <Toggle
+                label="Enabled"
+                description="Allow this command to be triggered"
+                checked={editingCommand?.enabled ?? true}
+                onChange={v => setEditingCommand(prev => prev ? { ...prev, enabled: v } : null)}
+              />
+              <Toggle
+                label="Case Sensitive"
+                description="Require exact capitalization to trigger (e.g. !Rules won't match !rules)"
+                checked={editingCommand?.case_sensitive ?? false}
+                onChange={v => setEditingCommand(prev => prev ? { ...prev, case_sensitive: v } : null)}
+              />
+              <Toggle
+                label="Trigger on Message Edits"
+                description="Also fire when a user edits a message to start with this command"
+                checked={editingCommand?.trigger_on_edit ?? false}
+                onChange={v => setEditingCommand(prev => prev ? { ...prev, trigger_on_edit: v } : null)}
+              />
+            </div>
+          </div>
+
           {/* Variables */}
           <div className="card">
             <div className="flex items-center gap-2 mb-3">
@@ -377,7 +394,7 @@ export default function CustomCommandsPage() {
                   onClick={() => {
                     setEditingCommand(prev => prev ? {
                       ...prev,
-                      response: prev.response + v.name
+                      response: (prev.response || '') + v.name,
                     } : null);
                   }}
                   className="bg-discord-dark hover:bg-discord-blurple/20 px-3 py-1.5 rounded text-sm transition-colors"
@@ -427,11 +444,11 @@ export default function CustomCommandsPage() {
             </button>
             <button
               onClick={saveCommand}
-              disabled={!editingCommand?.name}
+              disabled={!editingCommand?.name || !editingCommand?.response || createCmd.isPending || updateCmd.isPending}
               className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              Save Command
+              {createCmd.isPending || updateCmd.isPending ? 'Saving...' : 'Save Command'}
             </button>
           </div>
         </div>
