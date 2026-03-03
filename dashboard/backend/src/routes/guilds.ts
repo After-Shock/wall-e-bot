@@ -343,6 +343,47 @@ async function handlePatchConfigSection(
   }
 }
 
+// General Settings (prefix, etc.)
+guildsRouter.get(
+  '/:guildId/config/general',
+  requireAuth,
+  requireGuildAccess,
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const result = await db.query(
+      `SELECT config->>'prefix' AS prefix FROM guild_configs WHERE guild_id = $1`,
+      [guildId]
+    );
+    res.json({ prefix: result.rows[0]?.prefix ?? '!' });
+  })
+);
+
+guildsRouter.patch(
+  '/:guildId/config/general',
+  requireAuth,
+  requireGuildAccess,
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { prefix } = req.body;
+
+    const parsed = z.string().min(1).max(5).safeParse(prefix);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Prefix must be 1–5 characters' });
+      return;
+    }
+
+    await db.query(
+      `INSERT INTO guild_configs (guild_id, config, updated_at)
+       VALUES ($1, jsonb_build_object('prefix', $2::text), NOW())
+       ON CONFLICT (guild_id) DO UPDATE
+         SET config = guild_configs.config || jsonb_build_object('prefix', $2::text),
+             updated_at = NOW()`,
+      [guildId, parsed.data]
+    );
+    res.json({ prefix: parsed.data });
+  })
+);
+
 // Welcome Messages Configuration
 guildsRouter.get(
   '/:guildId/config/welcome',

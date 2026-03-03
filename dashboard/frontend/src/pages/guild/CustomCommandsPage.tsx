@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../services/api';
 import { Terminal, Plus, Trash2, Search, Save, Edit, Info } from 'lucide-react';
 
 interface CustomCommand {
@@ -27,6 +30,29 @@ const variables = [
 ];
 
 export default function CustomCommandsPage() {
+  const { guildId } = useParams<{ guildId: string }>();
+  const queryClient = useQueryClient();
+  const [prefixInput, setPrefixInput] = useState('');
+  const [prefixSaved, setPrefixSaved] = useState(false);
+
+  const { data: generalConfig } = useQuery<{ prefix: string }>({
+    queryKey: ['guild-general', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/config/general`).then(r => r.data),
+  });
+
+  useEffect(() => {
+    if (generalConfig?.prefix) setPrefixInput(generalConfig.prefix);
+  }, [generalConfig?.prefix]);
+
+  const savePrefix = useMutation({
+    mutationFn: (prefix: string) => api.patch(`/api/guilds/${guildId}/config/general`, { prefix }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['guild-general', guildId] });
+      setPrefixSaved(true);
+      setTimeout(() => setPrefixSaved(false), 2000);
+    },
+  });
+
   const [commands, setCommands] = useState<CustomCommand[]>([
     {
       id: '1',
@@ -106,6 +132,34 @@ export default function CustomCommandsPage() {
           <Plus className="w-4 h-4" />
           Create Command
         </button>
+      </div>
+
+      {/* Prefix Settings */}
+      <div className="card">
+        <h3 className="font-semibold mb-1">Command Prefix</h3>
+        <p className="text-sm text-discord-light mb-3">The symbol users type before a custom command name (e.g. <code className="bg-discord-dark px-1 rounded">!rules</code>)</p>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={prefixInput}
+            onChange={e => setPrefixInput(e.target.value.slice(0, 5))}
+            className="input w-24 text-center font-mono text-lg"
+            placeholder="!"
+            maxLength={5}
+          />
+          <button
+            onClick={() => savePrefix.mutate(prefixInput)}
+            disabled={savePrefix.isPending || !prefixInput || prefixInput === generalConfig?.prefix}
+            className="btn btn-primary disabled:opacity-50"
+          >
+            {prefixSaved ? '✓ Saved' : 'Save'}
+          </button>
+          {prefixInput !== generalConfig?.prefix && prefixInput && (
+            <span className="text-sm text-discord-light">
+              Commands will use: <code className="bg-discord-dark px-1 rounded">{prefixInput}commandname</code>
+            </span>
+          )}
+        </div>
       </div>
 
       {!showEditor ? (
@@ -189,7 +243,7 @@ export default function CustomCommandsPage() {
                       </button>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <code className="text-discord-blurple font-semibold">!{cmd.name}</code>
+                          <code className="text-discord-blurple font-semibold">{generalConfig?.prefix ?? '!'}{cmd.name}</code>
                           {cmd.group && (
                             <span className="text-xs bg-discord-blurple/20 text-discord-blurple px-2 py-0.5 rounded">
                               {cmd.group}
@@ -240,7 +294,7 @@ export default function CustomCommandsPage() {
                 <label className="block text-sm font-medium mb-2">Command Name</label>
                 <div className="flex">
                   <span className="bg-discord-dark border border-r-0 border-discord-dark px-3 py-2 rounded-l text-discord-light">
-                    !
+                    {generalConfig?.prefix ?? '!'}
                   </span>
                   <input
                     type="text"
