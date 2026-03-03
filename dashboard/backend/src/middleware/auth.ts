@@ -56,3 +56,17 @@ export const requireGuildAccess: RequestHandler = (req, res, next) => {
 
   next();
 };
+
+export const requireBotOwner: RequestHandler = (req, res, next) => {
+  const user = (req as AuthenticatedRequest).user;
+  if (!user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  const ownerIds = (process.env.BOT_OWNER_ID || '').split(',').map(s => s.trim());
+  if (!ownerIds.includes(user.id)) {
+    res.status(403).json({ error: 'Bot owner only' });
+    return;
+  }
+  next();
+};
