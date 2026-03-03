@@ -70,12 +70,12 @@ const command: Command = {
               opt.setName('panel_id').setDescription('Panel ID').setRequired(true))
             .addStringOption(opt =>
               opt.setName('name').setDescription('Category name').setRequired(true))
+            .addRoleOption(opt =>
+              opt.setName('support_role').setDescription('Role that handles this category').setRequired(true))
             .addStringOption(opt =>
               opt.setName('emoji').setDescription('Emoji for this category'))
             .addStringOption(opt =>
-              opt.setName('description').setDescription('Short description'))
-            .addRoleOption(opt =>
-              opt.setName('support_role').setDescription('Role that handles this category').setRequired(true)))
+              opt.setName('description').setDescription('Short description')))
         .addSubcommand(sub =>
           sub.setName('list')
             .setDescription('List categories for a panel')
