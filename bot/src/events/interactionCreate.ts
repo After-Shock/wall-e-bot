@@ -109,14 +109,19 @@ export default {
       const isOwner = interaction.user.id === process.env.BOT_OWNER_ID;
       if (!isOwner) {
         const wl = await client.db.pool.query(
-          'SELECT status FROM guild_whitelist WHERE guild_id = $1',
+          'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
           [interaction.guildId]
         ).catch(() => null);
-        const status = wl?.rows[0]?.status;
-        if (status !== 'approved') {
+        const row = wl?.rows[0];
+        const status = row?.status;
+        const expired = !row?.permanent && row?.expires_at && new Date(row.expires_at) < new Date();
+        if (status !== 'approved' || expired) {
           if (interaction.isChatInputCommand()) {
+            const msg = expired
+              ? '⚠️ This server\'s subscription has expired. Please contact the bot owner.'
+              : '⚠️ This server has not been approved to use this bot. Please contact the bot owner.';
             await interaction.reply({
-              content: '⚠️ This server has not been approved to use this bot. Please contact the bot owner.',
+              content: msg,
               ephemeral: true,
             }).catch(() => {});
           }

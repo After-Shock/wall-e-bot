@@ -27,12 +27,13 @@ export default {
     // (these were added before whitelist existed so we trust them)
     for (const [, guild] of client.guilds.cache) {
       await client.db.pool.query(
-        `INSERT INTO guild_whitelist (guild_id, guild_name, guild_icon, member_count, status)
-         VALUES ($1, $2, $3, $4, 'approved')
+        `INSERT INTO guild_whitelist (guild_id, guild_name, guild_icon, member_count, status, expires_at)
+         VALUES ($1, $2, $3, $4, 'approved', NOW() + INTERVAL '1 year')
          ON CONFLICT (guild_id) DO UPDATE SET
            guild_name = EXCLUDED.guild_name,
            guild_icon = EXCLUDED.guild_icon,
            member_count = EXCLUDED.member_count,
+           expires_at = COALESCE(guild_whitelist.expires_at, NOW() + INTERVAL '1 year'),
            left_at = NULL`,
         [guild.id, guild.name, guild.icon, guild.memberCount]
       ).catch(e => logger.error('Failed to sync guild to whitelist:', e));

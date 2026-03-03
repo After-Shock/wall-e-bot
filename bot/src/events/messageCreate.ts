@@ -11,10 +11,12 @@ export default {
     // Whitelist check
     if (message.guild) {
       const wl = await client.db.pool.query(
-        'SELECT status FROM guild_whitelist WHERE guild_id = $1',
+        'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
         [message.guild.id]
       ).catch(() => null);
-      if (wl?.rows[0]?.status !== 'approved' && message.author.id !== process.env.BOT_OWNER_ID) return;
+      const wlRow = wl?.rows[0];
+      const expired = !wlRow?.permanent && wlRow?.expires_at && new Date(wlRow.expires_at) < new Date();
+      if ((wlRow?.status !== 'approved' || expired) && message.author.id !== process.env.BOT_OWNER_ID) return;
     }
 
     try {

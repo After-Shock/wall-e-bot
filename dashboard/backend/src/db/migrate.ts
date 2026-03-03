@@ -308,6 +308,15 @@ CREATE TABLE IF NOT EXISTS guild_whitelist (
 
 CREATE INDEX IF NOT EXISTS idx_guild_whitelist_status ON guild_whitelist(status);
 
+-- Subscription & added-by tracking
+ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS added_by VARCHAR(20);
+ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS added_by_username VARCHAR(100);
+ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS permanent BOOLEAN DEFAULT FALSE;
+
+-- Backfill existing approved rows with 1-year expiry
+UPDATE guild_whitelist SET expires_at = NOW() + INTERVAL '1 year' WHERE expires_at IS NULL AND status != 'blacklisted';
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
 CREATE INDEX IF NOT EXISTS idx_guild_members_xp ON guild_members(guild_id, total_xp DESC);

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { Shield, Server, Users, Clock, CheckCircle, XCircle, LogOut } from 'lucide-react';
+import { Shield, Server, Users, Clock, CheckCircle, XCircle, LogOut, CalendarClock, Infinity } from 'lucide-react';
 
 interface AdminGuild {
   id: string;
@@ -12,12 +12,17 @@ interface AdminGuild {
   addedAt: string;
   approvedAt: string | null;
   leftAt: string | null;
+  addedBy: string | null;
+  addedByUsername: string | null;
+  expiresAt: string | null;
+  permanent: boolean;
 }
 
 interface AdminStats {
   totalGuilds: number;
   totalUsers: number;
   pendingGuilds: number;
+  expiringSoon: number;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -25,6 +30,27 @@ const STATUS_STYLES: Record<string, string> = {
   approved: 'bg-green-500/20 text-green-400',
   blacklisted: 'bg-red-500/20 text-red-400',
 };
+
+function ExpiryBadge({ expiresAt, permanent }: { expiresAt: string | null; permanent: boolean }) {
+  if (permanent) {
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Permanent</span>;
+  }
+  if (!expiresAt) {
+    return <span className="text-xs text-discord-light">No expiry set</span>;
+  }
+  const date = new Date(expiresAt);
+  const now = new Date();
+  const daysLeft = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const formatted = date.toLocaleDateString();
+
+  if (date < now) {
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">Expired {formatted}</span>;
+  }
+  if (daysLeft <= 30) {
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400">Expires {formatted}</span>;
+  }
+  return <span className="text-xs text-discord-light">Expires {formatted}</span>;
+}
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -78,6 +104,22 @@ export default function AdminPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-guilds'] }),
   });
 
+  const extend = useMutation({
+    mutationFn: (guildId: string) => api.post(`/api/admin/guilds/${guildId}/extend`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-guilds'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+  });
+
+  const togglePermanent = useMutation({
+    mutationFn: (guildId: string) => api.post(`/api/admin/guilds/${guildId}/permanent`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-guilds'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+  });
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
       {/* Header */}
@@ -90,7 +132,7 @@ export default function AdminPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="card">
           <div className="flex items-center justify-between mb-2">
             <Server className="w-5 h-5 text-discord-blurple" />
@@ -117,6 +159,18 @@ export default function AdminPage() {
           <div className="text-3xl font-bold">{stats?.pendingGuilds ?? '—'}</div>
           <div className="text-sm text-discord-light">Pending Approval</div>
         </div>
+        <div className="card border border-orange-500/30">
+          <div className="flex items-center justify-between mb-2">
+            <CalendarClock className="w-5 h-5 text-orange-400" />
+            {(stats?.expiringSoon ?? 0) > 0 && (
+              <span className="bg-orange-500 text-black text-xs font-bold px-2 py-0.5 rounded-full">
+                {stats!.expiringSoon}
+              </span>
+            )}
+          </div>
+          <div className="text-3xl font-bold">{stats?.expiringSoon ?? '—'}</div>
+          <div className="text-sm text-discord-light">Expiring Soon</div>
+        </div>
       </div>
 
       {/* Guild Table */}
@@ -131,16 +185,16 @@ export default function AdminPage() {
         ) : (
           <div className="space-y-2">
             {guilds.map(guild => (
-              <div key={guild.id} className={`bg-discord-darker rounded-lg p-4 flex items-center gap-4 ${guild.status === 'pending' ? 'border border-yellow-500/30' : ''}`}>
+              <div key={guild.id} className={`bg-discord-darker rounded-lg p-4 flex items-start gap-4 ${guild.status === 'pending' ? 'border border-yellow-500/30' : ''}`}>
                 {/* Icon */}
                 {guild.icon ? (
                   <img
                     src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png`}
                     alt={guild.name}
-                    className="w-10 h-10 rounded-full shrink-0"
+                    className="w-10 h-10 rounded-full shrink-0 mt-0.5"
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-discord-dark flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-discord-dark flex items-center justify-center shrink-0 mt-0.5">
                     <Server className="w-5 h-5 text-discord-light" />
                   </div>
                 )}
@@ -154,16 +208,27 @@ export default function AdminPage() {
                     </span>
                     {guild.leftAt && <span className="text-xs bg-discord-dark text-discord-light px-2 py-0.5 rounded-full">left</span>}
                   </div>
-                  <div className="text-xs text-discord-light mt-0.5 flex gap-3">
+                  <div className="text-xs text-discord-light mt-0.5 flex gap-3 flex-wrap">
                     <span>{guild.memberCount.toLocaleString()} members</span>
                     <span>ID: {guild.id}</span>
                     <span>Added {new Date(guild.addedAt).toLocaleDateString()}</span>
+                  </div>
+                  <div className="text-xs text-discord-light mt-1 flex gap-3 flex-wrap items-center">
+                    <span>
+                      Added by:{' '}
+                      {guild.addedByUsername
+                        ? `${guild.addedByUsername} (${guild.addedBy})`
+                        : guild.addedBy
+                          ? guild.addedBy
+                          : 'unknown'}
+                    </span>
+                    <ExpiryBadge expiresAt={guild.expiresAt} permanent={guild.permanent} />
                   </div>
                 </div>
 
                 {/* Actions */}
                 {!guild.leftAt && (
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                     {guild.status === 'pending' && (
                       <button
                         onClick={() => approve.mutate(guild.id)}
@@ -172,6 +237,30 @@ export default function AdminPage() {
                       >
                         <CheckCircle className="w-4 h-4" />
                         Approve
+                      </button>
+                    )}
+                    {guild.status === 'approved' && !guild.permanent && (
+                      <button
+                        onClick={() => extend.mutate(guild.id)}
+                        disabled={extend.isPending}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-sm transition-colors"
+                      >
+                        <CalendarClock className="w-4 h-4" />
+                        Extend 1yr
+                      </button>
+                    )}
+                    {guild.status === 'approved' && (
+                      <button
+                        onClick={() => togglePermanent.mutate(guild.id)}
+                        disabled={togglePermanent.isPending}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                          guild.permanent
+                            ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                            : 'bg-discord-dark text-discord-light hover:text-white hover:bg-discord-darker'
+                        }`}
+                      >
+                        <Infinity className="w-4 h-4" />
+                        {guild.permanent ? 'Remove Permanent' : 'Set Permanent'}
                       </button>
                     )}
                     {guild.status !== 'blacklisted' && (
