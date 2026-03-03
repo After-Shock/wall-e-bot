@@ -136,6 +136,7 @@ services:
       - backend
     networks:
       - wall-e-network
+      - pangolin  # External Traefik network for HTTPS routing
 
 # =============================================================================
 # Volumes - Persistent storage
@@ -150,3 +151,5 @@ volumes:
 networks:
   wall-e-network:
     driver: bridge  # Default bridge network for container communication
+  pangolin:
+    external: true  # Traefik reverse proxy network (managed by pangolin)
