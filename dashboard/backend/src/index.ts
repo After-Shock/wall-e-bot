@@ -12,6 +12,7 @@ import { authRouter } from './routes/auth.js';
 import { guildsRouter } from './routes/guilds.js';
 import { usersRouter } from './routes/users.js';
 import { botRouter } from './routes/bot.js';
+import { adminRouter } from './routes/admin.js';
 import { db } from './db/index.js';
 
 const app = express();
@@ -86,6 +87,7 @@ app.use('/auth', authRouter);
 app.use('/api/guilds', guildsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/bot', botRouter);
+app.use('/api/admin', adminRouter);
 
 // Health check
 app.get('/health', (req, res) => {
