@@ -160,6 +160,58 @@ guildsRouter.patch(
   })
 );
 
+// Get guild stats from Discord API
+guildsRouter.get('/:guildId/stats', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  try {
+    const [guildRes, channelsRes] = await Promise.all([
+      fetch(`https://discord.com/api/v10/guilds/${guildId}?with_counts=true`, {
+        headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+      }),
+      fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+        headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+      }),
+    ]);
+
+    if (!guildRes.ok) {
+      res.status(guildRes.status).json({ error: 'Failed to fetch guild from Discord' });
+      return;
+    }
+
+    const guild = await guildRes.json() as any;
+    const channels = channelsRes.ok ? (await channelsRes.json() as any[]) : [];
+
+    // Channel type constants
+    const TEXT = 0, VOICE = 2, CATEGORY = 4;
+    const textCount = channels.filter(c => c.type === TEXT).length;
+    const voiceCount = channels.filter(c => c.type === VOICE).length;
+    const categoryCount = channels.filter(c => c.type === CATEGORY).length;
+
+    // Derive creation date from snowflake
+    const createdAt = new Date(Number((BigInt(guildId) >> 22n) + 1420070400000n)).toISOString();
+
+    res.json({
+      id: guild.id,
+      name: guild.name,
+      icon: guild.icon,
+      description: guild.description || null,
+      ownerId: guild.owner_id,
+      memberCount: guild.approximate_member_count ?? guild.member_count ?? 0,
+      onlineCount: guild.approximate_presence_count ?? 0,
+      roleCount: (guild.roles as any[])?.length ?? 0,
+      emojiCount: (guild.emojis as any[])?.length ?? 0,
+      channels: { text: textCount, voice: voiceCount, categories: categoryCount },
+      boostLevel: guild.premium_tier ?? 0,
+      boostCount: guild.premium_subscription_count ?? 0,
+      verificationLevel: guild.verification_level ?? 0,
+      createdAt,
+    });
+  } catch (error) {
+    logger.error('Error fetching guild stats:', error);
+    res.status(500).json({ error: 'Failed to fetch guild stats' });
+  }
+}));
+
 // Get guild leaderboard
 guildsRouter.get('/:guildId/leaderboard', requireAuth, asyncHandler(async (req, res) => {
   try {
