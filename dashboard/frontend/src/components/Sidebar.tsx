@@ -72,7 +72,7 @@ const getNavItems = (guildId: string): NavItem[] => [
       { name: 'Spam Protection', href: `/dashboard/${guildId}/automod/spam`, icon: ShieldAlert },
       { name: 'Word Filters', href: `/dashboard/${guildId}/automod/filters`, icon: Terminal },
       { name: 'Link Protection', href: `/dashboard/${guildId}/automod/links`, icon: Zap },
-      { name: 'Advanced AI', href: `/dashboard/${guildId}/automod/advanced`, icon: Crown, badge: 'Premium' },
+      { name: 'Advanced AI', href: `/dashboard/${guildId}/automod/advanced`, icon: Crown },
     ],
   },
   {

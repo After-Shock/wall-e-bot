@@ -7,8 +7,7 @@ import {
   Link2,
   Users,
   CheckCircle,
-  AlertTriangle,
-  Crown
+  AlertTriangle
 } from 'lucide-react';
 import { AutoModConfig } from '@wall-e/shared';
 import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
@@ -124,7 +123,6 @@ export default function AdvancedAutomodPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Advanced Auto-Moderation</h1>
-              <Crown className="w-5 h-5 text-yellow-400" title="Premium Feature" />
             </div>
             <p className="text-discord-light">Advanced AI-powered moderation tools</p>
           </div>
@@ -170,18 +168,6 @@ export default function AdvancedAutomodPage() {
           <p className="text-green-400">Configuration saved successfully!</p>
         </div>
       )}
-
-      {/* Premium Notice */}
-      <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-4 flex items-start gap-3">
-        <Crown className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
-        <div>
-          <p className="font-medium text-yellow-400">Premium Feature</p>
-          <p className="text-sm text-discord-light mt-1">
-            Advanced Auto-Moderation requires an active premium subscription. These features use AI and
-            external APIs to provide enhanced protection for your server.
-          </p>
-        </div>
-      </div>
 
       {/* Image Scanning */}
       <div className="card space-y-4">
