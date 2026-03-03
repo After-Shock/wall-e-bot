@@ -130,6 +130,7 @@ services:
       target: production
       args:
         - VITE_BOT_OWNER_ID=${BOT_OWNER_ID}
+        - VITE_DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
     container_name: wall-e-frontend
     restart: unless-stopped
     ports:
