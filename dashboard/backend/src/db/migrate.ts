@@ -265,6 +265,20 @@ ALTER TABLE reaction_roles ADD COLUMN IF NOT EXISTS label VARCHAR(100);
 ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_group VARCHAR(50);
 ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_position INTEGER DEFAULT 0;
 
+-- Guild backups table
+CREATE TABLE IF NOT EXISTS guild_backups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  guild_id VARCHAR(20) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  type VARCHAR(20) NOT NULL DEFAULT 'manual',
+  size INTEGER DEFAULT 0,
+  created_by VARCHAR(20),
+  data JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_guild_backups_guild ON guild_backups(guild_id, created_at DESC);
+
 -- Message logs table (for analytics)
 CREATE TABLE IF NOT EXISTS message_logs (
   id BIGSERIAL PRIMARY KEY,

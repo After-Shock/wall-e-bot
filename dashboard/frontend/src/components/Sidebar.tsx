@@ -139,7 +139,6 @@ const getNavItems = (guildId: string): NavItem[] => [
     name: 'Backup & Restore',
     href: `/dashboard/${guildId}/backup`,
     icon: Database,
-    badge: 'Premium',
   },
   {
     name: 'Sync Settings',

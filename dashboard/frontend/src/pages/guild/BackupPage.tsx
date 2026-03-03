@@ -7,13 +7,12 @@ import {
   Upload,
   Trash2,
   Clock,
-  Crown,
   Plus,
   CheckCircle,
   AlertCircle
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../../api/axios';
+import { api } from '../../services/api';
 import type { BackupConfig, BackupListItem } from '@wall-e/shared';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
@@ -174,7 +173,6 @@ export default function BackupPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Backup & Restore</h1>
-              <Crown className="w-5 h-5 text-yellow-400" title="Premium Feature" />
             </div>
             <p className="text-discord-light">Protect your server configuration</p>
           </div>
@@ -195,17 +193,6 @@ export default function BackupPage() {
           <p className="text-green-400">Operation completed successfully!</p>
         </div>
       )}
-
-      {/* Premium Notice */}
-      <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-4 flex items-start gap-3">
-        <Crown className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
-        <div>
-          <p className="font-medium text-yellow-400">Premium Feature</p>
-          <p className="text-sm text-discord-light mt-1">
-            Backup & Restore requires an active premium subscription. Keep your server configuration safe with automated backups.
-          </p>
-        </div>
-      </div>
 
       {/* Backup Configuration */}
       <div className="card space-y-4">
