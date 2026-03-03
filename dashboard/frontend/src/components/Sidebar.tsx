@@ -43,7 +43,6 @@ const getNavItems = (guildId: string): NavItem[] => [
     name: 'Analytics',
     href: `/dashboard/${guildId}/analytics`,
     icon: BarChart3,
-    badge: 'Premium',
   },
   {
     name: 'Welcome',

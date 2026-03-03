@@ -265,6 +265,21 @@ ALTER TABLE reaction_roles ADD COLUMN IF NOT EXISTS label VARCHAR(100);
 ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_group VARCHAR(50);
 ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_position INTEGER DEFAULT 0;
 
+-- Message logs table (for analytics)
+CREATE TABLE IF NOT EXISTS message_logs (
+  id BIGSERIAL PRIMARY KEY,
+  guild_id VARCHAR(20) NOT NULL,
+  channel_id VARCHAR(20) NOT NULL,
+  channel_name VARCHAR(100),
+  user_id VARCHAR(20) NOT NULL,
+  username VARCHAR(100),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Add join/leave tracking to guild_members
+ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS joined_at TIMESTAMP;
+ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS left_at TIMESTAMP;
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
 CREATE INDEX IF NOT EXISTS idx_guild_members_xp ON guild_members(guild_id, total_xp DESC);
@@ -279,6 +294,8 @@ CREATE INDEX IF NOT EXISTS idx_ticket_categories_panel ON ticket_categories(pane
 CREATE INDEX IF NOT EXISTS idx_ticket_form_fields_category ON ticket_form_fields(category_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(guild_id, status);
 CREATE INDEX IF NOT EXISTS idx_tickets_last_activity ON tickets(last_activity) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_message_logs_guild ON message_logs(guild_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_message_logs_channel ON message_logs(guild_id, channel_id, created_at DESC);
 `;
 
 async function migrate() {
