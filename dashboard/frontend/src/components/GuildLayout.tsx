@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { Outlet, useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import Sidebar from './Sidebar';
-import { ArrowLeft, Server } from 'lucide-react';
+import { ArrowLeft, Server, Menu } from 'lucide-react';
 
 interface Guild {
   id: string;
@@ -12,6 +13,7 @@ interface Guild {
 
 export default function GuildLayout() {
   const { guildId } = useParams<{ guildId: string }>();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { data: guilds } = useQuery<Guild[]>({
     queryKey: ['guilds'],
@@ -26,14 +28,39 @@ export default function GuildLayout() {
 
   return (
     <div className="flex min-h-[calc(100vh-64px)]">
-      {/* Sidebar */}
-      <Sidebar />
+      {/* Desktop Sidebar — always visible on md+ */}
+      <div className="hidden md:block">
+        <Sidebar />
+      </div>
+
+      {/* Mobile Overlay Drawer */}
+      {sidebarOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/60 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+          {/* Drawer */}
+          <div className="fixed inset-y-0 left-0 z-50 md:hidden">
+            <Sidebar onClose={() => setSidebarOpen(false)} />
+          </div>
+        </>
+      )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Guild Header */}
-        <div className="bg-discord-darker border-b border-discord-dark px-6 py-4">
+        <div className="bg-discord-darker border-b border-discord-dark px-4 md:px-6 py-4">
           <div className="flex items-center gap-4">
+            {/* Hamburger — mobile only */}
+            <button
+              className="md:hidden text-discord-light hover:text-white transition-colors"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <Link
               to="/dashboard"
               className="text-discord-light hover:text-white transition-colors"
@@ -61,7 +88,7 @@ export default function GuildLayout() {
         </div>
 
         {/* Page Content */}
-        <main className="flex-1 p-6 overflow-y-auto">
+        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
           <Outlet />
         </main>
       </div>
