@@ -23,7 +23,9 @@ import {
   Crown,
   RefreshCw,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, createContext, useContext } from 'react';
+
+const OnCloseContext = createContext<(() => void) | undefined>(undefined);
 
 interface NavItem {
   name: string;
@@ -160,6 +162,7 @@ interface NavItemComponentProps {
 function NavItemComponent({ item, depth = 0 }: NavItemComponentProps) {
   const [isOpen, setIsOpen] = useState(false);
   const hasChildren = item.children && item.children.length > 0;
+  const onClose = useContext(OnCloseContext);
 
   const baseClasses = `
     flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
@@ -203,6 +206,7 @@ function NavItemComponent({ item, depth = 0 }: NavItemComponentProps) {
     <NavLink
       to={item.href}
       end={item.href.split('/').length <= 4}
+      onClick={onClose}
       className={({ isActive }) =>
         `${baseClasses} ${isActive ? activeClasses : ''}`
       }
@@ -219,7 +223,7 @@ function NavItemComponent({ item, depth = 0 }: NavItemComponentProps) {
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { guildId } = useParams<{ guildId: string }>();
 
   if (!guildId) {
@@ -229,17 +233,19 @@ export default function Sidebar() {
   const navItems = getNavItems(guildId);
 
   return (
-    <aside className="w-64 bg-discord-darker border-r border-discord-dark shrink-0 overflow-y-auto">
-      <div className="p-4">
-        <h2 className="text-xs font-semibold text-discord-light uppercase tracking-wider mb-4">
-          Server Settings
-        </h2>
-        <nav className="space-y-1">
-          {navItems.map((item) => (
-            <NavItemComponent key={item.href} item={item} />
-          ))}
-        </nav>
-      </div>
-    </aside>
+    <OnCloseContext.Provider value={onClose}>
+      <aside className="w-64 bg-discord-darker border-r border-discord-dark shrink-0 overflow-y-auto h-full">
+        <div className="p-4">
+          <h2 className="text-xs font-semibold text-discord-light uppercase tracking-wider mb-4">
+            Server Settings
+          </h2>
+          <nav className="space-y-1">
+            {navItems.map((item) => (
+              <NavItemComponent key={item.href} item={item} />
+            ))}
+          </nav>
+        </div>
+      </aside>
+    </OnCloseContext.Provider>
   );
 }
