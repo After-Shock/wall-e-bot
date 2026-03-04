@@ -1,4 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { EditorView, keymap } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
+import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
+import { oneDark } from '@codemirror/theme-one-dark';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -66,6 +70,90 @@ function Toggle({ label, description, checked, onChange }: {
 function extractApiError(err: unknown): string {
   const e = err as { response?: { data?: { error?: string; message?: string } } };
   return e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.';
+}
+
+const cmTheme = EditorView.theme({
+  '&': {
+    backgroundColor: 'transparent',
+    color: '#dcddde',
+    fontSize: '13px',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    minHeight: '12rem',
+  },
+  '.cm-content': {
+    padding: '8px',
+    caretColor: '#ffffff',
+  },
+  '&.cm-focused': {
+    outline: 'none',
+  },
+  '.cm-selectionBackground, ::selection': {
+    backgroundColor: '#5865f2 !important',
+  },
+  '&.cm-focused .cm-selectionBackground': {
+    backgroundColor: '#5865f2 !important',
+  },
+  '.cm-cursor': {
+    borderLeftColor: '#ffffff',
+  },
+});
+
+function CodeMirrorEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const onChangeCb = useCallback((v: string) => onChange(v), [onChange]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const startState = EditorState.create({
+      doc: value,
+      extensions: [
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        EditorView.lineWrapping,
+        oneDark,
+        cmTheme,
+        EditorView.updateListener.of(update => {
+          if (update.docChanged) {
+            onChangeCb(update.state.doc.toString());
+          }
+        }),
+      ],
+    });
+
+    const view = new EditorView({
+      state: startState,
+      parent: containerRef.current,
+    });
+    viewRef.current = view;
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Mount once only
+
+  // Sync external value changes (variable button clicks) without losing cursor position
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== value) {
+      view.dispatch({
+        changes: { from: 0, to: current.length, insert: value },
+      });
+    }
+  }, [value]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="input w-full min-h-48 overflow-hidden"
+      style={{ padding: 0 }}
+    />
+  );
 }
 
 export default function CustomCommandsPage() {
@@ -359,13 +447,11 @@ export default function CustomCommandsPage() {
             <div>
               <label className="block text-sm font-medium mb-2">Response</label>
               <div className="relative">
-                <textarea
+                <CodeMirrorEditor
                   value={editingCommand?.response || ''}
-                  onChange={e => setEditingCommand(prev => prev ? { ...prev, response: e.target.value } : null)}
-                  className="input w-full h-48 resize-y font-mono text-sm pb-6"
-                  placeholder="Enter the command response..."
+                  onChange={value => setEditingCommand(prev => prev ? { ...prev, response: value } : null)}
                 />
-                <span className={`absolute bottom-2 right-3 text-xs pointer-events-none ${
+                <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${
                   (editingCommand?.response?.length ?? 0) >= 1900 ? 'text-red-400' : 'text-discord-light'
                 }`}>
                   {editingCommand?.response?.length ?? 0} / 2000
