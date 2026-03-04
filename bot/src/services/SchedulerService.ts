@@ -12,6 +12,7 @@
  * @module services/SchedulerService
  */
 
+import { CronExpressionParser } from 'cron-parser';
 import { TextChannel, EmbedBuilder, ActivityType } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { COLORS } from '@wall-e/shared';
@@ -57,10 +58,12 @@ export class SchedulerService {
     // Check every minute for tasks due to execute
     this.checkInterval = setInterval(() => {
       this.checkScheduledTasks();
+      this.checkIntervalCommands();
     }, 60 * 1000); // 60 seconds
 
     // Run immediately on start to catch any missed tasks
     this.checkScheduledTasks();
+    this.checkIntervalCommands();
 
     // Check for inactive tickets every hour
     this.autoCloseInterval = setInterval(() => { this.checkAutoClose(); }, 60 * 60 * 1000);
@@ -290,15 +293,88 @@ export class SchedulerService {
    * @returns Next execution Date
    */
   private getNextCronRun(expression: string): Date {
-    // TODO: Implement proper cron parsing with cron-parser library
-    const parts = expression.split(' ');
-    const now = new Date();
-    const next = new Date(now);
+    try {
+      const interval = CronExpressionParser.parse(expression);
+      return interval.next().toDate();
+    } catch {
+      // Fallback: 1 hour from now
+      return new Date(Date.now() + 60 * 60 * 1000);
+    }
+  }
 
-    // Fallback: just add 1 minute
-    next.setMinutes(next.getMinutes() + 1);
-    
-    return next;
+  private async checkIntervalCommands() {
+    try {
+      const now = new Date();
+      const result = await this.client.db.pool.query(
+        `SELECT id, guild_id, name, responses, embed_response, embed_color,
+                interval_cron, interval_channel_id, case_sensitive
+         FROM custom_commands
+         WHERE trigger_type = 'interval'
+           AND enabled = TRUE
+           AND interval_cron IS NOT NULL
+           AND interval_channel_id IS NOT NULL
+           AND (interval_next_run IS NULL OR interval_next_run <= $1)`,
+        [now],
+      );
+
+      for (const cmd of result.rows) {
+        await this.fireIntervalCommand(cmd);
+      }
+    } catch (error) {
+      logger.error('Error checking interval commands:', error);
+    }
+  }
+
+  private async fireIntervalCommand(cmd: {
+    id: number;
+    guild_id: string;
+    responses: string[];
+    embed_response: boolean;
+    embed_color: string | null;
+    interval_cron: string;
+    interval_channel_id: string;
+  }) {
+    try {
+      const guild = this.client.guilds.cache.get(cmd.guild_id);
+      if (!guild) return;
+
+      const channel = guild.channels.cache.get(cmd.interval_channel_id);
+      if (!channel || !channel.isTextBased() || !('send' in channel)) return;
+
+      const responses = cmd.responses as string[];
+      const raw = responses[Math.floor(Math.random() * responses.length)];
+      const rendered = this.client.template.render(raw, {
+        server: guild.name,
+        memberCount: guild.memberCount,
+        channel: 'name' in channel ? `#${(channel as { name: string }).name}` : '',
+        channelId: channel.id,
+        user: '',
+        username: '',
+        userId: '',
+        args: [],
+      });
+
+      if (cmd.embed_response) {
+        const { EmbedBuilder } = await import('discord.js');
+        const embed = new EmbedBuilder()
+          .setDescription(rendered)
+          .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
+        await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
+      } else {
+        await (channel as import('discord.js').TextChannel).send(rendered);
+      }
+
+      // Update uses + schedule next run
+      const nextRun = this.getNextCronRun(cmd.interval_cron);
+      await this.client.db.pool.query(
+        `UPDATE custom_commands
+         SET uses = uses + 1, interval_next_run = $2
+         WHERE id = $1`,
+        [cmd.id, nextRun],
+      );
+    } catch (error) {
+      logger.error(`Error firing interval command ${cmd.id}:`, error);
+    }
   }
 
   async createScheduledMessage(
