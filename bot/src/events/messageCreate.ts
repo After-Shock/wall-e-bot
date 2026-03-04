@@ -2,6 +2,112 @@ import { Events, Message } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
 
+async function handleCustomCommands(
+  client: WallEClient,
+  message: import('discord.js').Message,
+) {
+  const guild = message.guild!;
+  const content = message.content;
+  const contentLower = content.toLowerCase();
+
+  // Load all active message-type commands for this guild
+  const result = await client.db.pool.query(
+    `SELECT id, name, trigger_type, responses, embed_response, embed_color,
+            delete_command, case_sensitive, allowed_roles, allowed_channels
+     FROM custom_commands
+     WHERE guild_id = $1
+       AND enabled = TRUE
+       AND trigger_type IN ('command', 'starts_with', 'contains', 'exact_match', 'regex')`,
+    [guild.id],
+  );
+
+  if (result.rows.length === 0) return;
+
+  const config = await client.db.getGuildConfig(guild.id);
+  const prefix = config?.prefix ?? '!';
+  const channel = message.channel as import('discord.js').TextChannel;
+
+  for (const cmd of result.rows) {
+    const nameLower = cmd.name.toLowerCase();
+    const checkContent = cmd.case_sensitive ? content : contentLower;
+    const checkName = cmd.case_sensitive ? cmd.name : nameLower;
+
+    let matched = false;
+    let args: string[] = [];
+
+    switch (cmd.trigger_type) {
+      case 'command': {
+        const prefixedTrigger = prefix + checkName;
+        if (checkContent.startsWith(prefixedTrigger) &&
+            (checkContent.length === prefixedTrigger.length || checkContent[prefixedTrigger.length] === ' ')) {
+          matched = true;
+          args = content.slice(prefix.length + cmd.name.length).trim().split(/\s+/).filter(Boolean);
+        }
+        break;
+      }
+      case 'starts_with':
+        if (checkContent.startsWith(checkName)) {
+          matched = true;
+          args = content.slice(cmd.name.length).trim().split(/\s+/).filter(Boolean);
+        }
+        break;
+      case 'contains':
+        if (checkContent.includes(checkName)) {
+          matched = true;
+        }
+        break;
+      case 'exact_match':
+        if (checkContent === checkName) {
+          matched = true;
+        }
+        break;
+      case 'regex':
+        try {
+          const regex = new RegExp(cmd.name, cmd.case_sensitive ? '' : 'i');
+          if (regex.test(content)) {
+            matched = true;
+          }
+        } catch {
+          // Invalid regex stored in DB — skip silently
+        }
+        break;
+    }
+
+    if (!matched) continue;
+
+    const responses = cmd.responses as string[];
+    const raw = responses[Math.floor(Math.random() * responses.length)];
+
+    const rendered = client.template.render(raw, {
+      user: `<@${message.author.id}>`,
+      username: message.member?.displayName ?? message.author.username,
+      userId: message.author.id,
+      server: guild.name,
+      memberCount: guild.memberCount,
+      channel: `#${'name' in message.channel ? (message.channel as { name: string }).name : ''}`,
+      channelId: message.channel.id,
+      args,
+    });
+
+    if (cmd.delete_command) await message.delete().catch(() => {});
+
+    if (cmd.embed_response) {
+      const { EmbedBuilder } = await import('discord.js');
+      const embed = new EmbedBuilder()
+        .setDescription(rendered)
+        .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
+      await channel.send({ embeds: [embed] });
+    } else {
+      await channel.send(rendered);
+    }
+
+    client.db.pool.query(
+      'UPDATE custom_commands SET uses = uses + 1 WHERE id = $1',
+      [cmd.id],
+    ).catch(() => {});
+  }
+}
+
 export default {
   name: Events.MessageCreate,
   once: false,
@@ -29,42 +135,7 @@ export default {
 
       // Handle custom commands (guild only)
       if (message.guild && message.channel.isTextBased() && 'send' in message.channel) {
-        const config = await client.db.getGuildConfig(message.guild.id);
-        const prefix = config?.prefix ?? '!';
-        if (message.content.startsWith(prefix)) {
-          const rawName = message.content.slice(prefix.length).trim().split(/\s+/)[0];
-          if (rawName) {
-            const result = await client.db.pool.query(
-              `SELECT response, embed_response, embed_color, delete_command, case_sensitive
-               FROM custom_commands
-               WHERE guild_id = $1
-                 AND enabled = TRUE
-                 AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)`,
-              [message.guild.id, rawName],
-            );
-            if (result.rows.length > 0) {
-              const cmd = result.rows[0];
-              const channel = message.channel as import('discord.js').TextChannel;
-
-              if (cmd.delete_command) await message.delete().catch(() => {});
-
-              if (cmd.embed_response) {
-                const { EmbedBuilder } = await import('discord.js');
-                const embed = new EmbedBuilder()
-                  .setDescription(cmd.response)
-                  .setColor(cmd.embed_color ?? '#5865F2');
-                await channel.send({ embeds: [embed] });
-              } else {
-                await channel.send(cmd.response);
-              }
-
-              client.db.pool.query(
-                'UPDATE custom_commands SET uses = uses + 1 WHERE guild_id = $1 AND (CASE WHEN case_sensitive THEN name = $2 ELSE name = lower($2) END)',
-                [message.guild.id, rawName],
-              ).catch(() => {});
-            }
-          }
-        }
+        await handleCustomCommands(client, message);
       }
     } catch (error) {
       logger.error('Error in messageCreate handler:', error);
