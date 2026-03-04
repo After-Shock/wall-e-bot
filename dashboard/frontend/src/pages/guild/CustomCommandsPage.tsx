@@ -492,9 +492,9 @@ export default function CustomCommandsPage() {
                   />
                 )}
                 <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${
-                  (editingCommand?.response?.length ?? 0) >= 1900 ? 'text-red-400' : 'text-discord-light'
+                  (editingCommand?.response?.length ?? 0) >= 2400 ? 'text-red-400' : 'text-discord-light'
                 }`}>
-                  {editingCommand?.response?.length ?? 0} / 2000
+                  {editingCommand?.response?.length ?? 0} / 2500
                 </span>
               </div>
             </div>

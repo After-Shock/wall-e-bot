@@ -11,7 +11,7 @@ customCommandsRouter.use(requireAuth, requireGuildAccess);
 
 const CommandSchema = z.object({
   name: z.string().min(1).max(100).toLowerCase(),
-  response: z.string().min(1).max(2000),
+  response: z.string().min(1).max(2500),
   embed_response: z.boolean().default(false),
   embed_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
   cooldown: z.number().int().min(0).max(3600).default(0),
