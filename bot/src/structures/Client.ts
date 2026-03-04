@@ -25,6 +25,7 @@ import { LevelingService } from '../services/LevelingService.js';
 import { ModerationService } from '../services/ModerationService.js';
 import { AutoModService } from '../services/AutoModService.js';
 import { SchedulerService } from '../services/SchedulerService.js';
+import { TemplateService } from '../services/TemplateService.js';
 import { logger } from '../utils/logger.js';
 
 // ES Module compatibility - get __dirname equivalent
@@ -71,6 +72,9 @@ export class WallEClient extends Client {
   
   /** Background task scheduler for timed messages and temp unbans */
   public scheduler!: SchedulerService;
+
+  /** Handlebars template engine for custom command responses */
+  public template!: TemplateService;
 
   /**
    * Initialize the Discord client with required intents and partials.
@@ -137,6 +141,7 @@ export class WallEClient extends Client {
     this.moderation = new ModerationService(this);
     this.automod = new AutoModService(this);
     this.scheduler = new SchedulerService(this);
+    this.template = new TemplateService();
 
     // Step 4-5: Load commands and events
     await this.loadCommands();
