@@ -1,5 +1,6 @@
 import { Events, MessageReaction, User, PartialMessageReaction, PartialUser } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
+import { sendLong } from '../utils/sendLong.js';
 
 export default {
   name: Events.MessageReactionRemove,
@@ -71,7 +72,7 @@ export default {
             .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
           await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
         } else {
-          await (channel as import('discord.js').TextChannel).send(rendered);
+          await sendLong(channel as import('discord.js').TextChannel, rendered);
         }
 
         client.db.pool.query('UPDATE custom_commands SET uses = uses + 1 WHERE id = $1', [cmd.id]).catch(() => {});

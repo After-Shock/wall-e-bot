@@ -1,6 +1,7 @@
 import { Events, MessageReaction, User, PartialMessageReaction, PartialUser } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
+import { sendLong } from '../utils/sendLong.js';
 
 export default {
   name: Events.MessageReactionAdd,
@@ -83,7 +84,7 @@ async function handleReactionCommand(
           .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
         await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
       } else {
-        await (channel as import('discord.js').TextChannel).send(rendered);
+        await sendLong(channel as import('discord.js').TextChannel, rendered);
       }
 
       client.db.pool.query(

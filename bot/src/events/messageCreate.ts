@@ -1,6 +1,7 @@
 import { Events, Message } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
+import { sendLong } from '../utils/sendLong.js';
 
 async function handleCustomCommands(
   client: WallEClient,
@@ -98,7 +99,7 @@ async function handleCustomCommands(
         .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
       await channel.send({ embeds: [embed] });
     } else {
-      await channel.send(rendered);
+      await sendLong(channel, rendered);
     }
 
     client.db.pool.query(

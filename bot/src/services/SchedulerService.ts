@@ -17,6 +17,7 @@ import { TextChannel, EmbedBuilder, ActivityType } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
+import { sendLong } from '../utils/sendLong.js';
 
 /**
  * Database row structure for scheduled messages.
@@ -361,7 +362,7 @@ export class SchedulerService {
           .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
         await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
       } else {
-        await (channel as import('discord.js').TextChannel).send(rendered);
+        await sendLong(channel as import('discord.js').TextChannel, rendered);
       }
 
       // Update uses + schedule next run
