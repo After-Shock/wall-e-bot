@@ -96,12 +96,20 @@ export default function CustomCommandsPage() {
     mutationFn: (data: Partial<CustomCommand>) =>
       api.post(`/api/guilds/${guildId}/custom-commands`, data).then(r => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string; message?: string } } };
+      setSaveError(e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.');
+    },
   });
 
   const updateCmd = useMutation({
     mutationFn: ({ id, ...data }: Partial<CustomCommand> & { id: number }) =>
       api.patch(`/api/guilds/${guildId}/custom-commands/${id}`, data).then(r => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string; message?: string } } };
+      setSaveError(e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.');
+    },
   });
 
   const deleteCmd = useMutation({
@@ -113,6 +121,7 @@ export default function CustomCommandsPage() {
   const [editingCommand, setEditingCommand] = useState<Partial<CustomCommand> | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const filteredCommands = commands.filter(cmd =>
     cmd.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -125,6 +134,7 @@ export default function CustomCommandsPage() {
 
   const saveCommand = () => {
     if (!editingCommand?.name || !editingCommand?.response) return;
+    setSaveError(null);
     if ((editingCommand as CustomCommand).id) {
       updateCmd.mutate(editingCommand as CustomCommand, {
         onSuccess: () => { setShowEditor(false); setEditingCommand(null); },
@@ -347,12 +357,19 @@ export default function CustomCommandsPage() {
 
             <div>
               <label className="block text-sm font-medium mb-2">Response</label>
-              <textarea
-                value={editingCommand?.response || ''}
-                onChange={e => setEditingCommand(prev => prev ? { ...prev, response: e.target.value } : null)}
-                className="input w-full h-32 resize-none font-mono text-sm"
-                placeholder="Enter the command response..."
-              />
+              <div className="relative">
+                <textarea
+                  value={editingCommand?.response || ''}
+                  onChange={e => setEditingCommand(prev => prev ? { ...prev, response: e.target.value } : null)}
+                  className="input w-full h-48 resize-y font-mono text-sm pb-6"
+                  placeholder="Enter the command response..."
+                />
+                <span className={`absolute bottom-2 right-3 text-xs pointer-events-none ${
+                  (editingCommand?.response?.length ?? 0) >= 1900 ? 'text-red-400' : 'text-discord-light'
+                }`}>
+                  {editingCommand?.response?.length ?? 0} / 2000
+                </span>
+              </div>
             </div>
           </div>
 
@@ -432,24 +449,29 @@ export default function CustomCommandsPage() {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => {
-                setShowEditor(false);
-                setEditingCommand(null);
-              }}
-              className="btn btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={saveCommand}
-              disabled={!editingCommand?.name || !editingCommand?.response || createCmd.isPending || updateCmd.isPending}
-              className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              {createCmd.isPending || updateCmd.isPending ? 'Saving...' : 'Save Command'}
-            </button>
+          <div className="space-y-2">
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowEditor(false);
+                  setEditingCommand(null);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveCommand}
+                disabled={!editingCommand?.name || !editingCommand?.response || createCmd.isPending || updateCmd.isPending}
+                className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {createCmd.isPending || updateCmd.isPending ? 'Saving...' : 'Save Command'}
+              </button>
+            </div>
+            {saveError && (
+              <p className="text-sm text-red-400">{saveError}</p>
+            )}
           </div>
         </div>
       )}
