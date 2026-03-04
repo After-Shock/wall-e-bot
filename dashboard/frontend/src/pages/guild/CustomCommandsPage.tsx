@@ -837,7 +837,7 @@ export default function CustomCommandsPage() {
       <div className="p-2 border-t border-discord-dark flex gap-2">
         <button onClick={() => openNewCommand()} className="btn btn-primary flex-1 flex items-center justify-center gap-1.5 text-sm py-2 max-w-[50%]">
           <Plus className="w-4 h-4 shrink-0" />
-          <span className="hidden sm:inline">New Command</span>
+          <span>New Command</span>
         </button>
         <button
           onClick={() => { setEditingGroup(emptyGroup()); setEditingGroupId('new'); }}
