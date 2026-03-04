@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
@@ -26,6 +26,15 @@ export default function GuildLayout() {
 
   const guild = guilds?.find(g => g.id === guildId) ?? { id: guildId ?? '', name: '', icon: null };
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
+
   return (
     <div className="flex min-h-[calc(100vh-64px)]">
       {/* Desktop Sidebar — always visible on md+ */}
@@ -33,20 +42,28 @@ export default function GuildLayout() {
         <Sidebar />
       </div>
 
-      {/* Mobile Overlay Drawer */}
-      {sidebarOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-40 bg-black/60 md:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-          {/* Drawer */}
-          <div className="fixed inset-y-0 left-0 z-50 md:hidden">
-            <Sidebar onClose={() => setSidebarOpen(false)} />
-          </div>
-        </>
-      )}
+      {/* Mobile Overlay Drawer — always mounted so accordion state is preserved */}
+      <div className="md:hidden">
+        {/* Backdrop */}
+        <div
+          className={`fixed inset-0 z-40 bg-black/60 transition-opacity duration-300 ${
+            sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+        {/* Drawer */}
+        <div
+          className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 ${
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation menu"
+        >
+          <Sidebar onClose={() => setSidebarOpen(false)} />
+        </div>
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -64,6 +81,7 @@ export default function GuildLayout() {
             <Link
               to="/dashboard"
               className="text-discord-light hover:text-white transition-colors"
+              aria-label="Back to dashboard"
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
