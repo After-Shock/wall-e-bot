@@ -167,7 +167,7 @@ const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, { value: string; onC
   return (
     <div
       ref={containerRef}
-      className="input w-full min-h-48 overflow-hidden"
+      className="input w-full min-h-48"
       style={{ padding: 0 }}
     />
   );

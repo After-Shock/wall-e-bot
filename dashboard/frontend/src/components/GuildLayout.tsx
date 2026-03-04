@@ -27,6 +27,15 @@ export default function GuildLayout() {
   const guild = guilds?.find(g => g.id === guildId) ?? { id: guildId ?? '', name: '', icon: null };
 
   useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
+
+  useEffect(() => {
     if (!sidebarOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setSidebarOpen(false);
@@ -57,6 +66,7 @@ export default function GuildLayout() {
           className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
+          style={{ willChange: 'transform' }}
           role="dialog"
           aria-modal="true"
           aria-label="Navigation menu"

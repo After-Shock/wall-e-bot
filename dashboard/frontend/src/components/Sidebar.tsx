@@ -22,6 +22,7 @@ import {
   Database,
   Crown,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import { useState, createContext, useContext } from 'react';
 
@@ -234,11 +235,27 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   return (
     <OnCloseContext.Provider value={onClose}>
-      <aside className="w-64 bg-discord-darker border-r border-discord-dark shrink-0 overflow-y-auto h-full">
+      <aside className="w-64 bg-discord-darker border-r border-discord-dark shrink-0 overflow-y-auto h-full overscroll-contain">
         <div className="p-4">
-          <h2 className="text-xs font-semibold text-discord-light uppercase tracking-wider mb-4">
-            Server Settings
-          </h2>
+          {onClose && (
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xs font-semibold text-discord-light uppercase tracking-wider">
+                Server Settings
+              </h2>
+              <button
+                onClick={onClose}
+                aria-label="Close menu"
+                className="text-discord-light hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+          {!onClose && (
+            <h2 className="text-xs font-semibold text-discord-light uppercase tracking-wider mb-4">
+              Server Settings
+            </h2>
+          )}
           <nav className="space-y-1">
             {navItems.map((item) => (
               <NavItemComponent key={item.href} item={item} />
