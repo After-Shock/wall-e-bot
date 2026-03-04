@@ -63,6 +63,11 @@ function Toggle({ label, description, checked, onChange }: {
   );
 }
 
+function extractApiError(err: unknown): string {
+  const e = err as { response?: { data?: { error?: string; message?: string } } };
+  return e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.';
+}
+
 export default function CustomCommandsPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const queryClient = useQueryClient();
@@ -96,20 +101,14 @@ export default function CustomCommandsPage() {
     mutationFn: (data: Partial<CustomCommand>) =>
       api.post(`/api/guilds/${guildId}/custom-commands`, data).then(r => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
-    onError: (err: unknown) => {
-      const e = err as { response?: { data?: { error?: string; message?: string } } };
-      setSaveError(e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.');
-    },
+    onError: (err: unknown) => setSaveError(extractApiError(err)),
   });
 
   const updateCmd = useMutation({
     mutationFn: ({ id, ...data }: Partial<CustomCommand> & { id: number }) =>
       api.patch(`/api/guilds/${guildId}/custom-commands/${id}`, data).then(r => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
-    onError: (err: unknown) => {
-      const e = err as { response?: { data?: { error?: string; message?: string } } };
-      setSaveError(e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.');
-    },
+    onError: (err: unknown) => setSaveError(extractApiError(err)),
   });
 
   const deleteCmd = useMutation({
@@ -128,6 +127,7 @@ export default function CustomCommandsPage() {
   );
 
   const createNewCommand = () => {
+    setSaveError(null);
     setEditingCommand(emptyCommand());
     setShowEditor(true);
   };
@@ -271,6 +271,7 @@ export default function CustomCommandsPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
+                            setSaveError(null);
                             setEditingCommand(cmd);
                             setShowEditor(true);
                           }}
