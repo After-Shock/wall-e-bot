@@ -6,12 +6,34 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
-import { Terminal, Plus, Trash2, Search, Save, Edit, Info } from 'lucide-react';
+import {
+  Terminal, Plus, Trash2, Search, Save, Edit, Info, ChevronDown, ChevronRight,
+  FolderPlus, Folder, Clock, Zap, Hash, AlignLeft, Code2, X,
+} from 'lucide-react';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type TriggerType = 'command' | 'starts_with' | 'contains' | 'exact_match' | 'regex' | 'reaction' | 'interval';
+
+interface CommandGroup {
+  id: number;
+  guild_id: string;
+  name: string;
+  description?: string;
+  allowed_roles: string[];
+  allowed_channels: string[];
+  ignore_roles: string[];
+  ignore_channels: string[];
+  position: number;
+}
 
 interface CustomCommand {
   id: number;
+  guild_id: string;
   name: string;
-  response: string;
+  trigger_type: TriggerType;
+  group_id: number | null;
+  responses: string[];
   embed_response: boolean;
   embed_color: string | null;
   cooldown: number;
@@ -19,13 +41,23 @@ interface CustomCommand {
   case_sensitive: boolean;
   trigger_on_edit: boolean;
   enabled: boolean;
+  allowed_roles: string[];
+  allowed_channels: string[];
+  interval_cron: string | null;
+  interval_channel_id: string | null;
+  reaction_message_id: string | null;
+  reaction_channel_id: string | null;
+  reaction_emoji: string | null;
+  reaction_type: 'add' | 'remove' | 'both' | null;
   uses: number;
   created_at: string;
 }
 
 const emptyCommand = (): Partial<CustomCommand> => ({
   name: '',
-  response: '',
+  trigger_type: 'command',
+  group_id: null,
+  responses: [''],
   embed_response: false,
   embed_color: null,
   cooldown: 0,
@@ -33,28 +65,150 @@ const emptyCommand = (): Partial<CustomCommand> => ({
   case_sensitive: false,
   trigger_on_edit: false,
   enabled: true,
+  allowed_roles: [],
+  allowed_channels: [],
+  interval_cron: null,
+  interval_channel_id: null,
+  reaction_message_id: null,
+  reaction_channel_id: null,
+  reaction_emoji: null,
+  reaction_type: 'add',
 });
 
-const variables = [
-  { name: '{user}', desc: 'User mention' },
-  { name: '{username}', desc: 'Username' },
-  { name: '{server}', desc: 'Server name' },
-  { name: '{channel}', desc: 'Channel name' },
-  { name: '{args}', desc: 'All arguments' },
-  { name: '{args.1}', desc: 'First argument' },
+const emptyGroup = (): Partial<CommandGroup> => ({
+  name: '',
+  description: '',
+  allowed_roles: [],
+  allowed_channels: [],
+  ignore_roles: [],
+  ignore_channels: [],
+  position: 0,
+});
+
+// ─── Trigger type metadata ────────────────────────────────────────────────────
+
+const TRIGGER_TYPES: { value: TriggerType; label: string; color: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: 'command',     label: 'Command',     color: 'bg-discord-blurple/20 text-discord-blurple', icon: Terminal },
+  { value: 'starts_with', label: 'Starts With', color: 'bg-gray-500/20 text-gray-400',               icon: AlignLeft },
+  { value: 'contains',    label: 'Contains',    color: 'bg-gray-500/20 text-gray-400',               icon: Hash },
+  { value: 'exact_match', label: 'Exact Match', color: 'bg-gray-500/20 text-gray-400',               icon: AlignLeft },
+  { value: 'regex',       label: 'Regex',       color: 'bg-orange-500/20 text-orange-400',           icon: Code2 },
+  { value: 'reaction',    label: 'Reaction',    color: 'bg-pink-500/20 text-pink-400',               icon: Zap },
+  { value: 'interval',    label: 'Interval',    color: 'bg-green-500/20 text-green-400',             icon: Clock },
 ];
 
+const TEMPLATE_VARS = [
+  { name: '{{user}}',        desc: 'User mention' },
+  { name: '{{username}}',    desc: 'Display name' },
+  { name: '{{userId}}',      desc: 'User ID' },
+  { name: '{{server}}',      desc: 'Server name' },
+  { name: '{{memberCount}}', desc: 'Member count' },
+  { name: '{{channel}}',     desc: 'Channel name' },
+  { name: '{{channelId}}',   desc: 'Channel ID' },
+  { name: '{{args}}',        desc: 'All arguments' },
+  { name: '{{args.[0]}}',    desc: 'First argument' },
+  { name: '{{randint 1 100}}', desc: 'Random int' },
+  { name: '{{choose "a" "b"}}', desc: 'Random pick' },
+  { name: '{{upper username}}', desc: 'Uppercase' },
+  { name: '{{lower username}}', desc: 'Lowercase' },
+  { name: '{{time "HH:mm"}}',   desc: 'Current time' },
+  { name: '{{date "YYYY-MM-DD"}}', desc: 'Current date' },
+];
+
+// ─── CodeMirror editor ────────────────────────────────────────────────────────
+
+interface CMHandle { insertAtCursor: (text: string) => void; }
+
+const cmTheme = EditorView.theme({
+  '&': { backgroundColor: 'transparent', color: '#dcddde', fontSize: '13px',
+         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', minHeight: '8rem' },
+  '.cm-content': { padding: '8px', caretColor: '#ffffff' },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-selectionBackground': { backgroundColor: '#5865f2 !important' },
+  '&.cm-focused .cm-selectionBackground': { backgroundColor: '#5865f2 !important' },
+  '.cm-cursor': { borderLeftColor: '#ffffff' },
+});
+
+const CodeMirrorEditor = forwardRef<CMHandle, { value: string; onChange: (v: string) => void }>(
+  function CodeMirrorEditor({ value, onChange }, ref) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const viewRef = useRef<EditorView | null>(null);
+    const onChangeCb = useCallback((v: string) => onChange(v), [onChange]);
+
+    useImperativeHandle(ref, () => ({
+      insertAtCursor: (text: string) => {
+        const view = viewRef.current;
+        if (!view) return;
+        const { from } = view.state.selection.main;
+        view.dispatch({ changes: { from, insert: text }, selection: { anchor: from + text.length } });
+      },
+    }));
+
+    useEffect(() => {
+      if (!containerRef.current) return;
+      const view = new EditorView({
+        state: EditorState.create({
+          doc: value,
+          extensions: [
+            history(), keymap.of([...defaultKeymap, ...historyKeymap]),
+            EditorView.lineWrapping, oneDark, cmTheme,
+            EditorView.updateListener.of(u => { if (u.docChanged) onChangeCb(u.state.doc.toString()); }),
+          ],
+        }),
+        parent: containerRef.current,
+      });
+      viewRef.current = view;
+      return () => { view.destroy(); viewRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      const current = view.state.doc.toString();
+      if (current !== value) {
+        view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+      }
+    }, [value]);
+
+    return <div ref={containerRef} className="input w-full min-h-32" style={{ padding: 0 }} />;
+  },
+);
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function useMobile() {
+  const [m, setM] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setM(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return m;
+}
+
+function extractApiError(err: unknown): string {
+  const e = err as { response?: { data?: { error?: string; message?: string } } };
+  return e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save.';
+}
+
+function TriggerBadge({ type }: { type: TriggerType }) {
+  const t = TRIGGER_TYPES.find(x => x.value === type)!;
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${t.color}`}>
+      {t.label.toUpperCase()}
+    </span>
+  );
+}
+
 function Toggle({ label, description, checked, onChange }: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
+  label: string; description: string; checked: boolean; onChange: (v: boolean) => void;
 }) {
   return (
     <div className="flex items-center justify-between py-2">
       <div>
         <div className="text-sm font-medium">{label}</div>
-        <div className="text-xs text-discord-light">{description}</div>
+        {description && <div className="text-xs text-discord-light">{description}</div>}
       </div>
       <button
         type="button"
@@ -67,127 +221,14 @@ function Toggle({ label, description, checked, onChange }: {
   );
 }
 
-function extractApiError(err: unknown): string {
-  const e = err as { response?: { data?: { error?: string; message?: string } } };
-  return e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.';
-}
-
-interface CodeMirrorEditorHandle {
-  insertAtCursor: (text: string) => void;
-}
-
-const cmTheme = EditorView.theme({
-  '&': {
-    backgroundColor: 'transparent',
-    color: '#dcddde',
-    fontSize: '13px',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    minHeight: '12rem',
-  },
-  '.cm-content': {
-    padding: '8px',
-    caretColor: '#ffffff',
-  },
-  '&.cm-focused': {
-    outline: 'none',
-  },
-  '.cm-selectionBackground, ::selection': {
-    backgroundColor: '#5865f2 !important',
-  },
-  '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: '#5865f2 !important',
-  },
-  '.cm-cursor': {
-    borderLeftColor: '#ffffff',
-  },
-});
-
-const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, { value: string; onChange: (v: string) => void }>(
-  function CodeMirrorEditor({ value, onChange }, ref) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
-  const onChangeCb = useCallback((v: string) => onChange(v), [onChange]);
-
-    useImperativeHandle(ref, () => ({
-      insertAtCursor: (text: string) => {
-        const view = viewRef.current;
-        if (!view) return;
-        const { from } = view.state.selection.main;
-        view.dispatch({
-          changes: { from, insert: text },
-          selection: { anchor: from + text.length },
-        });
-      },
-    }));
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const startState = EditorState.create({
-      doc: value,
-      extensions: [
-        history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        EditorView.lineWrapping,
-        oneDark,
-        cmTheme,
-        EditorView.updateListener.of(update => {
-          if (update.docChanged) {
-            onChangeCb(update.state.doc.toString());
-          }
-        }),
-      ],
-    });
-
-    const view = new EditorView({
-      state: startState,
-      parent: containerRef.current,
-    });
-    viewRef.current = view;
-
-    return () => {
-      view.destroy();
-      viewRef.current = null;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Mount once only
-
-  // Sync external value changes (variable button clicks) without losing cursor position
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    const current = view.state.doc.toString();
-    if (current !== value) {
-      view.dispatch({
-        changes: { from: 0, to: current.length, insert: value },
-      });
-    }
-  }, [value]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="input w-full min-h-48"
-      style={{ padding: 0 }}
-    />
-  );
-}
-);
-
-function useMobile() {
-  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const handler = () => setMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return mobile;
-}
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CustomCommandsPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const queryClient = useQueryClient();
   const isMobile = useMobile();
+
+  // ── Prefix ──
   const [prefixInput, setPrefixInput] = useState('');
   const [prefixSaved, setPrefixSaved] = useState(false);
 
@@ -209,401 +250,624 @@ export default function CustomCommandsPage() {
     },
   });
 
-  const { data: commands = [], isLoading } = useQuery<CustomCommand[]>({
+  // ── Data ──
+  const { data: commands = [], isLoading: cmdsLoading } = useQuery<CustomCommand[]>({
     queryKey: ['custom-commands', guildId],
     queryFn: () => api.get(`/api/guilds/${guildId}/custom-commands`).then(r => r.data),
   });
 
+  const { data: groups = [], isLoading: grpsLoading } = useQuery<CommandGroup[]>({
+    queryKey: ['command-groups', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/command-groups`).then(r => r.data),
+  });
+
+  // ── UI state ──
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const [editingCommand, setEditingCommand] = useState<Partial<CustomCommand> | null>(null);
+  const [editingGroup, setEditingGroup] = useState<Partial<CommandGroup> | null>(null);
+  const [editingGroupId, setEditingGroupId] = useState<number | 'new' | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showTemplateRef, setShowTemplateRef] = useState(false);
+  const [regexValid, setRegexValid] = useState<boolean | null>(null);
+  const editorRefs = useRef<(CMHandle | null)[]>([]);
+
+  // ── Mutations ──
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] });
+  };
+  const invalidateGroups = () => {
+    queryClient.invalidateQueries({ queryKey: ['command-groups', guildId] });
+  };
+
   const createCmd = useMutation({
     mutationFn: (data: Partial<CustomCommand>) =>
       api.post(`/api/guilds/${guildId}/custom-commands`, data).then(r => r.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
-    onError: (err: unknown) => setSaveError(extractApiError(err)),
+    onSuccess: () => { invalidate(); setEditingCommand(null); setSaveError(null); },
+    onError: (err) => setSaveError(extractApiError(err)),
   });
 
   const updateCmd = useMutation({
     mutationFn: ({ id, ...data }: Partial<CustomCommand> & { id: number }) =>
       api.patch(`/api/guilds/${guildId}/custom-commands/${id}`, data).then(r => r.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
-    onError: (err: unknown) => setSaveError(extractApiError(err)),
+    onSuccess: () => { invalidate(); setEditingCommand(null); setSaveError(null); },
+    onError: (err) => setSaveError(extractApiError(err)),
   });
 
   const deleteCmd = useMutation({
-    mutationFn: (id: number) =>
-      api.delete(`/api/guilds/${guildId}/custom-commands/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
+    mutationFn: (id: number) => api.delete(`/api/guilds/${guildId}/custom-commands/${id}`),
+    onSuccess: () => invalidate(),
   });
 
-  const editorRef = useRef<CodeMirrorEditorHandle>(null);
-  const [editingCommand, setEditingCommand] = useState<Partial<CustomCommand> | null>(null);
-  const [showEditor, setShowEditor] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const toggleCmd = useMutation({
+    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
+      api.patch(`/api/guilds/${guildId}/custom-commands/${id}`, { enabled }),
+    onSuccess: () => invalidate(),
+  });
 
-  const filteredCommands = commands.filter(cmd =>
-    cmd.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const createGroup = useMutation({
+    mutationFn: (data: Partial<CommandGroup>) =>
+      api.post(`/api/guilds/${guildId}/command-groups`, data).then(r => r.data),
+    onSuccess: () => { invalidateGroups(); setEditingGroup(null); setEditingGroupId(null); },
+  });
 
-  const createNewCommand = () => {
+  const updateGroup = useMutation({
+    mutationFn: ({ id, ...data }: Partial<CommandGroup> & { id: number }) =>
+      api.patch(`/api/guilds/${guildId}/command-groups/${id}`, data).then(r => r.data),
+    onSuccess: () => { invalidateGroups(); setEditingGroup(null); setEditingGroupId(null); },
+  });
+
+  const deleteGroup = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/guilds/${guildId}/command-groups/${id}`),
+    onSuccess: () => invalidateGroups(),
+  });
+
+  // ── Helpers ──
+  const openNewCommand = (groupId?: number | null) => {
     setSaveError(null);
-    setEditingCommand(emptyCommand());
-    setShowEditor(true);
+    setEditingCommand({ ...emptyCommand(), group_id: groupId ?? null });
+  };
+
+  const openEditCommand = (cmd: CustomCommand) => {
+    setSaveError(null);
+    setEditingCommand({ ...cmd });
   };
 
   const saveCommand = () => {
-    if (!editingCommand?.name || !editingCommand?.response) return;
+    if (!editingCommand?.name || !editingCommand?.responses?.length) return;
     setSaveError(null);
-    if ((editingCommand as CustomCommand).id) {
-      updateCmd.mutate(editingCommand as CustomCommand, {
-        onSuccess: () => { setShowEditor(false); setEditingCommand(null); },
-      });
+    const id = (editingCommand as CustomCommand).id;
+    if (id) {
+      updateCmd.mutate(editingCommand as CustomCommand);
     } else {
-      createCmd.mutate(editingCommand, {
-        onSuccess: () => { setShowEditor(false); setEditingCommand(null); },
-      });
+      createCmd.mutate(editingCommand);
     }
   };
 
-  return (
-    <div className="max-w-4xl space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Terminal className="w-8 h-8 text-discord-blurple" />
-          <div>
-            <h1 className="text-2xl font-bold">Custom Commands</h1>
-            <p className="text-discord-light">Create custom text commands for your server</p>
-          </div>
-        </div>
-        <button
-          onClick={createNewCommand}
-          className="btn btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Create Command
-        </button>
-      </div>
+  const updateResponse = (idx: number, value: string) => {
+    setEditingCommand(prev => {
+      if (!prev) return prev;
+      const responses = [...(prev.responses ?? [])];
+      responses[idx] = value;
+      return { ...prev, responses };
+    });
+  };
 
-      {/* Prefix Settings */}
-      <div className="card">
-        <h3 className="font-semibold mb-1">Command Prefix</h3>
-        <p className="text-sm text-discord-light mb-3">The symbol users type before a custom command name (e.g. <code className="bg-discord-dark px-1 rounded">!rules</code>)</p>
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            value={prefixInput}
-            onChange={e => setPrefixInput(e.target.value.slice(0, 5))}
-            className="input w-24 text-center font-mono text-lg"
-            placeholder="!"
-            maxLength={5}
-          />
+  const addResponse = () => {
+    setEditingCommand(prev => prev ? { ...prev, responses: [...(prev.responses ?? []), ''] } : prev);
+  };
+
+  const removeResponse = (idx: number) => {
+    setEditingCommand(prev => {
+      if (!prev) return prev;
+      const responses = (prev.responses ?? []).filter((_, i) => i !== idx);
+      return { ...prev, responses: responses.length ? responses : [''] };
+    });
+  };
+
+  const validateRegex = (pattern: string) => {
+    try { new RegExp(pattern); setRegexValid(true); }
+    catch { setRegexValid(false); }
+  };
+
+  const toggleGroup = (id: number) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const saveGroup = () => {
+    if (!editingGroup?.name) return;
+    if (editingGroupId === 'new') {
+      createGroup.mutate(editingGroup);
+    } else if (typeof editingGroupId === 'number') {
+      updateGroup.mutate({ ...editingGroup, id: editingGroupId } as CommandGroup);
+    }
+  };
+
+  // ── Filter ──
+  const filteredCommands = commands.filter(c =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.responses?.some(r => r.toLowerCase().includes(searchQuery.toLowerCase())),
+  );
+
+  const commandsByGroup = (groupId: number | null) =>
+    filteredCommands.filter(c => c.group_id === groupId);
+
+  const isLoading = cmdsLoading || grpsLoading;
+  const isSaving = createCmd.isPending || updateCmd.isPending;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render: editor panel
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const renderEditor = () => {
+    if (!editingCommand) return null;
+
+    return (
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-lg">
+            {(editingCommand as CustomCommand).id ? 'Edit Command' : 'New Command'}
+          </h2>
           <button
-            onClick={() => savePrefix.mutate(prefixInput)}
-            disabled={savePrefix.isPending || !prefixInput || prefixInput === generalConfig?.prefix}
-            className="btn btn-primary disabled:opacity-50"
+            onClick={() => { setEditingCommand(null); setSaveError(null); }}
+            className="text-discord-light hover:text-white transition-colors"
           >
-            {prefixSaved ? '✓ Saved' : 'Save'}
+            <X className="w-5 h-5" />
           </button>
-          {prefixInput !== generalConfig?.prefix && prefixInput && (
-            <span className="text-sm text-discord-light">
-              Commands will use: <code className="bg-discord-dark px-1 rounded">{prefixInput}commandname</code>
-            </span>
-          )}
         </div>
-      </div>
 
-      {!showEditor ? (
-        <>
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-discord-light" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search commands..."
-              className="input w-full pl-10"
-            />
+        {/* Trigger type */}
+        <div className="card space-y-4">
+          <h3 className="font-semibold">Trigger</h3>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Trigger Type</label>
+            <select
+              value={editingCommand.trigger_type ?? 'command'}
+              onChange={e => setEditingCommand(prev => prev ? { ...prev, trigger_type: e.target.value as TriggerType } : prev)}
+              className="input w-full"
+            >
+              {TRIGGER_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
           </div>
 
-          {/* Commands List */}
-          {isLoading ? (
-            <div className="card text-center py-12">
-              <div className="w-10 h-10 border-4 border-discord-blurple border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-discord-light">Loading commands...</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredCommands.length === 0 ? (
-                <div className="card text-center py-12">
-                  <Terminal className="w-16 h-16 mx-auto text-discord-light mb-4 opacity-50" />
-                  <h3 className="text-xl font-semibold mb-2">
-                    {searchQuery ? 'No commands found' : 'No Custom Commands'}
-                  </h3>
-                  <p className="text-discord-light mb-4">
-                    {searchQuery
-                      ? 'Try a different search term'
-                      : 'Create custom commands for your community'}
-                  </p>
-                  {!searchQuery && (
-                    <button onClick={createNewCommand} className="btn btn-primary">
-                      Create Your First Command
-                    </button>
-                  )}
-                </div>
-              ) : (
-                filteredCommands.map(cmd => (
-                  <div key={cmd.id} className="card">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <button
-                          onClick={() => updateCmd.mutate({ id: cmd.id, enabled: !cmd.enabled })}
-                          disabled={updateCmd.isPending}
-                          className={`relative w-10 h-5 rounded-full transition-colors disabled:opacity-50 ${
-                            cmd.enabled ? 'bg-green-500' : 'bg-discord-dark'
-                          }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                              cmd.enabled ? 'translate-x-5' : 'translate-x-0.5'
-                            }`}
-                          />
-                        </button>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <code className="text-discord-blurple font-semibold">{generalConfig?.prefix ?? '!'}{cmd.name}</code>
-                            {cmd.cooldown > 0 && (
-                              <span className="text-xs bg-discord-dark px-2 py-0.5 rounded">
-                                {cmd.cooldown}s cooldown
-                              </span>
-                            )}
-                            <span className="text-xs text-discord-light">
-                              {cmd.uses} uses
-                            </span>
-                          </div>
-                          <p className="text-sm text-discord-light truncate max-w-md">
-                            {cmd.response.length > 100 ? cmd.response.slice(0, 100) + '...' : cmd.response}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setSaveError(null);
-                            setEditingCommand(cmd);
-                            setShowEditor(true);
-                          }}
-                          className="btn btn-secondary"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`Delete command "${generalConfig?.prefix ?? '!'}${cmd.name}"? This cannot be undone.`)) {
-                              deleteCmd.mutate(cmd.id);
-                            }
-                          }}
-                          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
+          {/* Trigger input — varies by type */}
+          {editingCommand.trigger_type !== 'reaction' && editingCommand.trigger_type !== 'interval' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                {editingCommand.trigger_type === 'command' && 'Command Name (without prefix)'}
+                {editingCommand.trigger_type === 'starts_with' && 'Starts With Text'}
+                {editingCommand.trigger_type === 'contains' && 'Contains Text'}
+                {editingCommand.trigger_type === 'exact_match' && 'Exact Message Text'}
+                {editingCommand.trigger_type === 'regex' && 'Regex Pattern'}
+              </label>
+              <input
+                type="text"
+                value={editingCommand.name ?? ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setEditingCommand(prev => prev ? { ...prev, name: val } : prev);
+                  if (editingCommand.trigger_type === 'regex') validateRegex(val);
+                }}
+                className={`input w-full font-mono ${
+                  editingCommand.trigger_type === 'regex' && regexValid === false ? 'border-red-500' :
+                  editingCommand.trigger_type === 'regex' && regexValid === true ? 'border-green-500' : ''
+                }`}
+                placeholder={
+                  editingCommand.trigger_type === 'command' ? 'hello' :
+                  editingCommand.trigger_type === 'regex' ? '^hello\\s+world$' : 'text to match'
+                }
+              />
+              {editingCommand.trigger_type === 'regex' && regexValid === false && (
+                <p className="text-xs text-red-400 mt-1">Invalid regex pattern</p>
               )}
             </div>
           )}
-        </>
-      ) : (
-        /* Editor */
-        <div className="space-y-6">
-          <div className="card">
-            <h3 className="font-semibold mb-4">Command Settings</h3>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
+          {/* Reaction fields */}
+          {editingCommand.trigger_type === 'reaction' && (
+            <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium mb-2">Command Name</label>
-                <div className="flex">
-                  <span className="bg-discord-dark border border-r-0 border-discord-dark px-3 py-2 rounded-l text-discord-light">
-                    {generalConfig?.prefix ?? '!'}
-                  </span>
-                  <input
-                    type="text"
-                    value={editingCommand?.name || ''}
-                    onChange={e => setEditingCommand(prev => prev ? { ...prev, name: e.target.value.toLowerCase().replace(/\s/g, '-') } : null)}
-                    className="input flex-1 rounded-l-none"
-                    placeholder="command-name"
-                  />
+                <label className="block text-sm font-medium mb-2">Display Name</label>
+                <input type="text" value={editingCommand.name ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, name: e.target.value } : prev)} className="input w-full" placeholder="My Reaction Command" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Message ID</label>
+                  <input type="text" value={editingCommand.reaction_message_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_message_id: e.target.value } : prev)} className="input w-full font-mono" placeholder="1234567890" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Channel ID</label>
+                  <input type="text" value={editingCommand.reaction_channel_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_channel_id: e.target.value } : prev)} className="input w-full font-mono" placeholder="1234567890" />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Emoji (unicode or ID)</label>
+                  <input type="text" value={editingCommand.reaction_emoji ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_emoji: e.target.value } : prev)} className="input w-full" placeholder="👋 or 123456789" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Trigger On</label>
+                  <select value={editingCommand.reaction_type ?? 'add'} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_type: e.target.value as 'add' | 'remove' | 'both' } : prev)} className="input w-full">
+                    <option value="add">Add reaction</option>
+                    <option value="remove">Remove reaction</option>
+                    <option value="both">Both</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Interval fields */}
+          {editingCommand.trigger_type === 'interval' && (
+            <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium mb-2">Cooldown (seconds)</label>
-                <input
-                  type="number"
-                  value={editingCommand?.cooldown ?? 0}
-                  onChange={e => setEditingCommand(prev => prev ? { ...prev, cooldown: parseInt(e.target.value) || 0 } : null)}
-                  className="input w-full"
-                  min="0"
-                  max="3600"
-                />
+                <label className="block text-sm font-medium mb-2">Display Name</label>
+                <input type="text" value={editingCommand.name ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, name: e.target.value } : prev)} className="input w-full" placeholder="Daily Announcement" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Cron Expression</label>
+                <input type="text" value={editingCommand.interval_cron ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, interval_cron: e.target.value } : prev)} className="input w-full font-mono" placeholder="0 9 * * 1  (every Monday at 9am)" />
+                <p className="text-xs text-discord-light mt-1">Format: minute hour day month weekday (UTC)</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Post to Channel ID</label>
+                <input type="text" value={editingCommand.interval_channel_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, interval_channel_id: e.target.value } : prev)} className="input w-full font-mono" placeholder="1234567890" />
               </div>
             </div>
+          )}
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Response Type</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={!(editingCommand?.embed_response)}
-                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embed_response: false } : null)}
-                    className="w-4 h-4"
-                  />
-                  <span>Plain Text</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={!!(editingCommand?.embed_response)}
-                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embed_response: true } : null)}
-                    className="w-4 h-4"
-                  />
-                  <span>Embed</span>
-                </label>
-              </div>
-            </div>
+          {/* Group */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Group</label>
+            <select
+              value={editingCommand.group_id ?? ''}
+              onChange={e => setEditingCommand(prev => prev ? { ...prev, group_id: e.target.value ? Number(e.target.value) : null } : prev)}
+              className="input w-full"
+            >
+              <option value="">— No Group —</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Response</label>
+        {/* Responses */}
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">
+              Responses
+              {(editingCommand.responses?.length ?? 0) > 1 && (
+                <span className="ml-2 text-xs text-discord-light font-normal">(picked randomly)</span>
+              )}
+            </h3>
+            <button onClick={addResponse} className="btn btn-secondary text-xs flex items-center gap-1">
+              <Plus className="w-3 h-3" /> Add Response
+            </button>
+          </div>
+
+          {(editingCommand.responses ?? ['']).map((resp, idx) => (
+            <div key={idx} className="space-y-1">
+              {(editingCommand.responses?.length ?? 0) > 1 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-discord-light">Response {idx + 1}</span>
+                  <button onClick={() => removeResponse(idx)} className="text-red-400 hover:text-red-300">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               <div className="relative">
                 {isMobile ? (
                   <textarea
-                    value={editingCommand?.response || ''}
-                    onChange={e => setEditingCommand(prev => prev ? { ...prev, response: e.target.value } : null)}
-                    className="input w-full h-48 resize-y font-mono text-sm pb-6"
-                    placeholder="Enter the command response..."
+                    value={resp}
+                    onChange={e => updateResponse(idx, e.target.value)}
+                    className="input w-full h-32 resize-y font-mono text-sm pb-6"
+                    placeholder="Response text… use {{user}} for mentions"
                   />
                 ) : (
                   <CodeMirrorEditor
-                    ref={editorRef}
-                    value={editingCommand?.response || ''}
-                    onChange={value => setEditingCommand(prev => prev ? { ...prev, response: value } : null)}
+                    ref={el => { editorRefs.current[idx] = el; }}
+                    value={resp}
+                    onChange={v => updateResponse(idx, v)}
                   />
                 )}
-                <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${
-                  (editingCommand?.response?.length ?? 0) >= 2400 ? 'text-red-400' : 'text-discord-light'
-                }`}>
-                  {editingCommand?.response?.length ?? 0} / 2500
+                <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${resp.length >= 2400 ? 'text-red-400' : 'text-discord-light'}`}>
+                  {resp.length} / 2500
                 </span>
               </div>
             </div>
-          </div>
+          ))}
 
-          {/* Behavior Toggles */}
-          <div className="card">
-            <h3 className="font-semibold mb-2">Behavior</h3>
-            <div className="divide-y divide-discord-dark">
-              <Toggle
-                label="Enabled"
-                description="Allow this command to be triggered"
-                checked={editingCommand?.enabled ?? true}
-                onChange={v => setEditingCommand(prev => prev ? { ...prev, enabled: v } : null)}
-              />
-              <Toggle
-                label="Case Sensitive"
-                description="Require exact capitalization to trigger (e.g. !Rules won't match !rules)"
-                checked={editingCommand?.case_sensitive ?? false}
-                onChange={v => setEditingCommand(prev => prev ? { ...prev, case_sensitive: v } : null)}
-              />
-              <Toggle
-                label="Trigger on Message Edits"
-                description="Also fire when a user edits a message to start with this command"
-                checked={editingCommand?.trigger_on_edit ?? false}
-                onChange={v => setEditingCommand(prev => prev ? { ...prev, trigger_on_edit: v } : null)}
-              />
-            </div>
-          </div>
-
-          {/* Variables */}
-          <div className="card">
-            <div className="flex items-center gap-2 mb-3">
-              <Info className="w-4 h-4 text-discord-blurple" />
-              <h3 className="font-semibold">Available Variables</h3>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {variables.map(v => (
-                <button
-                  key={v.name}
-                  onClick={() => {
-                    if (editorRef.current) {
-                      editorRef.current.insertAtCursor(v.name);
-                    } else {
-                      setEditingCommand(prev => prev ? {
-                        ...prev,
-                        response: (prev.response || '') + v.name,
-                      } : null);
-                    }
-                  }}
-                  className="bg-discord-dark hover:bg-discord-blurple/20 px-3 py-1.5 rounded text-sm transition-colors"
-                  title={v.desc}
-                >
-                  <code>{v.name}</code>
-                </button>
+          {/* Response type */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Response Type</label>
+            <div className="flex gap-4">
+              {['Plain Text', 'Embed'].map((label, i) => (
+                <label key={label} className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" checked={i === 0 ? !editingCommand.embed_response : !!editingCommand.embed_response}
+                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embed_response: i === 1 } : prev)}
+                    className="w-4 h-4" />
+                  <span>{label}</span>
+                </label>
               ))}
             </div>
           </div>
+        </div>
 
-          {/* Preview */}
-          <div className="card">
-            <h3 className="font-semibold mb-4">Preview</h3>
-            <div className="bg-discord-dark rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-discord-blurple flex items-center justify-center">
-                  <Terminal className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">Wall-E Bot</span>
-                    <span className="text-xs bg-discord-blurple px-1.5 py-0.5 rounded">BOT</span>
-                  </div>
-                  <p className="text-sm mt-1 whitespace-pre-wrap">
-                    {(editingCommand?.response || 'Your response will appear here...')
-                      .replace('{user}', '@User')
-                      .replace('{username}', 'User')
-                      .replace('{server}', 'Your Server')
-                      .replace('{channel}', '#general')}
-                  </p>
-                </div>
-              </div>
+        {/* Template reference */}
+        <div className="card">
+          <button
+            className="flex items-center gap-2 w-full text-left"
+            onClick={() => setShowTemplateRef(v => !v)}
+          >
+            <Info className="w-4 h-4 text-discord-blurple" />
+            <span className="font-semibold text-sm">Template Variables &amp; Helpers</span>
+            {showTemplateRef ? <ChevronDown className="w-4 h-4 ml-auto" /> : <ChevronRight className="w-4 h-4 ml-auto" />}
+          </button>
+          {showTemplateRef && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {TEMPLATE_VARS.map(v => (
+                <button
+                  key={v.name}
+                  title={v.desc}
+                  onClick={() => {
+                    const activeIdx = 0;
+                    if (editorRefs.current[activeIdx]) {
+                      editorRefs.current[activeIdx]!.insertAtCursor(v.name);
+                    } else {
+                      updateResponse(activeIdx, (editingCommand.responses?.[activeIdx] ?? '') + v.name);
+                    }
+                  }}
+                  className="bg-discord-dark hover:bg-discord-blurple/20 px-2 py-1 rounded text-xs font-mono transition-colors"
+                >
+                  {v.name}
+                </button>
+              ))}
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Actions */}
-          <div className="space-y-2">
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowEditor(false);
-                  setEditingCommand(null);
-                }}
-                className="btn btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveCommand}
-                disabled={!editingCommand?.name || !editingCommand?.response || createCmd.isPending || updateCmd.isPending}
-                className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {createCmd.isPending || updateCmd.isPending ? 'Saving...' : 'Save Command'}
-              </button>
-            </div>
-            {saveError && (
-              <p className="text-sm text-red-400">{saveError}</p>
+        {/* Behavior */}
+        <div className="card">
+          <h3 className="font-semibold mb-2">Behavior</h3>
+          <div className="divide-y divide-discord-dark">
+            <Toggle label="Enabled" description="Allow this command to be triggered"
+              checked={editingCommand.enabled ?? true}
+              onChange={v => setEditingCommand(prev => prev ? { ...prev, enabled: v } : prev)} />
+            {editingCommand.trigger_type !== 'interval' && editingCommand.trigger_type !== 'reaction' && (
+              <>
+                <Toggle label="Case Sensitive" description="Exact capitalization required"
+                  checked={editingCommand.case_sensitive ?? false}
+                  onChange={v => setEditingCommand(prev => prev ? { ...prev, case_sensitive: v } : prev)} />
+                <Toggle label="Trigger on Message Edits" description="Fire when a message is edited"
+                  checked={editingCommand.trigger_on_edit ?? false}
+                  onChange={v => setEditingCommand(prev => prev ? { ...prev, trigger_on_edit: v } : prev)} />
+                <Toggle label="Delete Trigger Message" description="Delete the user's message on trigger"
+                  checked={editingCommand.delete_command ?? false}
+                  onChange={v => setEditingCommand(prev => prev ? { ...prev, delete_command: v } : prev)} />
+              </>
             )}
           </div>
+        </div>
+
+        {/* Save actions */}
+        <div className="space-y-2">
+          <div className="flex gap-3">
+            <button onClick={() => { setEditingCommand(null); setSaveError(null); }} className="btn btn-secondary">Cancel</button>
+            <button
+              onClick={saveCommand}
+              disabled={!editingCommand.name || !(editingCommand.responses?.some(r => r.trim())) || isSaving}
+              className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {isSaving ? 'Saving…' : 'Save Command'}
+            </button>
+          </div>
+          {saveError && <p className="text-sm text-red-400">{saveError}</p>}
+        </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render: group editor
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const renderGroupEditor = () => {
+    if (!editingGroup) return null;
+    const isNew = editingGroupId === 'new';
+    const saving = createGroup.isPending || updateGroup.isPending;
+
+    return (
+      <div className="card mt-2 space-y-3 border border-discord-blurple/30">
+        <div className="flex items-center justify-between">
+          <h4 className="font-semibold text-sm">{isNew ? 'New Group' : 'Edit Group'}</h4>
+          <button onClick={() => { setEditingGroup(null); setEditingGroupId(null); }} className="text-discord-light hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Name</label>
+          <input type="text" value={editingGroup.name ?? ''} onChange={e => setEditingGroup(prev => prev ? { ...prev, name: e.target.value } : prev)} className="input w-full" placeholder="My Group" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Description</label>
+          <input type="text" value={editingGroup.description ?? ''} onChange={e => setEditingGroup(prev => prev ? { ...prev, description: e.target.value } : prev)} className="input w-full" placeholder="Optional description" />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { setEditingGroup(null); setEditingGroupId(null); }} className="btn btn-secondary text-sm">Cancel</button>
+          <button onClick={saveGroup} disabled={!editingGroup.name || saving} className="btn btn-primary text-sm disabled:opacity-50">
+            {saving ? 'Saving…' : isNew ? 'Create Group' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render: command row
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const renderCommandRow = (cmd: CustomCommand) => (
+    <div key={cmd.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-discord-dark/50 ${editingCommand && (editingCommand as CustomCommand).id === cmd.id ? 'bg-discord-blurple/10 border border-discord-blurple/30' : ''}`}>
+      <button
+        onClick={() => toggleCmd.mutate({ id: cmd.id, enabled: !cmd.enabled })}
+        className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${cmd.enabled ? 'bg-green-500' : 'bg-discord-dark'}`}
+      >
+        <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${cmd.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <TriggerBadge type={cmd.trigger_type} />
+          <span className="text-sm font-mono font-medium truncate">
+            {cmd.trigger_type === 'command' ? `${generalConfig?.prefix ?? '!'}${cmd.name}` : cmd.name}
+          </span>
+          {cmd.uses > 0 && <span className="text-xs text-discord-light">{cmd.uses}×</span>}
+        </div>
+        <p className="text-xs text-discord-light truncate">
+          {cmd.responses?.[0]?.slice(0, 60)}{(cmd.responses?.[0]?.length ?? 0) > 60 ? '…' : ''}
+          {(cmd.responses?.length ?? 0) > 1 && <span className="ml-1 text-discord-blurple">+{cmd.responses.length - 1} more</span>}
+        </p>
+      </div>
+      <div className="flex gap-1 shrink-0">
+        <button onClick={() => openEditCommand(cmd)} className="btn btn-secondary p-1.5"><Edit className="w-3.5 h-3.5" /></button>
+        <button
+          onClick={() => window.confirm(`Delete "${cmd.name}"?`) && deleteCmd.mutate(cmd.id)}
+          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
+        ><Trash2 className="w-3.5 h-3.5" /></button>
+      </div>
+    </div>
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render: left panel
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const renderLeft = () => (
+    <div className="flex flex-col h-full">
+      {/* Prefix + search */}
+      <div className="p-3 border-b border-discord-dark space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-discord-light">Prefix:</span>
+          <input type="text" value={prefixInput} onChange={e => setPrefixInput(e.target.value.slice(0, 5))}
+            className="input w-16 text-center font-mono text-sm py-1" maxLength={5} placeholder="!" />
+          <button onClick={() => savePrefix.mutate(prefixInput)}
+            disabled={savePrefix.isPending || !prefixInput || prefixInput === generalConfig?.prefix}
+            className="btn btn-primary text-xs py-1 px-2 disabled:opacity-50">
+            {prefixSaved ? '✓' : 'Save'}
+          </button>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-light" />
+          <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search commands…" className="input w-full pl-7 text-sm py-1.5" />
+        </div>
+      </div>
+
+      {/* Command list */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        {isLoading ? (
+          <div className="text-center py-8 text-discord-light text-sm">Loading…</div>
+        ) : (
+          <>
+            {/* Groups */}
+            {groups.map(group => {
+              const groupCmds = commandsByGroup(group.id);
+              const isExpanded = expandedGroups.has(group.id);
+              return (
+                <div key={group.id}>
+                  <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-discord-dark/50 group">
+                    <button onClick={() => toggleGroup(group.id)} className="flex items-center gap-1.5 flex-1 min-w-0">
+                      {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-discord-light shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-discord-light shrink-0" />}
+                      <Folder className="w-3.5 h-3.5 text-discord-blurple shrink-0" />
+                      <span className="text-sm font-medium truncate">{group.name}</span>
+                      <span className="text-xs text-discord-light ml-1">({groupCmds.length})</span>
+                    </button>
+                    <div className="hidden group-hover:flex gap-1">
+                      <button onClick={() => openNewCommand(group.id)} title="Add command" className="text-discord-light hover:text-white p-0.5"><Plus className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => { setEditingGroup({ ...group }); setEditingGroupId(group.id); }} title="Edit group" className="text-discord-light hover:text-white p-0.5"><Edit className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => window.confirm(`Delete group "${group.name}"?`) && deleteGroup.mutate(group.id)} title="Delete group" className="text-red-400 hover:text-red-300 p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </div>
+                  {editingGroupId === group.id && renderGroupEditor()}
+                  {isExpanded && (
+                    <div className="ml-4 mt-1 space-y-0.5">
+                      {groupCmds.map(renderCommandRow)}
+                      {groupCmds.length === 0 && !searchQuery && (
+                        <p className="text-xs text-discord-light px-3 py-2">No commands in this group</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Ungrouped */}
+            {(() => {
+              const ungrouped = commandsByGroup(null);
+              return ungrouped.length > 0 || !searchQuery ? (
+                <div>
+                  <p className="text-xs text-discord-light px-2 py-1 uppercase tracking-wider font-semibold">
+                    Ungrouped
+                  </p>
+                  <div className="space-y-0.5">
+                    {ungrouped.map(renderCommandRow)}
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            {commands.length === 0 && !isLoading && (
+              <div className="text-center py-8">
+                <Terminal className="w-10 h-10 mx-auto text-discord-light opacity-40 mb-2" />
+                <p className="text-sm text-discord-light">No commands yet</p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Bottom actions */}
+      <div className="p-2 border-t border-discord-dark flex gap-2">
+        <button onClick={() => openNewCommand()} className="btn btn-primary flex-1 flex items-center justify-center gap-1.5 text-sm py-2">
+          <Plus className="w-4 h-4" /> New Command
+        </button>
+        <button
+          onClick={() => { setEditingGroup(emptyGroup()); setEditingGroupId('new'); }}
+          className="btn btn-secondary flex items-center gap-1 text-sm py-2 px-3" title="New Group"
+        >
+          <FolderPlus className="w-4 h-4" />
+        </button>
+      </div>
+      {editingGroupId === 'new' && <div className="px-2 pb-2">{renderGroupEditor()}</div>}
+    </div>
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Main render
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="flex h-[calc(100vh-130px)] gap-0 -m-4 md:-m-6 overflow-hidden">
+      {/* Left panel — command/group list */}
+      <div className={`
+        ${editingCommand && !isMobile ? 'w-72 border-r border-discord-dark' : 'flex-1'}
+        ${editingCommand && isMobile ? 'hidden' : ''}
+        flex flex-col bg-discord-darker
+      `}>
+        {renderLeft()}
+      </div>
+
+      {/* Right panel — editor */}
+      {editingCommand && (
+        <div className="flex-1 flex flex-col overflow-hidden bg-discord-dark">
+          {renderEditor()}
         </div>
       )}
     </div>
