@@ -18,7 +18,7 @@ const CommandSchema = z.object({
   name: z.string().min(1).max(100),
   trigger_type: TriggerTypeEnum.default('command'),
   group_id: z.number().int().nullable().optional(),
-  responses: z.array(z.string().min(1).max(2500)).min(1).max(20),
+  responses: z.array(z.string().min(1).max(20000)).min(1).max(20),
   embed_response: z.boolean().default(false),
   embed_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
   cooldown: z.number().int().min(0).max(3600).default(0),

@@ -221,6 +221,44 @@ function Toggle({ label, description, checked, onChange }: {
   );
 }
 
+const PREVIEW_PLACEHOLDERS: Record<string, string> = {
+  '{{user}}': '@ExampleUser',
+  '{{username}}': 'ExampleUser',
+  '{{userId}}': '123456789',
+  '{{server}}': 'My Server',
+  '{{memberCount}}': '42',
+  '{{channel}}': '#general',
+  '{{channelId}}': '987654321',
+  '{{args}}': 'arg1 arg2',
+  '{{args.[0]}}': 'arg1',
+};
+
+function previewText(template: string): string {
+  let result = template;
+  for (const [token, value] of Object.entries(PREVIEW_PLACEHOLDERS)) {
+    result = result.split(token).join(value);
+  }
+  result = result.replace(/\{\{[^}]+\}\}/g, '(...)');
+  return result;
+}
+
+function EmbedPreview({ text, color }: { text: string; color: string | null }) {
+  const borderColor = color ?? '#5865F2';
+  const preview = previewText(text);
+  if (!preview.trim()) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-xs text-discord-light mb-1.5">Embed Preview</p>
+      <div
+        className="rounded bg-[#2b2d31] px-4 py-3 text-sm text-[#dcddde] whitespace-pre-wrap break-words"
+        style={{ borderLeft: `4px solid ${borderColor}` }}
+      >
+        {preview}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CustomCommandsPage() {
@@ -577,8 +615,8 @@ export default function CustomCommandsPage() {
                     onChange={v => updateResponse(idx, v)}
                   />
                 )}
-                <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${resp.length >= 2400 ? 'text-red-400' : 'text-discord-light'}`}>
-                  {resp.length} / 2500
+                <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${resp.length >= 19500 ? 'text-red-400' : 'text-discord-light'}`}>
+                  {resp.length} / 20000
                 </span>
               </div>
             </div>
@@ -597,6 +635,12 @@ export default function CustomCommandsPage() {
                 </label>
               ))}
             </div>
+            {editingCommand.embed_response && (
+              <EmbedPreview
+                text={(editingCommand.responses ?? [''])[0]}
+                color={editingCommand.embed_color ?? null}
+              />
+            )}
           </div>
         </div>
 
