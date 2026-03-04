@@ -198,20 +198,53 @@ export interface ReactionRole {
   mode: 'toggle' | 'add' | 'remove';
 }
 
-export interface CustomCommand {
-  id: string;
+export type TriggerType =
+  | 'command'
+  | 'starts_with'
+  | 'contains'
+  | 'exact_match'
+  | 'regex'
+  | 'reaction'
+  | 'interval';
+
+export interface CommandGroup {
+  id: number;
   guildId: string;
   name: string;
-  response: string;
-  embedResponse: boolean;
-  embedColor?: string;
+  description?: string;
   allowedRoles: string[];
   allowedChannels: string[];
+  ignoreRoles: string[];
+  ignoreChannels: string[];
+  position: number;
+  createdAt: Date;
+}
+
+export interface CustomCommand {
+  id: number;
+  guildId: string;
+  name: string;
+  triggerType: TriggerType;
+  groupId?: number | null;
+  responses: string[];
+  embedResponse: boolean;
+  embedColor?: string;
   cooldown: number;
   deleteCommand: boolean;
+  caseSensitive: boolean;
+  triggerOnEdit: boolean;
+  enabled: boolean;
+  allowedRoles: string[];
+  allowedChannels: string[];
+  intervalCron?: string | null;
+  intervalChannelId?: string | null;
+  reactionMessageId?: string | null;
+  reactionChannelId?: string | null;
+  reactionEmoji?: string | null;
+  reactionType?: 'add' | 'remove' | 'both' | null;
+  uses: number;
   createdBy: string;
   createdAt: Date;
-  uses: number;
 }
 
 // Analytics types
