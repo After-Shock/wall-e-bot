@@ -337,6 +337,45 @@ CREATE INDEX IF NOT EXISTS idx_message_logs_channel ON message_logs(guild_id, ch
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN DEFAULT FALSE;
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS trigger_on_edit BOOLEAN DEFAULT FALSE;
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
+
+-- Command groups for organizing custom commands
+CREATE TABLE IF NOT EXISTS command_groups (
+  id               SERIAL PRIMARY KEY,
+  guild_id         VARCHAR(20) NOT NULL,
+  name             VARCHAR(100) NOT NULL,
+  description      TEXT,
+  allowed_roles    TEXT[] DEFAULT '{}',
+  allowed_channels TEXT[] DEFAULT '{}',
+  ignore_roles     TEXT[] DEFAULT '{}',
+  ignore_channels  TEXT[] DEFAULT '{}',
+  position         INTEGER DEFAULT 0,
+  created_at       TIMESTAMP DEFAULT NOW(),
+  UNIQUE(guild_id, name)
+);
+
+-- Custom commands overhaul: trigger types, multiple responses, groups
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(20) DEFAULT 'command';
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS group_id INTEGER REFERENCES command_groups(id) ON DELETE SET NULL;
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS responses JSONB;
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS interval_cron VARCHAR(100);
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS interval_channel_id VARCHAR(20);
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS interval_next_run TIMESTAMP;
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_message_id VARCHAR(20);
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_channel_id VARCHAR(20);
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_emoji VARCHAR(100);
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_type VARCHAR(10) DEFAULT 'add';
+
+-- Backfill responses array from existing response column
+UPDATE custom_commands SET responses = jsonb_build_array(response) WHERE responses IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_custom_commands_guild_trigger ON custom_commands(guild_id, trigger_type) WHERE enabled = TRUE;
+CREATE INDEX IF NOT EXISTS idx_custom_commands_reaction ON custom_commands(guild_id, reaction_message_id) WHERE trigger_type = 'reaction';
+CREATE INDEX IF NOT EXISTS idx_custom_commands_interval ON custom_commands(interval_next_run) WHERE trigger_type = 'interval' AND enabled = TRUE;
+CREATE INDEX IF NOT EXISTS idx_command_groups_guild ON command_groups(guild_id);
+
+-- Custom commands: allowed_roles and allowed_channels (already exist in CREATE TABLE, but guard with IF NOT EXISTS)
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_roles TEXT[] DEFAULT '{}';
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_channels TEXT[] DEFAULT '{}';
 `;
 
 async function migrate() {
