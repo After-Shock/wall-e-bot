@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { EditorView, keymap } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
@@ -72,6 +72,10 @@ function extractApiError(err: unknown): string {
   return e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save command.';
 }
 
+interface CodeMirrorEditorHandle {
+  insertAtCursor: (text: string) => void;
+}
+
 const cmTheme = EditorView.theme({
   '&': {
     backgroundColor: 'transparent',
@@ -98,10 +102,23 @@ const cmTheme = EditorView.theme({
   },
 });
 
-function CodeMirrorEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, { value: string; onChange: (v: string) => void }>(
+  function CodeMirrorEditor({ value, onChange }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeCb = useCallback((v: string) => onChange(v), [onChange]);
+
+    useImperativeHandle(ref, () => ({
+      insertAtCursor: (text: string) => {
+        const view = viewRef.current;
+        if (!view) return;
+        const { from } = view.state.selection.main;
+        view.dispatch({
+          changes: { from, insert: text },
+          selection: { anchor: from + text.length },
+        });
+      },
+    }));
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -155,6 +172,7 @@ function CodeMirrorEditor({ value, onChange }: { value: string; onChange: (v: st
     />
   );
 }
+);
 
 export default function CustomCommandsPage() {
   const { guildId } = useParams<{ guildId: string }>();
@@ -205,6 +223,7 @@ export default function CustomCommandsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-commands', guildId] }),
   });
 
+  const editorRef = useRef<CodeMirrorEditorHandle>(null);
   const [editingCommand, setEditingCommand] = useState<Partial<CustomCommand> | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -448,6 +467,7 @@ export default function CustomCommandsPage() {
               <label className="block text-sm font-medium mb-2">Response</label>
               <div className="relative">
                 <CodeMirrorEditor
+                  ref={editorRef}
                   value={editingCommand?.response || ''}
                   onChange={value => setEditingCommand(prev => prev ? { ...prev, response: value } : null)}
                 />
@@ -496,10 +516,14 @@ export default function CustomCommandsPage() {
                 <button
                   key={v.name}
                   onClick={() => {
-                    setEditingCommand(prev => prev ? {
-                      ...prev,
-                      response: (prev.response || '') + v.name,
-                    } : null);
+                    if (editorRef.current) {
+                      editorRef.current.insertAtCursor(v.name);
+                    } else {
+                      setEditingCommand(prev => prev ? {
+                        ...prev,
+                        response: (prev.response || '') + v.name,
+                      } : null);
+                    }
                   }}
                   className="bg-discord-dark hover:bg-discord-blurple/20 px-3 py-1.5 rounded text-sm transition-colors"
                   title={v.desc}
