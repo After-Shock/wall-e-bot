@@ -174,9 +174,20 @@ const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, { value: string; onC
 }
 );
 
+function useMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return mobile;
+}
+
 export default function CustomCommandsPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const queryClient = useQueryClient();
+  const isMobile = useMobile();
   const [prefixInput, setPrefixInput] = useState('');
   const [prefixSaved, setPrefixSaved] = useState(false);
 
@@ -466,11 +477,20 @@ export default function CustomCommandsPage() {
             <div>
               <label className="block text-sm font-medium mb-2">Response</label>
               <div className="relative">
-                <CodeMirrorEditor
-                  ref={editorRef}
-                  value={editingCommand?.response || ''}
-                  onChange={value => setEditingCommand(prev => prev ? { ...prev, response: value } : null)}
-                />
+                {isMobile ? (
+                  <textarea
+                    value={editingCommand?.response || ''}
+                    onChange={e => setEditingCommand(prev => prev ? { ...prev, response: e.target.value } : null)}
+                    className="input w-full h-48 resize-y font-mono text-sm pb-6"
+                    placeholder="Enter the command response..."
+                  />
+                ) : (
+                  <CodeMirrorEditor
+                    ref={editorRef}
+                    value={editingCommand?.response || ''}
+                    onChange={value => setEditingCommand(prev => prev ? { ...prev, response: value } : null)}
+                  />
+                )}
                 <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${
                   (editingCommand?.response?.length ?? 0) >= 1900 ? 'text-red-400' : 'text-discord-light'
                 }`}>
