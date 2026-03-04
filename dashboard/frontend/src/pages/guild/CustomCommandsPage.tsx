@@ -259,6 +259,156 @@ function EmbedPreview({ text, color }: { text: string; color: string | null }) {
   );
 }
 
+// ─── YAGPDB Embed Importer ────────────────────────────────────────────────────
+
+interface EmbedField {
+  name: string;
+  value: string;
+  inline?: boolean;
+}
+
+interface EmbedData {
+  title?: string;
+  description?: string;
+  color?: number;
+  url?: string;
+  fields?: EmbedField[];
+  author?: { name: string; icon_url?: string; url?: string };
+  footer?: { text: string; icon_url?: string };
+  thumbnail?: string;
+  image?: string;
+}
+
+function parseCembed(code: string): EmbedData | null {
+  try {
+    // Extract the body of the cembed call
+    const cembedMatch = code.match(/cembed\s+([\s\S]*?)(?:\n\s*\}\}|$)/);
+    if (!cembedMatch) return null;
+    let body = cembedMatch[1].trim();
+
+    // Replace (sdict "k" "v" ...) with {"k":"v",...} — innermost first, repeat
+    for (let i = 0; i < 20; i++) {
+      const before = body;
+      body = body.replace(/\(sdict\s+((?:"[^"]*"\s+(?:"[^"]*"|true|false|\d+)\s*)+)\)/g, (_match, inner) => {
+        const pairs = inner.trim();
+        const jsonObj = pairs.replace(
+          /"([^"]+)"\s+("(?:[^"\\]|\\.)*"|true|false|\d+)/g,
+          '"$1": $2',
+        );
+        return `{${jsonObj.split(/,?\s+"/).join(', "').replace(/^\{/, '{')}}`;
+      });
+      if (body === before) break;
+    }
+
+    // Replace (cslice ...) with [...]
+    for (let i = 0; i < 10; i++) {
+      const before = body;
+      body = body.replace(/\(cslice\s+([\s\S]*?)\)/g, (_match, inner) => `[${inner.trim()}]`);
+      if (body === before) break;
+    }
+
+    // Convert "key" value pairs to JSON
+    const jsonPairs: string[] = [];
+    const pairRegex = /"([^"]+)"\s+("(?:[^"\\]|\\.)*"|\d+|true|false|\[[\s\S]*?\]|\{[\s\S]*?\})/g;
+    let m: RegExpExecArray | null;
+    while ((m = pairRegex.exec(body)) !== null) {
+      jsonPairs.push(`"${m[1]}": ${m[2]}`);
+    }
+
+    if (jsonPairs.length === 0) return null;
+
+    const json = `{${jsonPairs.join(', ')}}`;
+    const parsed = JSON.parse(json);
+
+    // Normalize fields
+    if (parsed.fields && Array.isArray(parsed.fields)) {
+      parsed.fields = parsed.fields.map((f: Record<string, unknown>) => ({
+        name: String(f.name ?? ''),
+        value: String(f.value ?? ''),
+        inline: Boolean(f.inline ?? false),
+      }));
+    }
+
+    return parsed as EmbedData;
+  } catch {
+    return null;
+  }
+}
+
+function intToHex(n: number): string {
+  return '#' + n.toString(16).padStart(6, '0');
+}
+
+function CembedImporter() {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const embed = code.trim() ? parseCembed(code) : null;
+  const borderColor = embed?.color != null ? intToHex(embed.color) : '#5865F2';
+
+  return (
+    <div className="card">
+      <button
+        className="flex items-center gap-2 w-full text-left"
+        onClick={() => setOpen(v => !v)}
+      >
+        <span className="text-base">📥</span>
+        <span className="font-semibold text-sm">YAGPDB Embed Importer</span>
+        {open ? <ChevronDown className="w-4 h-4 ml-auto" /> : <ChevronRight className="w-4 h-4 ml-auto" />}
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          <textarea
+            value={code}
+            onChange={e => setCode(e.target.value)}
+            className="input w-full h-40 resize-y font-mono text-xs"
+            placeholder={'{{ $embed := cembed \n  "title" "My Title"\n  "description" "My description"\n  "color" 3066993\n}}'}
+          />
+
+          {code.trim() && (
+            embed ? (
+              <div>
+                <p className="text-xs text-discord-light mb-1.5">Preview</p>
+                <div
+                  className="rounded bg-[#2b2d31] px-4 py-3 text-sm text-[#dcddde] space-y-2"
+                  style={{ borderLeft: `4px solid ${borderColor}` }}
+                >
+                  {embed.author?.name && (
+                    <p className="text-xs text-[#b5bac1] font-medium">{embed.author.name}</p>
+                  )}
+                  {embed.title && (
+                    <p className="font-bold text-white">{embed.title}</p>
+                  )}
+                  {embed.description && (
+                    <p className="whitespace-pre-wrap text-[#dbdee1]">{embed.description}</p>
+                  )}
+                  {embed.fields && embed.fields.length > 0 && (
+                    <div className="grid gap-2" style={{
+                      gridTemplateColumns: embed.fields.every(f => f.inline) ? 'repeat(2, 1fr)' : '1fr',
+                    }}>
+                      {embed.fields.map((field, i) => (
+                        <div key={i} className={field.inline ? '' : 'col-span-full'}>
+                          <p className="text-xs font-semibold text-white">{field.name}</p>
+                          <p className="text-xs text-[#dbdee1] whitespace-pre-wrap">{field.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {embed.footer?.text && (
+                    <p className="text-xs text-[#b5bac1] pt-1 border-t border-[#3f4147]">{embed.footer.text}</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-discord-light">Could not parse — check syntax</p>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CustomCommandsPage() {
@@ -699,6 +849,9 @@ export default function CustomCommandsPage() {
             )}
           </div>
         </div>
+
+        {/* YAGPDB Embed Importer */}
+        <CembedImporter />
 
         {/* Save actions */}
         <div className="space-y-2">
