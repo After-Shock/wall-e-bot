@@ -51,18 +51,10 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
 
     const guilds = await response.json() as DiscordGuild[];
     
-    // Filter to guilds where user has MANAGE_GUILD or is owner
-    const manageableGuilds = guilds.filter((guild) => {
-      const permissions = BigInt(guild.permissions);
-      const MANAGE_GUILD = BigInt(0x20);
-      const ADMINISTRATOR = BigInt(0x8);
-      return guild.owner || (permissions & MANAGE_GUILD) === MANAGE_GUILD || (permissions & ADMINISTRATOR) === ADMINISTRATOR;
-    });
-
-    // Store guilds in session for permission checking
+    // Store guilds in session for permission checking (all guilds, needed by requireGuildAccess)
     (authReq.user as any).guilds = guilds;
 
-    // Get bot's actual guilds from Discord API using the bot token
+    // Get bot's guilds from Discord API
     const botGuildsResponse = await fetch('https://discord.com/api/v10/users/@me/guilds', {
       headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
     });
@@ -72,13 +64,26 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
         : [],
     );
 
-    const guildsWithBotStatus = manageableGuilds.map((guild) => ({
-      id: guild.id,
-      name: guild.name,
-      icon: guild.icon,
-      owner: guild.owner,
-      botPresent: botGuildIds.has(guild.id),
-    }));
+    // Return all guilds where the bot is present (mutual guilds), with isAdmin flag
+    const MANAGE_GUILD = BigInt(0x20);
+    const ADMINISTRATOR = BigInt(0x8);
+
+    const guildsWithBotStatus = guilds
+      .filter(guild => botGuildIds.has(guild.id))
+      .map((guild) => {
+        const permissions = BigInt(guild.permissions);
+        const isAdmin = guild.owner ||
+          (permissions & MANAGE_GUILD) === MANAGE_GUILD ||
+          (permissions & ADMINISTRATOR) === ADMINISTRATOR;
+        return {
+          id: guild.id,
+          name: guild.name,
+          icon: guild.icon,
+          owner: guild.owner,
+          botPresent: true,
+          isAdmin,
+        };
+      });
 
     res.json(guildsWithBotStatus);
   } catch (error) {
