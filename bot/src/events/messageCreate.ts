@@ -2,6 +2,7 @@ import { Events, Message } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
 import { sendLong } from '../utils/sendLong.js';
+import { parseCembed } from '../utils/parseCembed.js';
 
 async function handleCustomCommands(
   client: WallEClient,
@@ -13,7 +14,7 @@ async function handleCustomCommands(
 
   // Load all active message-type commands for this guild
   const result = await client.db.pool.query(
-    `SELECT id, name, trigger_type, responses, embed_response, embed_color,
+    `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
             delete_command, case_sensitive, allowed_roles, allowed_channels
      FROM custom_commands
      WHERE guild_id = $1
@@ -92,7 +93,25 @@ async function handleCustomCommands(
 
     if (cmd.delete_command) await message.delete().catch(() => {});
 
-    if (cmd.embed_response) {
+    if (cmd.cembed_response) {
+      const embedData = parseCembed(rendered);
+      if (!embedData) {
+        await channel.send('⚠️ Failed to parse embed.');
+      } else {
+        const { EmbedBuilder } = await import('discord.js');
+        const embed = new EmbedBuilder();
+        if (embedData.title) embed.setTitle(embedData.title);
+        if (embedData.description) embed.setDescription(embedData.description);
+        if (embedData.color != null) embed.setColor(embedData.color);
+        if (embedData.url) embed.setURL(embedData.url);
+        if (embedData.author?.name) embed.setAuthor({ name: embedData.author.name, iconURL: embedData.author.icon_url, url: embedData.author.url });
+        if (embedData.footer?.text) embed.setFooter({ text: embedData.footer.text, iconURL: embedData.footer.icon_url });
+        if (embedData.thumbnail) embed.setThumbnail(embedData.thumbnail);
+        if (embedData.image) embed.setImage(embedData.image);
+        if (embedData.fields?.length) embed.addFields(embedData.fields.map(f => ({ name: f.name, value: f.value, inline: f.inline ?? false })));
+        await channel.send({ embeds: [embed] });
+      }
+    } else if (cmd.embed_response) {
       const { EmbedBuilder } = await import('discord.js');
       const embed = new EmbedBuilder()
         .setDescription(rendered)
