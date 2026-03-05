@@ -303,7 +303,7 @@ function parseCembed(code: string): EmbedData | null {
     // Replace (cslice ...) with [...]
     for (let i = 0; i < 10; i++) {
       const before = body;
-      body = body.replace(/\(cslice\s+([\s\S]*?)\)/g, (_match, inner) => `[${inner.trim()}]`);
+      body = body.replace(/\(cslice\s+([\s\S]*?)\)/g, (_match, inner) => `[${inner.trim().replace(/\}\s+\{/g, '}, {')}]`);
       if (body === before) break;
     }
 
