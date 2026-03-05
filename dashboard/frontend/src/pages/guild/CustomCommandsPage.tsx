@@ -35,6 +35,7 @@ interface CustomCommand {
   group_id: number | null;
   responses: string[];
   embed_response: boolean;
+  cembed_response: boolean;
   embed_color: string | null;
   cooldown: number;
   delete_command: boolean;
@@ -59,6 +60,7 @@ const emptyCommand = (): Partial<CustomCommand> => ({
   group_id: null,
   responses: [''],
   embed_response: false,
+  cembed_response: false,
   embed_color: null,
   cooldown: 0,
   delete_command: false,
@@ -334,80 +336,6 @@ function parseCembed(code: string): EmbedData | null {
   } catch {
     return null;
   }
-}
-
-function intToHex(n: number): string {
-  return '#' + n.toString(16).padStart(6, '0');
-}
-
-function CembedImporter() {
-  const [open, setOpen] = useState(false);
-  const [code, setCode] = useState('');
-  const embed = code.trim() ? parseCembed(code) : null;
-  const borderColor = embed?.color != null ? intToHex(embed.color) : '#5865F2';
-
-  return (
-    <div className="card">
-      <button
-        className="flex items-center gap-2 w-full text-left"
-        onClick={() => setOpen(v => !v)}
-      >
-        <span className="text-base">📥</span>
-        <span className="font-semibold text-sm">YAGPDB Embed Importer</span>
-        {open ? <ChevronDown className="w-4 h-4 ml-auto" /> : <ChevronRight className="w-4 h-4 ml-auto" />}
-      </button>
-
-      {open && (
-        <div className="mt-3 space-y-3">
-          <textarea
-            value={code}
-            onChange={e => setCode(e.target.value)}
-            className="input w-full h-40 resize-y font-mono text-xs"
-            placeholder={'{{ $embed := cembed \n  "title" "My Title"\n  "description" "My description"\n  "color" 3066993\n}}'}
-          />
-
-          {code.trim() && (
-            embed ? (
-              <div>
-                <p className="text-xs text-discord-light mb-1.5">Preview</p>
-                <div
-                  className="rounded bg-[#2b2d31] px-4 py-3 text-sm text-[#dcddde] space-y-2"
-                  style={{ borderLeft: `4px solid ${borderColor}` }}
-                >
-                  {embed.author?.name && (
-                    <p className="text-xs text-[#b5bac1] font-medium">{embed.author.name}</p>
-                  )}
-                  {embed.title && (
-                    <p className="font-bold text-white">{embed.title}</p>
-                  )}
-                  {embed.description && (
-                    <p className="whitespace-pre-wrap text-[#dbdee1]">{embed.description}</p>
-                  )}
-                  {embed.fields && embed.fields.length > 0 && (
-                    <div className="grid gap-2" style={{
-                      gridTemplateColumns: embed.fields.every(f => f.inline) ? 'repeat(2, 1fr)' : '1fr',
-                    }}>
-                      {embed.fields.map((field, i) => (
-                        <div key={i} className={field.inline ? '' : 'col-span-full'}>
-                          <p className="text-xs font-semibold text-white">{field.name}</p>
-                          <p className="text-xs text-[#dbdee1] whitespace-pre-wrap">{field.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {embed.footer?.text && (
-                    <p className="text-xs text-[#b5bac1] pt-1 border-t border-[#3f4147]">{embed.footer.text}</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-discord-light">Could not parse — check syntax</p>
-            )
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -729,70 +657,164 @@ export default function CustomCommandsPage() {
 
         {/* Responses */}
         <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">
-              Responses
-              {(editingCommand.responses?.length ?? 0) > 1 && (
-                <span className="ml-2 text-xs text-discord-light font-normal">(picked randomly)</span>
-              )}
-            </h3>
-            <button onClick={addResponse} className="btn btn-secondary text-xs flex items-center gap-1">
-              <Plus className="w-3 h-3" /> Add Response
-            </button>
-          </div>
-
-          {(editingCommand.responses ?? ['']).map((resp, idx) => (
-            <div key={idx} className="space-y-1">
-              {(editingCommand.responses?.length ?? 0) > 1 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-discord-light">Response {idx + 1}</span>
-                  <button onClick={() => removeResponse(idx)} className="text-red-400 hover:text-red-300">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
+          {editingCommand.cembed_response ? (
+            <>
+              <h3 className="font-semibold">Rich Embed (cembed)</h3>
               <div className="relative">
-                {isMobile ? (
-                  <textarea
-                    value={resp}
-                    onChange={e => updateResponse(idx, e.target.value)}
-                    className="input w-full h-32 resize-y font-mono text-sm pb-6"
-                    placeholder="Response text… use {{user}} for mentions"
-                  />
-                ) : (
-                  <CodeMirrorEditor
-                    ref={el => { editorRefs.current[idx] = el; }}
-                    value={resp}
-                    onChange={v => updateResponse(idx, v)}
-                  />
-                )}
-                <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${resp.length >= 19500 ? 'text-red-400' : 'text-discord-light'}`}>
-                  {resp.length} / 20000
+                <textarea
+                  value={(editingCommand.responses ?? [''])[0]}
+                  onChange={e => setEditingCommand(prev => prev ? { ...prev, responses: [e.target.value] } : prev)}
+                  className="input w-full h-48 resize-y font-mono text-xs"
+                  placeholder={'{{ $embed := cembed \n  "title" "My Title"\n  "description" "Hello!"\n  "color" 3066993\n}}'}
+                />
+                <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${((editingCommand.responses ?? [''])[0].length) >= 19500 ? 'text-red-400' : 'text-discord-light'}`}>
+                  {(editingCommand.responses ?? [''])[0].length} / 20000
                 </span>
               </div>
-            </div>
-          ))}
+              {(() => {
+                const raw = (editingCommand.responses ?? [''])[0];
+                if (!raw.trim()) return null;
+                const embed = parseCembed(raw);
+                if (!embed) return <p className="text-xs text-discord-light">Could not parse — check syntax</p>;
+                const borderColor = embed.color != null ? '#' + embed.color.toString(16).padStart(6, '0') : '#5865F2';
+                return (
+                  <div>
+                    <p className="text-xs text-discord-light mb-1.5">Preview</p>
+                    <div
+                      className="rounded bg-[#2b2d31] px-4 py-3 text-sm text-[#dcddde] space-y-2"
+                      style={{ borderLeft: `4px solid ${borderColor}` }}
+                    >
+                      {embed.author?.name && <p className="text-xs text-[#b5bac1] font-medium">{embed.author.name}</p>}
+                      {embed.title && <p className="font-bold text-white">{embed.title}</p>}
+                      {embed.description && <p className="whitespace-pre-wrap text-[#dbdee1]">{embed.description}</p>}
+                      {embed.fields && embed.fields.length > 0 && (
+                        <div className="grid gap-2" style={{
+                          gridTemplateColumns: embed.fields.every(f => f.inline) ? 'repeat(2, 1fr)' : '1fr',
+                        }}>
+                          {embed.fields.map((field, i) => (
+                            <div key={i} className={field.inline ? '' : 'col-span-full'}>
+                              <p className="text-xs font-semibold text-white">{field.name}</p>
+                              <p className="text-xs text-[#dbdee1] whitespace-pre-wrap">{field.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {embed.footer?.text && (
+                        <p className="text-xs text-[#b5bac1] pt-1 border-t border-[#3f4147]">{embed.footer.text}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* Response type (shown at bottom of cembed editor too) */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Response Type</label>
+                <div className="flex gap-4 flex-wrap">
+                  {(['Plain Text', 'Embed', 'Rich Embed'] as const).map((label) => {
+                    const isChecked =
+                      label === 'Rich Embed' ? !!editingCommand.cembed_response :
+                      label === 'Embed' ? (!!editingCommand.embed_response && !editingCommand.cembed_response) :
+                      (!editingCommand.embed_response && !editingCommand.cembed_response);
+                    return (
+                      <label key={label} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={isChecked}
+                          onChange={() => setEditingCommand(prev => prev ? {
+                            ...prev,
+                            embed_response: label === 'Embed',
+                            cembed_response: label === 'Rich Embed',
+                          } : prev)}
+                          className="w-4 h-4"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">
+                  Responses
+                  {(editingCommand.responses?.length ?? 0) > 1 && (
+                    <span className="ml-2 text-xs text-discord-light font-normal">(picked randomly)</span>
+                  )}
+                </h3>
+                <button onClick={addResponse} className="btn btn-secondary text-xs flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Add Response
+                </button>
+              </div>
 
-          {/* Response type */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Response Type</label>
-            <div className="flex gap-4">
-              {['Plain Text', 'Embed'].map((label, i) => (
-                <label key={label} className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" checked={i === 0 ? !editingCommand.embed_response : !!editingCommand.embed_response}
-                    onChange={() => setEditingCommand(prev => prev ? { ...prev, embed_response: i === 1 } : prev)}
-                    className="w-4 h-4" />
-                  <span>{label}</span>
-                </label>
+              {(editingCommand.responses ?? ['']).map((resp, idx) => (
+                <div key={idx} className="space-y-1">
+                  {(editingCommand.responses?.length ?? 0) > 1 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-discord-light">Response {idx + 1}</span>
+                      <button onClick={() => removeResponse(idx)} className="text-red-400 hover:text-red-300">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="relative">
+                    {isMobile ? (
+                      <textarea
+                        value={resp}
+                        onChange={e => updateResponse(idx, e.target.value)}
+                        className="input w-full h-32 resize-y font-mono text-sm pb-6"
+                        placeholder="Response text… use {{user}} for mentions"
+                      />
+                    ) : (
+                      <CodeMirrorEditor
+                        ref={el => { editorRefs.current[idx] = el; }}
+                        value={resp}
+                        onChange={v => updateResponse(idx, v)}
+                      />
+                    )}
+                    <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${resp.length >= 19500 ? 'text-red-400' : 'text-discord-light'}`}>
+                      {resp.length} / 20000
+                    </span>
+                  </div>
+                </div>
               ))}
-            </div>
-            {editingCommand.embed_response && (
-              <EmbedPreview
-                text={(editingCommand.responses ?? [''])[0]}
-                color={editingCommand.embed_color ?? null}
-              />
-            )}
-          </div>
+
+              {/* Response type */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Response Type</label>
+                <div className="flex gap-4 flex-wrap">
+                  {(['Plain Text', 'Embed', 'Rich Embed'] as const).map((label) => {
+                    const isChecked =
+                      label === 'Rich Embed' ? !!editingCommand.cembed_response :
+                      label === 'Embed' ? (!!editingCommand.embed_response && !editingCommand.cembed_response) :
+                      (!editingCommand.embed_response && !editingCommand.cembed_response);
+                    return (
+                      <label key={label} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={isChecked}
+                          onChange={() => setEditingCommand(prev => prev ? {
+                            ...prev,
+                            embed_response: label === 'Embed',
+                            cembed_response: label === 'Rich Embed',
+                          } : prev)}
+                          className="w-4 h-4"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {editingCommand.embed_response && !editingCommand.cembed_response && (
+                  <EmbedPreview
+                    text={(editingCommand.responses ?? [''])[0]}
+                    color={editingCommand.embed_color ?? null}
+                  />
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Template reference */}
@@ -851,16 +873,13 @@ export default function CustomCommandsPage() {
           </div>
         </div>
 
-        {/* YAGPDB Embed Importer */}
-        <CembedImporter />
-
         {/* Save actions */}
         <div className="space-y-2">
           <div className="flex gap-3">
             <button onClick={() => { setEditingCommand(null); setSaveError(null); }} className="btn btn-secondary">Cancel</button>
             <button
               onClick={saveCommand}
-              disabled={!editingCommand.name || !(editingCommand.responses?.some(r => r.trim())) || isSaving}
+              disabled={!editingCommand.name || (editingCommand.cembed_response ? !parseCembed((editingCommand.responses ?? [''])[0] ?? '') : !(editingCommand.responses?.some(r => r.trim()))) || isSaving}
               className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
