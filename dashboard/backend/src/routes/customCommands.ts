@@ -20,6 +20,7 @@ const CommandSchema = z.object({
   group_id: z.number().int().nullable().optional(),
   responses: z.array(z.string().min(1).max(20000)).min(1).max(20),
   embed_response: z.boolean().default(false),
+  cembed_response: z.boolean().default(false),
   embed_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
   cooldown: z.number().int().min(0).max(3600).default(0),
   delete_command: z.boolean().default(false),
@@ -43,10 +44,12 @@ function validateCommand(data: z.infer<typeof CommandSchema>): string | null {
       return `Invalid regex pattern: ${(e as Error).message}`;
     }
   }
-  // Validate Handlebars templates
-  for (const response of data.responses) {
-    try { Handlebars.precompile(response); } catch (e: unknown) {
-      return `Invalid template syntax: ${(e as Error).message}`;
+  // Validate Handlebars templates (skip for cembed — Go template syntax, not Handlebars)
+  if (!data.cembed_response) {
+    for (const response of data.responses) {
+      try { Handlebars.precompile(response); } catch (e: unknown) {
+        return `Invalid template syntax: ${(e as Error).message}`;
+      }
     }
   }
   // Interval requires cron + channel
@@ -59,7 +62,7 @@ function validateCommand(data: z.infer<typeof CommandSchema>): string | null {
 
 const SELECT_COLS = `
   id, guild_id, name, trigger_type, group_id, responses,
-  embed_response, embed_color, cooldown, delete_command,
+  embed_response, cembed_response, embed_color, cooldown, delete_command,
   case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
   interval_cron, interval_channel_id, interval_next_run,
   reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
@@ -103,17 +106,17 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
   const result = await db.query(
     `INSERT INTO custom_commands
        (guild_id, name, trigger_type, group_id, responses, response,
-        embed_response, embed_color, cooldown, delete_command,
+        embed_response, cembed_response, embed_color, cooldown, delete_command,
         case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
         interval_cron, interval_channel_id,
         reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
         created_by)
-     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
      RETURNING ${SELECT_COLS}`,
     [
       guildId, d.name, d.trigger_type, d.group_id ?? null,
       JSON.stringify(d.responses), d.responses[0], // keep response col in sync
-      d.embed_response, d.embed_color ?? null, d.cooldown, d.delete_command,
+      d.embed_response, d.cembed_response, d.embed_color ?? null, d.cooldown, d.delete_command,
       d.case_sensitive, d.trigger_on_edit, d.enabled,
       d.allowed_roles, d.allowed_channels,
       d.interval_cron ?? null, d.interval_channel_id ?? null,
