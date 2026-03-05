@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { requireAuth, requireGuildAccess, AuthenticatedRequest, AuthenticatedUser } from '../middleware/auth.js';
+import { requireAuth, requireGuildAccess, requireGuildAdmin, AuthenticatedRequest, AuthenticatedUser } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { stripServerIds } from '@wall-e/shared';
@@ -1349,3 +1349,36 @@ guildsRouter.post(
     }
   }),
 );
+
+// GET /api/guilds/:guildId/roles — returns all guild roles (for dashboard access dropdown)
+guildsRouter.get('/:guildId/roles', requireAuth, requireGuildAdmin, asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  const token = process.env.DISCORD_TOKEN;
+  if (!token) {
+    res.status(500).json({ error: 'Bot token not configured' });
+    return;
+  }
+
+  try {
+    const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+      headers: { Authorization: `Bot ${token}` },
+    });
+
+    if (!response.ok) {
+      res.status(response.status).json({ error: 'Failed to fetch guild roles' });
+      return;
+    }
+
+    const roles = await response.json() as { id: string; name: string; color: number; position: number }[];
+
+    const sorted = roles
+      .filter(r => r.name !== '@everyone')
+      .sort((a, b) => b.position - a.position)
+      .map(r => ({ id: r.id, name: r.name, color: r.color }));
+
+    res.json(sorted);
+  } catch (error) {
+    logger.error('Error fetching guild roles:', error);
+    res.status(500).json({ error: 'Failed to fetch guild roles' });
+  }
+}));

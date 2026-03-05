@@ -15,6 +15,7 @@ import { botRouter } from './routes/bot.js';
 import { adminRouter } from './routes/admin.js';
 import { customCommandsRouter } from './routes/customCommands.js';
 import { commandGroupsRouter } from './routes/commandGroups.js';
+import { dashboardRolesRouter } from './routes/dashboardRoles.js';
 import { db } from './db/index.js';
 
 const app = express();
@@ -92,6 +93,7 @@ app.use('/api/bot', botRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/guilds/:guildId/custom-commands', customCommandsRouter);
 app.use('/api/guilds/:guildId/command-groups', commandGroupsRouter);
+app.use('/api/guilds/:guildId/dashboard-roles', dashboardRolesRouter);
 
 // Health check
 app.get('/health', (req, res) => {
