@@ -2,6 +2,34 @@ import { Events, ActivityType } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
 
+const ACTIVITY_TYPE_MAP: Record<string, ActivityType> = {
+  PLAYING: ActivityType.Playing,
+  WATCHING: ActivityType.Watching,
+  LISTENING: ActivityType.Listening,
+  COMPETING: ActivityType.Competing,
+};
+
+async function applyActivity(client: WallEClient) {
+  try {
+    const result = await client.db.pool.query("SELECT value FROM bot_settings WHERE key = 'activity'");
+    const setting = result.rows[0]?.value;
+    if (setting?.text) {
+      client.user?.setPresence({
+        activities: [{ name: setting.text, type: ACTIVITY_TYPE_MAP[setting.type] ?? ActivityType.Playing }],
+        status: 'online',
+      });
+      return;
+    }
+  } catch {
+    // fall through to default
+  }
+  // Default: show server count
+  client.user?.setPresence({
+    activities: [{ name: `/help | ${client.guilds.cache.size} servers`, type: ActivityType.Watching }],
+    status: 'online',
+  });
+}
+
 export default {
   name: Events.ClientReady,
   once: true,
@@ -9,19 +37,10 @@ export default {
     logger.info(`Ready! Logged in as ${client.user?.tag}`);
     logger.info(`Serving ${client.guilds.cache.size} guilds`);
 
-    // Set presence
-    client.user?.setPresence({
-      activities: [{ name: `/help | ${client.guilds.cache.size} servers`, type: ActivityType.Watching }],
-      status: 'online',
-    });
+    await applyActivity(client);
 
-    // Update presence periodically
-    setInterval(() => {
-      client.user?.setPresence({
-        activities: [{ name: `/help | ${client.guilds.cache.size} servers`, type: ActivityType.Watching }],
-        status: 'online',
-      });
-    }, 5 * 60 * 1000); // Every 5 minutes
+    // Refresh presence every 5 minutes (picks up DB changes and keeps server count current)
+    setInterval(() => applyActivity(client), 5 * 60 * 1000);
 
     // Sync all current guilds into whitelist as 'approved'
     // (these were added before whitelist existed so we trust them)
