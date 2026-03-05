@@ -377,6 +377,15 @@ CREATE INDEX IF NOT EXISTS idx_command_groups_guild ON command_groups(guild_id);
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_roles TEXT[] DEFAULT '{}';
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_channels TEXT[] DEFAULT '{}';
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS cembed_response BOOLEAN DEFAULT FALSE;
+
+-- Dashboard access roles (non-admin users who can access the dashboard)
+CREATE TABLE IF NOT EXISTS dashboard_roles (
+  guild_id VARCHAR(20) NOT NULL,
+  role_id  VARCHAR(20) NOT NULL,
+  PRIMARY KEY (guild_id, role_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dashboard_roles_guild ON dashboard_roles(guild_id);
 `;
 
 async function migrate() {
