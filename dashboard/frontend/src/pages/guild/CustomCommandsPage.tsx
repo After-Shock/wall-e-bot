@@ -289,13 +289,14 @@ function parseCembed(code: string): EmbedData | null {
     // Replace (sdict "k" "v" ...) with {"k":"v",...} — innermost first, repeat
     for (let i = 0; i < 20; i++) {
       const before = body;
-      body = body.replace(/\(sdict\s+((?:"[^"]*"\s+(?:"[^"]*"|true|false|\d+)\s*)+)\)/g, (_match, inner) => {
-        const pairs = inner.trim();
-        const jsonObj = pairs.replace(
-          /"([^"]+)"\s+("(?:[^"\\]|\\.)*"|true|false|\d+)/g,
-          '"$1": $2',
-        );
-        return `{${jsonObj.split(/,?\s+"/).join(', "').replace(/^\{/, '{')}}`;
+      body = body.replace(/\(sdict\s+([\s\S]*?)\)/g, (_match, inner) => {
+        const kvPairs: string[] = [];
+        const kvRe = /"([^"]+)"\s+("(?:[^"\\]|\\.)*"|true|false|-?\d+(?:\.\d+)?)/g;
+        let kv: RegExpExecArray | null;
+        while ((kv = kvRe.exec(inner)) !== null) {
+          kvPairs.push(`"${kv[1]}": ${kv[2]}`);
+        }
+        return `{${kvPairs.join(', ')}}`;
       });
       if (body === before) break;
     }
