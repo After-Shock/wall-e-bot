@@ -1356,7 +1356,7 @@ guildsRouter.post(
 );
 
 // GET /api/guilds/:guildId/roles — returns all guild roles (for dashboard access dropdown)
-guildsRouter.get('/:guildId/roles', requireAuth, requireGuildAdmin, asyncHandler(async (req, res) => {
+guildsRouter.get('/:guildId/roles', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   const { guildId } = req.params;
   const token = process.env.DISCORD_TOKEN;
   if (!token) {

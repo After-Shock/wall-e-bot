@@ -87,22 +87,22 @@ const updateMutation = useMutation({
         <h1 className="text-3xl font-bold">Server Settings</h1>
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex flex-col md:flex-row gap-6">
         {/* Sidebar */}
-        <div className="w-64 shrink-0">
-          <nav className="space-y-1">
+        <div className="w-full md:w-56 shrink-0">
+          <nav className="flex md:flex-col gap-1 overflow-x-auto pb-1 md:pb-0">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                className={`flex items-center gap-2 px-3 md:px-4 py-2 md:py-3 rounded-lg transition-colors whitespace-nowrap shrink-0 md:w-full ${
                   activeTab === tab.id
                     ? 'bg-discord-blurple text-white'
                     : 'text-discord-light hover:bg-discord-dark hover:text-white'
                 }`}
               >
-                <tab.icon className="w-5 h-5" />
-                {tab.label}
+                <tab.icon className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-sm">{tab.label}</span>
               </button>
             ))}
           </nav>
@@ -419,7 +419,7 @@ function DashboardAccessTab({ guildId }: { guildId: string }) {
     },
   });
 
-  const { data: guildRoles = [] } = useQuery({
+  const { data: guildRoles = [], isError: rolesError } = useQuery({
     queryKey: ['guild-roles', guildId],
     queryFn: async () => {
       const r = await api.get<GuildRole[]>(`/api/guilds/${guildId}/roles`);
@@ -489,18 +489,38 @@ function DashboardAccessTab({ guildId }: { guildId: string }) {
             </div>
           )}
 
-          {availableRoles.length > 0 && (
-            <div className="flex items-center gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            {rolesError ? (
+              <input
+                type="text"
+                value={addingRoleId}
+                onChange={e => setAddingRoleId(e.target.value)}
+                placeholder="Enter role ID…"
+                className="input flex-1"
+              />
+            ) : guildRoles.length === 0 ? (
+              <input
+                type="text"
+                value={addingRoleId}
+                onChange={e => setAddingRoleId(e.target.value)}
+                placeholder="Enter role ID…"
+                className="input flex-1"
+              />
+            ) : availableRoles.length === 0 ? (
+              <p className="text-discord-light text-sm self-center">All roles have been added.</p>
+            ) : (
               <select
                 value={addingRoleId}
                 onChange={e => setAddingRoleId(e.target.value)}
-                className="input flex-1 max-w-xs"
+                className="input flex-1"
               >
                 <option value="">Select a role…</option>
                 {availableRoles.map(role => (
                   <option key={role.id} value={role.id}>{role.name}</option>
                 ))}
               </select>
+            )}
+            {(!rolesError && guildRoles.length > 0 && availableRoles.length === 0) ? null : (
               <button
                 onClick={() => addingRoleId && addMutation.mutate(addingRoleId)}
                 disabled={!addingRoleId || addMutation.isPending}
@@ -509,8 +529,8 @@ function DashboardAccessTab({ guildId }: { guildId: string }) {
                 {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Add Role
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>
