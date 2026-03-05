@@ -228,6 +228,7 @@ export interface CustomCommand {
   groupId?: number | null;
   responses: string[];
   embedResponse: boolean;
+  cembedResponse: boolean;
   embedColor?: string;
   cooldown: number;
   deleteCommand: boolean;
