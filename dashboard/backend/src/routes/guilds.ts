@@ -54,22 +54,38 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
     // Store guilds in session for permission checking (all guilds, needed by requireGuildAccess)
     (authReq.user as any).guilds = guilds;
 
-    // Get bot's guilds from Discord API
-    const botGuildsResponse = await fetch('https://discord.com/api/v10/users/@me/guilds', {
-      headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
-    });
+    const MANAGE_GUILD = BigInt(0x20);
+    const ADMINISTRATOR = BigInt(0x8);
+
+    // Fetch bot guild IDs and DB role-access guild IDs in parallel
+    const [botGuildsResponse, roleGuildsResult] = await Promise.all([
+      fetch('https://discord.com/api/v10/users/@me/guilds', {
+        headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+      }),
+      db.query('SELECT DISTINCT guild_id FROM dashboard_roles'),
+    ]);
+
     const botGuildIds = new Set<string>(
       botGuildsResponse.ok
         ? (await botGuildsResponse.json() as { id: string }[]).map(g => g.id)
         : [],
     );
+    // Guilds that have at least one dashboard role configured
+    const roleAccessGuildIds = new Set<string>(
+      roleGuildsResult.rows.map((r: { guild_id: string }) => r.guild_id),
+    );
 
-    // Return all guilds where the bot is present (mutual guilds), with isAdmin flag
-    const MANAGE_GUILD = BigInt(0x20);
-    const ADMINISTRATOR = BigInt(0x8);
-
+    // Show a guild if:
+    //   (a) user is admin (MANAGE_GUILD / ADMINISTRATOR / owner) — with or without bot (to allow "Add Bot")
+    //   (b) bot is present AND guild has dashboard_roles configured (role-based user may have access)
     const guildsWithBotStatus = guilds
-      .filter(guild => botGuildIds.has(guild.id))
+      .filter((guild) => {
+        const permissions = BigInt(guild.permissions);
+        const isAdmin = guild.owner ||
+          (permissions & MANAGE_GUILD) === MANAGE_GUILD ||
+          (permissions & ADMINISTRATOR) === ADMINISTRATOR;
+        return isAdmin || (botGuildIds.has(guild.id) && roleAccessGuildIds.has(guild.id));
+      })
       .map((guild) => {
         const permissions = BigInt(guild.permissions);
         const isAdmin = guild.owner ||
@@ -80,7 +96,7 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
           name: guild.name,
           icon: guild.icon,
           owner: guild.owner,
-          botPresent: true,
+          botPresent: botGuildIds.has(guild.id),
           isAdmin,
         };
       });
