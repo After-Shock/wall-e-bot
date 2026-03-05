@@ -281,49 +281,61 @@ interface EmbedData {
   image?: string;
 }
 
+// String token: quoted string that handles escape sequences (including ) { } [ ] inside quotes)
+const _STR_TOK = '"(?:[^"\\\\]|\\\\.)*"';
+// Bare value token: boolean or number
+const _BARE_TOK = '(?:true|false|-?\\d+(?:\\.\\d+)?)';
+// One sdict KV pair: <ws> "key" <ws> value
+const _SDICT_KV = `(?:\\s+${_STR_TOK}\\s+(?:${_STR_TOK}|${_BARE_TOK}))`;
+// JSON object (string-aware, handles special chars inside strings)
+const _OBJ_TOK = `\\{(?:[^{}"']|${_STR_TOK})*\\}`;
+// JSON array (string-aware)
+const _ARR_TOK = `\\[(?:[^\\[\\]"']|${_STR_TOK})*\\]`;
+
+const _SDICT_RE = new RegExp(`\\(sdict(${_SDICT_KV}+)\\s*\\)`, 'g');
+const _SDICT_KV_RE = new RegExp(`"([^"]+)"\\s+(${_STR_TOK}|${_BARE_TOK})`, 'g');
+const _CSLICE_RE = new RegExp(`\\(cslice((?:\\s*${_OBJ_TOK})+)\\s*\\)`, 'g');
+const _OBJ_RE = new RegExp(_OBJ_TOK, 'g');
+const _PAIR_RE = new RegExp(`"([^"]+)"\\s+(${_STR_TOK}|\\d+|true|false|${_ARR_TOK}|${_OBJ_TOK})`, 'g');
+
 function parseCembed(code: string): EmbedData | null {
   try {
-    // Extract the body of the cembed call
     const cembedMatch = code.match(/cembed\s+([\s\S]*?)(?:\n\s*\}\}|$)/);
     if (!cembedMatch) return null;
     let body = cembedMatch[1].trim();
 
-    // Replace (sdict "k" "v" ...) with {"k":"v",...} — innermost first, repeat
-    for (let i = 0; i < 20; i++) {
-      const before = body;
-      body = body.replace(/\(sdict\s+([\s\S]*?)\)/g, (_match, inner) => {
-        const kvPairs: string[] = [];
-        const kvRe = /"([^"]+)"\s+("(?:[^"\\]|\\.)*"|true|false|-?\d+(?:\.\d+)?)/g;
-        let kv: RegExpExecArray | null;
-        while ((kv = kvRe.exec(inner)) !== null) {
-          kvPairs.push(`"${kv[1]}": ${kv[2]}`);
-        }
-        return `{${kvPairs.join(', ')}}`;
-      });
-      if (body === before) break;
-    }
+    // Replace (sdict "k" v ...) with {"k": v, ...}
+    // The explicit KV pattern means ) inside string values never terminates the match early
+    body = body.replace(_SDICT_RE, (_match, inner) => {
+      const kvPairs: string[] = [];
+      let kv: RegExpExecArray | null;
+      _SDICT_KV_RE.lastIndex = 0;
+      while ((kv = _SDICT_KV_RE.exec(inner)) !== null) {
+        kvPairs.push(`"${kv[1]}": ${kv[2]}`);
+      }
+      return `{${kvPairs.join(', ')}}`;
+    });
 
-    // Replace (cslice ...) with [...]
-    for (let i = 0; i < 10; i++) {
-      const before = body;
-      body = body.replace(/\(cslice\s+([\s\S]*?)\)/g, (_match, inner) => `[${inner.trim().replace(/\}\s+\{/g, '}, {')}]`);
-      if (body === before) break;
-    }
+    // Replace (cslice {...} ...) with [{...}, ...]
+    // String-aware object pattern so ) inside string values doesn't end the match early
+    body = body.replace(_CSLICE_RE, (_match, inner) => {
+      const items = inner.trim().match(_OBJ_RE) ?? [];
+      return `[${items.join(', ')}]`;
+    });
 
-    // Convert "key" value pairs to JSON
+    // Extract top-level key-value pairs
+    // String-aware array/object patterns so ] or } inside string values don't terminate early
     const jsonPairs: string[] = [];
-    const pairRegex = /"([^"]+)"\s+("(?:[^"\\]|\\.)*"|\d+|true|false|\[[\s\S]*?\]|\{[\s\S]*?\})/g;
     let m: RegExpExecArray | null;
-    while ((m = pairRegex.exec(body)) !== null) {
+    _PAIR_RE.lastIndex = 0;
+    while ((m = _PAIR_RE.exec(body)) !== null) {
       jsonPairs.push(`"${m[1]}": ${m[2]}`);
     }
 
     if (jsonPairs.length === 0) return null;
 
-    const json = `{${jsonPairs.join(', ')}}`;
-    const parsed = JSON.parse(json);
+    const parsed = JSON.parse(`{${jsonPairs.join(', ')}}`);
 
-    // Normalize fields
     if (parsed.fields && Array.isArray(parsed.fields)) {
       parsed.fields = parsed.fields.map((f: Record<string, unknown>) => ({
         name: String(f.name ?? ''),
@@ -675,7 +687,7 @@ export default function CustomCommandsPage() {
                 const raw = (editingCommand.responses ?? [''])[0];
                 if (!raw.trim()) return null;
                 const embed = parseCembed(raw);
-                if (!embed) return <p className="text-xs text-discord-light">Could not parse — check syntax</p>;
+                if (!embed) return <p className="text-xs text-discord-light">Could not parse embed — ensure it starts with <code>cembed</code> and uses valid YAGPDB syntax (quoted keys, sdict/cslice for nested values)</p>;
                 const borderColor = embed.color != null ? '#' + embed.color.toString(16).padStart(6, '0') : '#5865F2';
                 return (
                   <div>
