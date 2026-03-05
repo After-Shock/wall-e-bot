@@ -74,6 +74,7 @@ const updateMutation = useMutation({
     { id: 'leveling', label: 'Leveling', icon: Star },
     { id: 'welcome', label: 'Welcome', icon: MessageSquare },
     { id: 'customization', label: 'Customization', icon: Bot },
+    { id: 'access', label: 'Access', icon: Shield },
   ];
 
   return (
@@ -187,6 +188,10 @@ const updateMutation = useMutation({
 
             {activeTab === 'customization' && (
               <CustomizationTab guildId={guildId!} />
+            )}
+
+            {activeTab === 'access' && (
+              <DashboardAccessTab guildId={guildId!} />
             )}
 
             <div className="mt-8 pt-6 border-t border-discord-darker flex justify-end">
@@ -385,6 +390,129 @@ function CustomizationTab({ guildId }: { guildId: string }) {
         </div>
 
       </div>
+    </div>
+  );
+}
+
+// ─── Dashboard Access Tab ─────────────────────────────────────────────────────
+
+interface DashboardRole {
+  roleId: string;
+  roleName: string;
+}
+
+interface GuildRole {
+  id: string;
+  name: string;
+  color: number;
+}
+
+function DashboardAccessTab({ guildId }: { guildId: string }) {
+  const queryClient = useQueryClient();
+  const [addingRoleId, setAddingRoleId] = useState('');
+
+  const { data: configuredRoles = [], isLoading: rolesLoading } = useQuery({
+    queryKey: ['dashboard-roles', guildId],
+    queryFn: async () => {
+      const r = await api.get<DashboardRole[]>(`/api/guilds/${guildId}/dashboard-roles`);
+      return r.data;
+    },
+  });
+
+  const { data: guildRoles = [] } = useQuery({
+    queryKey: ['guild-roles', guildId],
+    queryFn: async () => {
+      const r = await api.get<GuildRole[]>(`/api/guilds/${guildId}/roles`);
+      return r.data;
+    },
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (roleId: string) => api.post(`/api/guilds/${guildId}/dashboard-roles`, { roleId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard-roles', guildId] });
+      setAddingRoleId('');
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (roleId: string) => api.delete(`/api/guilds/${guildId}/dashboard-roles/${roleId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard-roles', guildId] });
+    },
+  });
+
+  const configuredIds = new Set(configuredRoles.map(r => r.roleId));
+  const availableRoles = guildRoles.filter(r => !configuredIds.has(r.id));
+
+  function roleColor(color: number): string {
+    return color === 0 ? '#b5bac1' : '#' + color.toString(16).padStart(6, '0');
+  }
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold mb-2">Dashboard Access</h2>
+      <p className="text-discord-light text-sm mb-6">
+        Members with these roles can access this server's dashboard with full permissions.
+      </p>
+
+      {rolesLoading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-discord-light" />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {configuredRoles.length === 0 ? (
+            <p className="text-discord-light text-sm">
+              No roles configured. Only server admins can access the dashboard.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {configuredRoles.map(role => (
+                <div key={role.roleId} className="flex items-center justify-between p-3 bg-discord-darker rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: roleColor(guildRoles.find(r => r.id === role.roleId)?.color ?? 0) }}
+                    />
+                    <span className="text-sm font-medium">{role.roleName}</span>
+                  </div>
+                  <button
+                    onClick={() => removeMutation.mutate(role.roleId)}
+                    disabled={removeMutation.isPending}
+                    className="text-red-400 hover:text-red-300 text-sm transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {availableRoles.length > 0 && (
+            <div className="flex items-center gap-3 pt-2">
+              <select
+                value={addingRoleId}
+                onChange={e => setAddingRoleId(e.target.value)}
+                className="input flex-1 max-w-xs"
+              >
+                <option value="">Select a role…</option>
+                {availableRoles.map(role => (
+                  <option key={role.id} value={role.id}>{role.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => addingRoleId && addMutation.mutate(addingRoleId)}
+                disabled={!addingRoleId || addMutation.isPending}
+                className="btn btn-primary flex items-center gap-2 shrink-0"
+              >
+                {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Add Role
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

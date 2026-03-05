@@ -10,6 +10,7 @@ interface Guild {
   icon: string | null;
   owner: boolean;
   botPresent: boolean;
+  isAdmin: boolean;
 }
 
 export default function DashboardPage() {
