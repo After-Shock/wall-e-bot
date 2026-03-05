@@ -18,6 +18,7 @@ import type { WallEClient } from '../structures/Client.js';
 import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
 import { sendLong } from '../utils/sendLong.js';
+import { parseCembed } from '../utils/parseCembed.js';
 
 /**
  * Database row structure for scheduled messages.
@@ -307,7 +308,7 @@ export class SchedulerService {
     try {
       const now = new Date();
       const result = await this.client.db.pool.query(
-        `SELECT id, guild_id, name, responses, embed_response, embed_color,
+        `SELECT id, guild_id, name, responses, embed_response, cembed_response, embed_color,
                 interval_cron, interval_channel_id, case_sensitive
          FROM custom_commands
          WHERE trigger_type = 'interval'
@@ -331,6 +332,7 @@ export class SchedulerService {
     guild_id: string;
     responses: string[];
     embed_response: boolean;
+    cembed_response: boolean;
     embed_color: string | null;
     interval_cron: string;
     interval_channel_id: string;
@@ -355,7 +357,25 @@ export class SchedulerService {
         args: [],
       });
 
-      if (cmd.embed_response) {
+      if (cmd.cembed_response) {
+        const embedData = parseCembed(rendered);
+        if (!embedData) {
+          await (channel as import('discord.js').TextChannel).send('⚠️ Failed to parse embed.');
+        } else {
+          const { EmbedBuilder } = await import('discord.js');
+          const embed = new EmbedBuilder();
+          if (embedData.title) embed.setTitle(embedData.title);
+          if (embedData.description) embed.setDescription(embedData.description);
+          if (embedData.color != null) embed.setColor(embedData.color);
+          if (embedData.url) embed.setURL(embedData.url);
+          if (embedData.author?.name) embed.setAuthor({ name: embedData.author.name, iconURL: embedData.author.icon_url, url: embedData.author.url });
+          if (embedData.footer?.text) embed.setFooter({ text: embedData.footer.text, iconURL: embedData.footer.icon_url });
+          if (embedData.thumbnail) embed.setThumbnail(embedData.thumbnail);
+          if (embedData.image) embed.setImage(embedData.image);
+          if (embedData.fields?.length) embed.addFields(embedData.fields.map(f => ({ name: f.name, value: f.value, inline: f.inline ?? false })));
+          await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
+        }
+      } else if (cmd.embed_response) {
         const { EmbedBuilder } = await import('discord.js');
         const embed = new EmbedBuilder()
           .setDescription(rendered)
