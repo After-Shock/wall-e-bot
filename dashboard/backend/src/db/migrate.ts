@@ -376,6 +376,7 @@ CREATE INDEX IF NOT EXISTS idx_command_groups_guild ON command_groups(guild_id);
 -- Custom commands: allowed_roles and allowed_channels (already exist in CREATE TABLE, but guard with IF NOT EXISTS)
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_roles TEXT[] DEFAULT '{}';
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_channels TEXT[] DEFAULT '{}';
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS cembed_response BOOLEAN DEFAULT FALSE;
 `;
 
 async function migrate() {
