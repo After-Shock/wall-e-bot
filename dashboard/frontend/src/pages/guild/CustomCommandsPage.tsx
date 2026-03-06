@@ -31,6 +31,7 @@ interface CustomCommand {
   id: number;
   guild_id: string;
   name: string;
+  description: string | null;
   trigger_type: TriggerType;
   group_id: number | null;
   responses: string[];
@@ -56,6 +57,7 @@ interface CustomCommand {
 
 const emptyCommand = (): Partial<CustomCommand> => ({
   name: '',
+  description: null,
   trigger_type: 'command',
   group_id: null,
   responses: [''],
@@ -653,6 +655,19 @@ export default function CustomCommandsPage() {
             </div>
           )}
 
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Description <span className="text-discord-light font-normal">(optional — internal note)</span></label>
+            <input
+              type="text"
+              value={editingCommand.description ?? ''}
+              onChange={e => setEditingCommand(prev => prev ? { ...prev, description: e.target.value || null } : prev)}
+              className="input w-full"
+              placeholder="What does this command do?"
+              maxLength={500}
+            />
+          </div>
+
           {/* Group */}
           <div>
             <label className="block text-sm font-medium mb-2">Group</label>
@@ -959,10 +974,14 @@ export default function CustomCommandsPage() {
           </span>
           {cmd.uses > 0 && <span className="text-xs text-discord-light">{cmd.uses}×</span>}
         </div>
-        <p className="text-xs text-discord-light truncate">
-          {cmd.responses?.[0]?.slice(0, 60)}{(cmd.responses?.[0]?.length ?? 0) > 60 ? '…' : ''}
-          {(cmd.responses?.length ?? 0) > 1 && <span className="ml-1 text-discord-blurple">+{cmd.responses.length - 1} more</span>}
-        </p>
+        {cmd.description ? (
+          <p className="text-xs text-discord-light truncate italic">{cmd.description}</p>
+        ) : (
+          <p className="text-xs text-discord-light truncate">
+            {cmd.responses?.[0]?.slice(0, 60)}{(cmd.responses?.[0]?.length ?? 0) > 60 ? '…' : ''}
+            {(cmd.responses?.length ?? 0) > 1 && <span className="ml-1 text-discord-blurple">+{cmd.responses.length - 1} more</span>}
+          </p>
+        )}
       </div>
       <div className="flex gap-1 shrink-0">
         <button onClick={() => openEditCommand(cmd)} className="btn btn-secondary p-1.5"><Edit className="w-3.5 h-3.5" /></button>

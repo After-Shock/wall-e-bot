@@ -377,6 +377,7 @@ CREATE INDEX IF NOT EXISTS idx_command_groups_guild ON command_groups(guild_id);
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_roles TEXT[] DEFAULT '{}';
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_channels TEXT[] DEFAULT '{}';
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS cembed_response BOOLEAN DEFAULT FALSE;
+ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS description TEXT;
 
 -- Dashboard access roles (non-admin users who can access the dashboard)
 CREATE TABLE IF NOT EXISTS dashboard_roles (
