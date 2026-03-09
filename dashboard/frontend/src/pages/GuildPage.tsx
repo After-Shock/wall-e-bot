@@ -562,12 +562,6 @@ interface DiscordChannel {
   parent_id: string | null;
 }
 
-interface DiscordRole {
-  id: string;
-  name: string;
-  color: number;
-}
-
 function AutoDeleteTab({ guildId }: { guildId: string }) {
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
@@ -589,8 +583,8 @@ function AutoDeleteTab({ guildId }: { guildId: string }) {
     queryFn: () => api.get(`/api/guilds/${guildId}/channels`).then(r => r.data),
   });
 
-  const { data: roles = [] } = useQuery<DiscordRole[]>({
-    queryKey: ['roles', guildId],
+  const { data: roles = [] } = useQuery<GuildRole[]>({
+    queryKey: ['guild-roles', guildId],
     queryFn: () => api.get(`/api/guilds/${guildId}/roles`).then(r => r.data),
   });
 
@@ -621,8 +615,8 @@ function AutoDeleteTab({ guildId }: { guildId: string }) {
     if (!form.max_age_hours && !form.max_messages) { setFormError('Set at least one limit (age or message count)'); return; }
     addMutation.mutate({
       channel_id: form.channel_id,
-      max_age_hours: form.max_age_hours ? parseInt(form.max_age_hours) : null,
-      max_messages: form.max_messages ? parseInt(form.max_messages) : null,
+      max_age_hours: form.max_age_hours ? parseInt(form.max_age_hours, 10) : null,
+      max_messages: form.max_messages ? parseInt(form.max_messages, 10) : null,
       exempt_roles: form.exempt_roles,
     });
   };
