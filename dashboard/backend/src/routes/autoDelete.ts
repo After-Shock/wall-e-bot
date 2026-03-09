@@ -22,6 +22,8 @@ const AutoDeleteSchema = AutoDeleteBaseSchema.refine(d => d.max_age_hours != nul
 
 const AutoDeletePatchSchema = AutoDeleteBaseSchema.partial();
 
+const ALLOWED_PATCH_FIELDS = new Set(['max_age_hours', 'max_messages', 'exempt_roles', 'enabled']);
+
 // GET /api/guilds/:guildId/auto-delete
 autoDeleteRouter.get('/', asyncHandler(async (req, res) => {
   const { guildId } = req.params;
@@ -56,7 +58,6 @@ autoDeleteRouter.patch('/:id', asyncHandler(async (req, res) => {
   const parsed = AutoDeletePatchSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0].message }); return; }
   const d = parsed.data;
-  const ALLOWED_PATCH_FIELDS = new Set(['max_age_hours', 'max_messages', 'exempt_roles', 'enabled']);
   const fields = (Object.keys(d) as (keyof typeof d)[]).filter(f => ALLOWED_PATCH_FIELDS.has(f));
   if (fields.length === 0) { res.status(400).json({ error: 'No fields to update' }); return; }
   const setClauses = fields.map((f, i) => `${String(f)} = $${i + 3}`).join(', ');
