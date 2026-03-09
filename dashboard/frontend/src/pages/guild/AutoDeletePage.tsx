@@ -46,6 +46,7 @@ export default function AutoDeletePage() {
       setRunAllDone(true);
       setTimeout(() => setRunAllDone(false), 3000);
     },
+    onError: () => setRunAllDone(false),
   });
 
   const runOneMutation = useMutation({
@@ -54,6 +55,7 @@ export default function AutoDeletePage() {
       setRunOneDone(id);
       setTimeout(() => setRunOneDone(null), 3000);
     },
+    onError: () => setRunOneDone(null),
   });
 
   const { data: configs = [] } = useQuery<AutoDeleteConfig[]>({
@@ -123,7 +125,7 @@ export default function AutoDeletePage() {
           {configs.some(c => c.enabled) && (
             <button
               onClick={() => runAllMutation.mutate()}
-              disabled={runAllMutation.isPending}
+              disabled={runAllMutation.isPending || runOneMutation.isPending}
               className="btn btn-secondary flex items-center gap-2"
               title="Run all enabled auto-delete configs now"
             >
@@ -228,7 +230,7 @@ export default function AutoDeletePage() {
               </button>
               <button
                 onClick={() => runOneMutation.mutate(config.id)}
-                disabled={runOneMutation.isPending && runOneMutation.variables === config.id}
+                disabled={runOneMutation.isPending}
                 className="btn btn-secondary p-1.5"
                 title="Run auto-delete for this channel now"
               >
