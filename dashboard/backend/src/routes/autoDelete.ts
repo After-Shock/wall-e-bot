@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { requireAuth, requireGuildAccess } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { redis } from '../redis.js';
 
 export const autoDeleteRouter = Router({ mergeParams: true });
 
@@ -80,4 +81,24 @@ autoDeleteRouter.delete('/:id', asyncHandler(async (req, res) => {
   );
   if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
   res.json({ success: true });
+}));
+
+// POST /api/guilds/:guildId/auto-delete/run
+autoDeleteRouter.post('/run', asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  await redis.publish('auto-delete:trigger', JSON.stringify({ guildId }));
+  res.status(204).end();
+}));
+
+// POST /api/guilds/:guildId/auto-delete/:id/run
+autoDeleteRouter.post('/:id/run', asyncHandler(async (req, res) => {
+  const { guildId, id } = req.params;
+  if (!/^\d+$/.test(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+  const result = await db.query(
+    'SELECT id FROM auto_delete_channels WHERE id = $1 AND guild_id = $2',
+    [id, guildId],
+  );
+  if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+  await redis.publish('auto-delete:trigger', JSON.stringify({ guildId, configId: parseInt(id, 10) }));
+  res.status(204).end();
 }));
