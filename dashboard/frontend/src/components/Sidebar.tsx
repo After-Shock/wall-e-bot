@@ -22,6 +22,7 @@ import {
   Database,
   Crown,
   RefreshCw,
+  Trash2,
   X,
 } from 'lucide-react';
 import { useState, createContext, useContext } from 'react';
@@ -65,6 +66,7 @@ const getNavItems = (guildId: string): NavItem[] => [
       { name: 'Mod Actions', href: `/dashboard/${guildId}/moderation/actions`, icon: Shield },
       { name: 'Warnings', href: `/dashboard/${guildId}/moderation/warnings`, icon: ShieldAlert },
       { name: 'Temp Bans', href: `/dashboard/${guildId}/moderation/tempbans`, icon: Clock },
+      { name: 'Auto-Delete', href: `/dashboard/${guildId}/moderation/auto-delete`, icon: Trash2 },
     ],
   },
   {

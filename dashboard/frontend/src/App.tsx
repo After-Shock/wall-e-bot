@@ -14,6 +14,7 @@ import ServerRulesPage from './pages/guild/ServerRulesPage';
 import ModerationPage from './pages/guild/ModerationPage';
 import WarningsPage from './pages/guild/WarningsPage';
 import TempBansPage from './pages/guild/TempBansPage';
+import AutoDeletePage from './pages/guild/AutoDeletePage';
 import SpamProtectionPage from './pages/guild/SpamProtectionPage';
 import WordFiltersPage from './pages/guild/WordFiltersPage';
 import LinkProtectionPage from './pages/guild/LinkProtectionPage';
@@ -70,6 +71,7 @@ function App() {
           <Route path="moderation/actions" element={<ModerationPage />} />
           <Route path="moderation/warnings" element={<WarningsPage />} />
           <Route path="moderation/tempbans" element={<TempBansPage />} />
+          <Route path="moderation/auto-delete" element={<AutoDeletePage />} />
           
           {/* Auto-Mod */}
           <Route path="automod" element={<SpamProtectionPage />} />
