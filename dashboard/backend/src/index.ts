@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
 import connectRedis from 'connect-redis';
-import { Redis } from 'ioredis';
+import { redis } from './redis.js';
 import passport from 'passport';
 import { Strategy as DiscordStrategy } from 'passport-discord';
 import { logger } from './utils/logger.js';
@@ -27,7 +27,6 @@ app.set('trust proxy', 1);
 
 // Redis session store
 const RedisStore = connectRedis(session);
-const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379');
 
 // Middleware
 app.use(helmet());
