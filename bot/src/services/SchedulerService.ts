@@ -79,6 +79,9 @@ export class SchedulerService {
 
     // Subscribe to Redis pub/sub for on-demand auto-delete triggers
     this.autoDeleteSubscriber = this.client.cache.redisClient.duplicate();
+    this.autoDeleteSubscriber.on('error', (err) =>
+      logger.error('autoDeleteSubscriber Redis error:', err),
+    );
     this.autoDeleteSubscriber.subscribe('auto-delete:trigger', (err) => {
       if (err) logger.error('Failed to subscribe to auto-delete:trigger:', err);
       else logger.info('Subscribed to auto-delete:trigger channel');

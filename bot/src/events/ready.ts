@@ -58,5 +58,8 @@ export default {
       ).catch(e => logger.error('Failed to sync guild to whitelist:', e));
     }
     logger.info('Guild whitelist synced');
+
+    // Start the scheduler now that the guild cache is populated
+    client.scheduler.start();
   },
 };
