@@ -1403,3 +1403,19 @@ guildsRouter.get('/:guildId/roles', requireAuth, requireGuildAccess, asyncHandle
     res.status(500).json({ error: 'Failed to fetch guild roles' });
   }
 }));
+
+// GET /guilds/:guildId/channels — returns text channels for dropdowns
+guildsRouter.get('/:guildId/channels', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+    headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+  });
+  if (!response.ok) { res.status(502).json({ error: 'Failed to fetch channels' }); return; }
+  const all = await response.json() as { id: string; name: string; type: number; position: number; parent_id: string | null }[];
+  // Type 0 = text channel, type 5 = announcement channel
+  const text = all
+    .filter(c => c.type === 0 || c.type === 5)
+    .sort((a, b) => a.position - b.position)
+    .map(c => ({ id: c.id, name: c.name, parent_id: c.parent_id }));
+  res.json(text);
+}));
