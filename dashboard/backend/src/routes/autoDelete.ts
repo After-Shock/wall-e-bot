@@ -94,6 +94,7 @@ autoDeleteRouter.post('/run', asyncHandler(async (req, res) => {
 autoDeleteRouter.post('/:id/run', asyncHandler(async (req, res) => {
   const { guildId, id } = req.params;
   if (!/^\d+$/.test(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+  // Intentionally omits enabled filter — manual run acts as an override for disabled configs.
   const result = await db.query(
     'SELECT id FROM auto_delete_channels WHERE id = $1 AND guild_id = $2',
     [id, guildId],
