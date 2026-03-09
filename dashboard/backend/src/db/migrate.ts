@@ -379,6 +379,20 @@ ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_channels TEXT[] DEF
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS cembed_response BOOLEAN DEFAULT FALSE;
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS description TEXT;
 
+-- Auto-delete channel configuration
+CREATE TABLE IF NOT EXISTS auto_delete_channels (
+  id             SERIAL PRIMARY KEY,
+  guild_id       VARCHAR(20) NOT NULL,
+  channel_id     VARCHAR(20) NOT NULL,
+  max_age_hours  INTEGER,
+  max_messages   INTEGER,
+  exempt_roles   TEXT[] DEFAULT '{}',
+  enabled        BOOLEAN DEFAULT TRUE,
+  created_at     TIMESTAMP DEFAULT NOW(),
+  UNIQUE (guild_id, channel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_auto_delete_guild ON auto_delete_channels(guild_id) WHERE enabled = TRUE;
+
 -- Dashboard access roles (non-admin users who can access the dashboard)
 CREATE TABLE IF NOT EXISTS dashboard_roles (
   guild_id VARCHAR(20) NOT NULL,
