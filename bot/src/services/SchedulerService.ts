@@ -556,7 +556,7 @@ export class SchedulerService {
 
     // Delete old messages one by one (rate-limit friendly)
     for (const msg of individual) {
-      await msg.delete().catch(() => null);
+      await msg.delete().catch(e => logger.warn(`Failed to delete old message ${msg.id} in ${config.channel_id}:`, e));
       await new Promise(r => setTimeout(r, 1000));
     }
 
