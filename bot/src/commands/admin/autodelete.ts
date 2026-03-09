@@ -87,10 +87,11 @@ const command: Command = {
         const maxMessages = interaction.options.getInteger('max-messages');
 
         if (maxAgeHours == null && maxMessages == null) {
-          return interaction.reply({
+          await interaction.reply({
             embeds: [errorEmbed('Missing Limits', 'Provide at least one of `max-age-hours` or `max-messages`.')],
             ephemeral: true,
           });
+          return;
         }
 
         const existing = await client.db.pool.query(
@@ -98,11 +99,12 @@ const command: Command = {
           [guildId, channel.id],
         );
 
-        if (existing.rowCount! > 0) {
-          return interaction.reply({
+        if ((existing.rowCount ?? 0) > 0) {
+          await interaction.reply({
             embeds: [errorEmbed('Already Configured', `Channel already configured. Use \`/auto-delete edit\` to update it.`)],
             ephemeral: true,
           });
+          return;
         }
 
         await client.db.pool.query(
@@ -115,10 +117,11 @@ const command: Command = {
         if (maxAgeHours != null) details.push(`Max age: **${maxAgeHours}h**`);
         if (maxMessages != null) details.push(`Max messages: **${maxMessages}**`);
 
-        return interaction.reply({
+        await interaction.reply({
           embeds: [successEmbed('Auto-Delete Configured', `${channel} will be cleaned up automatically.\n${details.join(' | ')}`)],
           ephemeral: true,
         });
+        break;
       }
 
       case 'edit': {
@@ -127,10 +130,11 @@ const command: Command = {
         const maxMessages = interaction.options.getInteger('max-messages');
 
         if (maxAgeHours == null && maxMessages == null) {
-          return interaction.reply({
+          await interaction.reply({
             embeds: [errorEmbed('No Fields Provided', 'Provide at least one field to update.')],
             ephemeral: true,
           });
+          return;
         }
 
         const setClauses: string[] = [];
@@ -151,16 +155,18 @@ const command: Command = {
         );
 
         if (result.rowCount === 0) {
-          return interaction.reply({
+          await interaction.reply({
             embeds: [errorEmbed('Not Found', 'No auto-delete config found for that channel.')],
             ephemeral: true,
           });
+          return;
         }
 
-        return interaction.reply({
+        await interaction.reply({
           embeds: [successEmbed('Auto-Delete Updated', `Configuration for ${channel} has been updated.`)],
           ephemeral: true,
         });
+        break;
       }
 
       case 'remove': {
@@ -172,16 +178,18 @@ const command: Command = {
         );
 
         if (result.rowCount === 0) {
-          return interaction.reply({
+          await interaction.reply({
             embeds: [errorEmbed('Not Found', 'No auto-delete config found for that channel.')],
             ephemeral: true,
           });
+          return;
         }
 
-        return interaction.reply({
+        await interaction.reply({
           embeds: [successEmbed('Auto-Delete Removed', `Auto-delete configuration for ${channel} has been removed.`)],
           ephemeral: true,
         });
+        break;
       }
 
       case 'toggle': {
@@ -196,30 +204,33 @@ const command: Command = {
         );
 
         if (result.rowCount === 0) {
-          return interaction.reply({
+          await interaction.reply({
             embeds: [errorEmbed('Not Found', 'No auto-delete config found for that channel.')],
             ephemeral: true,
           });
+          return;
         }
 
         const newState = result.rows[0].enabled as boolean;
-        return interaction.reply({
+        await interaction.reply({
           embeds: [successEmbed('Auto-Delete Toggled', `Auto-delete for ${channel} is now **${newState ? 'enabled' : 'disabled'}**.`)],
           ephemeral: true,
         });
+        break;
       }
 
       case 'list': {
         const result = await client.db.pool.query(
-          'SELECT * FROM auto_delete_channels WHERE guild_id = $1 ORDER BY created_at',
+          'SELECT channel_id, max_age_hours, max_messages, enabled FROM auto_delete_channels WHERE guild_id = $1 ORDER BY created_at',
           [guildId],
         );
 
         if (result.rows.length === 0) {
-          return interaction.reply({
+          await interaction.reply({
             embeds: [infoEmbed('Auto-Delete Channels', 'No auto-delete channels configured. Use `/auto-delete add` to get started.')],
             ephemeral: true,
           });
+          break;
         }
 
         const lines = result.rows.map((row: {
@@ -235,12 +246,13 @@ const command: Command = {
         });
 
         const embed = new EmbedBuilder()
-          .setColor(COLORS.PRIMARY)
+          .setColor(COLORS.INFO)
           .setTitle('🗑️ Auto-Delete Channels')
           .setDescription(lines.join('\n'))
           .setFooter({ text: 'Exempt roles are managed via the dashboard.' });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        break;
       }
     }
   },
