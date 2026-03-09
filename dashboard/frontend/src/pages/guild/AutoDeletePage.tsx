@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
-import { Plus, Clock, Trash2 } from 'lucide-react';
+import { Plus, Clock, Trash2, Play } from 'lucide-react';
 
 interface AutoDeleteConfig {
   id: number;
@@ -37,6 +37,24 @@ export default function AutoDeletePage() {
     exempt_roles: string[];
   }>({ channel_id: '', max_age_hours: '', max_messages: '', exempt_roles: [] });
   const [formError, setFormError] = useState<string | null>(null);
+  const [runAllDone, setRunAllDone] = useState(false);
+  const [runOneDone, setRunOneDone] = useState<number | null>(null);
+
+  const runAllMutation = useMutation({
+    mutationFn: () => api.post(`/api/guilds/${guildId}/auto-delete/run`),
+    onSuccess: () => {
+      setRunAllDone(true);
+      setTimeout(() => setRunAllDone(false), 3000);
+    },
+  });
+
+  const runOneMutation = useMutation({
+    mutationFn: (id: number) => api.post(`/api/guilds/${guildId}/auto-delete/${id}/run`),
+    onSuccess: (_data, id) => {
+      setRunOneDone(id);
+      setTimeout(() => setRunOneDone(null), 3000);
+    },
+  });
 
   const { data: configs = [] } = useQuery<AutoDeleteConfig[]>({
     queryKey: ['auto-delete', guildId],
@@ -101,10 +119,27 @@ export default function AutoDeletePage() {
           <h2 className="text-xl font-semibold">Auto-Delete</h2>
           <p className="text-sm text-discord-light mt-1">Automatically clean up old messages per channel. Pinned messages are always preserved.</p>
         </div>
-        <button onClick={() => { setShowAdd(true); setFormError(null); }} className="btn btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          Add Channel
-        </button>
+        <div className="flex items-center gap-2">
+          {configs.some(c => c.enabled) && (
+            <button
+              onClick={() => runAllMutation.mutate()}
+              disabled={runAllMutation.isPending}
+              className="btn btn-secondary flex items-center gap-2"
+              title="Run all enabled auto-delete configs now"
+            >
+              {runAllMutation.isPending ? (
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+              {runAllDone ? 'Done ✓' : 'Run All Now'}
+            </button>
+          )}
+          <button onClick={() => { setShowAdd(true); setFormError(null); }} className="btn btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Add Channel
+          </button>
+        </div>
       </div>
 
       {showAdd && (
@@ -190,6 +225,20 @@ export default function AutoDeletePage() {
                 className={`toggle ${config.enabled ? 'toggle-enabled' : 'toggle-disabled'}`}
               >
                 <span className={`toggle-dot ${config.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+              <button
+                onClick={() => runOneMutation.mutate(config.id)}
+                disabled={runOneMutation.isPending && runOneMutation.variables === config.id}
+                className="btn btn-secondary p-1.5"
+                title="Run auto-delete for this channel now"
+              >
+                {runOneMutation.isPending && runOneMutation.variables === config.id ? (
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
+                ) : runOneDone === config.id ? (
+                  <span className="text-xs text-green-400">✓</span>
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
               </button>
               <button
                 onClick={() => window.confirm(`Remove auto-delete for #${channelName(config.channel_id)}?`) && deleteMutation.mutate(config.id)}
