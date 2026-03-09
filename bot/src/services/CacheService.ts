@@ -73,4 +73,8 @@ export class CacheService {
   async close() {
     await this.redis.quit();
   }
+
+  get redisClient(): Redis {
+    return this.redis;
+  }
 }

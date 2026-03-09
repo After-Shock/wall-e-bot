@@ -50,6 +50,7 @@ export class SchedulerService {
   private autoCloseInterval: ReturnType<typeof setInterval> | null = null;
   private autoDeleteInterval: ReturnType<typeof setInterval> | null = null;
   private activityInterval: ReturnType<typeof setInterval> | null = null;
+  private autoDeleteSubscriber: import('ioredis').Redis | null = null;
 
   constructor(private client: WallEClient) {}
 
@@ -76,6 +77,29 @@ export class SchedulerService {
     this.autoDeleteInterval = setInterval(() => { this.checkAutoDelete(); }, 60 * 60 * 1000);
     this.checkAutoDelete(); // run on start too
 
+    // Subscribe to Redis pub/sub for on-demand auto-delete triggers
+    this.autoDeleteSubscriber = this.client.cache.redisClient.duplicate();
+    this.autoDeleteSubscriber.subscribe('auto-delete:trigger', (err) => {
+      if (err) logger.error('Failed to subscribe to auto-delete:trigger:', err);
+      else logger.info('Subscribed to auto-delete:trigger channel');
+    });
+    this.autoDeleteSubscriber.on('message', (_channel, message) => {
+      try {
+        const payload = JSON.parse(message) as { guildId: string; configId?: number };
+        if (payload.configId != null) {
+          this.runAutoDeleteById(payload.configId, payload.guildId).catch(e =>
+            logger.error('run-now single failed:', e),
+          );
+        } else {
+          this.checkAutoDeleteForGuild(payload.guildId).catch(e =>
+            logger.error('run-now all failed:', e),
+          );
+        }
+      } catch (e) {
+        logger.error('Failed to parse auto-delete:trigger message:', e);
+      }
+    });
+
     // Apply bot activity status every 5 minutes (re-applies after gateway reconnects)
     this.activityInterval = setInterval(() => { this.applyBotActivity(); }, 5 * 60 * 1000);
     this.applyBotActivity(); // apply on start
@@ -99,6 +123,11 @@ export class SchedulerService {
     if (this.activityInterval) {
       clearInterval(this.activityInterval);
       this.activityInterval = null;
+    }
+    if (this.autoDeleteSubscriber) {
+      this.autoDeleteSubscriber.unsubscribe();
+      this.autoDeleteSubscriber.disconnect();
+      this.autoDeleteSubscriber = null;
     }
   }
 
@@ -481,6 +510,38 @@ export class SchedulerService {
       }
     } catch (error) {
       logger.error('Error in checkAutoDelete:', error);
+    }
+  }
+
+  private async checkAutoDeleteForGuild(guildId: string) {
+    try {
+      const result = await this.client.db.pool.query(
+        `SELECT * FROM auto_delete_channels WHERE enabled = TRUE AND guild_id = $1`,
+        [guildId],
+      );
+      for (const config of result.rows) {
+        await this.runAutoDelete(config).catch(e =>
+          logger.error(`Auto-delete failed for channel ${config.channel_id}:`, e),
+        );
+      }
+    } catch (error) {
+      logger.error(`Error in checkAutoDeleteForGuild for ${guildId}:`, error);
+    }
+  }
+
+  private async runAutoDeleteById(configId: number, guildId: string) {
+    try {
+      const result = await this.client.db.pool.query(
+        `SELECT * FROM auto_delete_channels WHERE id = $1 AND guild_id = $2`,
+        [configId, guildId],
+      );
+      if (result.rows.length === 0) {
+        logger.warn(`Auto-delete run-now: config ${configId} not found in guild ${guildId}`);
+        return;
+      }
+      await this.runAutoDelete(result.rows[0]);
+    } catch (error) {
+      logger.error(`Error in runAutoDeleteById for config ${configId}:`, error);
     }
   }
 
