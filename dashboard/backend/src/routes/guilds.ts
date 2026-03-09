@@ -1408,12 +1408,18 @@ guildsRouter.get('/:guildId/roles', requireAuth, requireGuildAccess, asyncHandle
 guildsRouter.get('/:guildId/channels', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   const { guildId } = req.params;
   const token = process.env.DISCORD_TOKEN;
-  if (!token) { res.status(500).json({ error: 'Bot token not configured' }); return; }
+  if (!token) {
+    res.status(500).json({ error: 'Bot token not configured' });
+    return;
+  }
   try {
     const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
       headers: { Authorization: `Bot ${token}` },
     });
-    if (!response.ok) { res.status(response.status).json({ error: 'Failed to fetch channels' }); return; }
+    if (!response.ok) {
+      res.status(response.status).json({ error: 'Failed to fetch channels' });
+      return;
+    }
     const all = await response.json() as { id: string; name: string; type: number; position: number; parent_id: string | null }[];
     // Type 0 = text channel, type 5 = announcement channel
     const text = all
