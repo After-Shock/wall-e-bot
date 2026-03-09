@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
-import { Plus, Clock, Trash2, Play } from 'lucide-react';
+import { Plus, Clock, Trash2, Play, Pencil } from 'lucide-react';
 
 interface AutoDeleteConfig {
   id: number;
@@ -39,6 +39,9 @@ export default function AutoDeletePage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [runAllDone, setRunAllDone] = useState(false);
   const [runOneDone, setRunOneDone] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<{ max_age_hours: string; max_messages: string; exempt_roles: string[] }>({ max_age_hours: '', max_messages: '', exempt_roles: [] });
+  const [editError, setEditError] = useState<string | null>(null);
 
   const runAllMutation = useMutation({
     mutationFn: () => api.post(`/api/guilds/${guildId}/auto-delete/run`),
@@ -86,6 +89,13 @@ export default function AutoDeletePage() {
     onError: (e: unknown) => setFormError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to save'),
   });
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: object }) =>
+      api.patch(`/api/guilds/${guildId}/auto-delete/${id}`, data).then(r => r.data),
+    onSuccess: () => { invalidate(); setEditingId(null); setEditError(null); },
+    onError: (e: unknown) => setEditError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to save'),
+  });
+
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
       api.patch(`/api/guilds/${guildId}/auto-delete/${id}`, { enabled }),
@@ -108,6 +118,28 @@ export default function AutoDeletePage() {
       max_age_hours: form.max_age_hours ? parseInt(form.max_age_hours, 10) : null,
       max_messages: form.max_messages ? parseInt(form.max_messages, 10) : null,
       exempt_roles: form.exempt_roles,
+    });
+  };
+
+  const startEdit = (config: AutoDeleteConfig) => {
+    setEditingId(config.id);
+    setEditForm({
+      max_age_hours: config.max_age_hours != null ? String(config.max_age_hours) : '',
+      max_messages: config.max_messages != null ? String(config.max_messages) : '',
+      exempt_roles: config.exempt_roles,
+    });
+    setEditError(null);
+  };
+
+  const handleEdit = (id: number) => {
+    if (!editForm.max_age_hours && !editForm.max_messages) { setEditError('Set at least one limit (age or message count)'); return; }
+    editMutation.mutate({
+      id,
+      data: {
+        max_age_hours: editForm.max_age_hours ? parseInt(editForm.max_age_hours, 10) : null,
+        max_messages: editForm.max_messages ? parseInt(editForm.max_messages, 10) : null,
+        exempt_roles: editForm.exempt_roles,
+      },
     });
   };
 
@@ -211,44 +243,100 @@ export default function AutoDeletePage() {
 
       <div className="space-y-3">
         {configs.map(config => (
-          <div key={config.id} className="card flex items-center gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium">#{channelName(config.channel_id)}</p>
-              <p className="text-xs text-discord-light mt-0.5">
-                {config.max_age_hours ? `Older than ${config.max_age_hours}h` : ''}
-                {config.max_age_hours && config.max_messages ? ' · ' : ''}
-                {config.max_messages ? `Keep last ${config.max_messages} messages` : ''}
-                {config.exempt_roles.length > 0 && ` · Exempt: ${config.exempt_roles.map(id => roleName(id)).join(', ')}`}
-              </p>
+          <div key={config.id} className="card space-y-4">
+            {/* Row */}
+            <div className="flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium">#{channelName(config.channel_id)}</p>
+                <p className="text-xs text-discord-light mt-0.5">
+                  {config.max_age_hours ? `Older than ${config.max_age_hours}h` : ''}
+                  {config.max_age_hours && config.max_messages ? ' · ' : ''}
+                  {config.max_messages ? `Keep last ${config.max_messages} messages` : ''}
+                  {config.exempt_roles.length > 0 && ` · Exempt: ${config.exempt_roles.map(id => roleName(id)).join(', ')}`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => toggleMutation.mutate({ id: config.id, enabled: !config.enabled })}
+                  className={`toggle ${config.enabled ? 'toggle-enabled' : 'toggle-disabled'}`}
+                >
+                  <span className={`toggle-dot ${config.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
+                <button
+                  onClick={() => runOneMutation.mutate(config.id)}
+                  disabled={runOneMutation.isPending || runAllMutation.isPending}
+                  className="btn btn-secondary p-1.5"
+                  title="Run auto-delete for this channel now"
+                >
+                  {runOneMutation.isPending && runOneMutation.variables === config.id ? (
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
+                  ) : runOneDone === config.id ? (
+                    <span className="text-xs text-green-400">✓</span>
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                </button>
+                <button
+                  onClick={() => editingId === config.id ? setEditingId(null) : startEdit(config)}
+                  className="btn btn-secondary p-1.5"
+                  title="Edit configuration"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => window.confirm(`Remove auto-delete for #${channelName(config.channel_id)}?`) && deleteMutation.mutate(config.id)}
+                  className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => toggleMutation.mutate({ id: config.id, enabled: !config.enabled })}
-                className={`toggle ${config.enabled ? 'toggle-enabled' : 'toggle-disabled'}`}
-              >
-                <span className={`toggle-dot ${config.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
-              </button>
-              <button
-                onClick={() => runOneMutation.mutate(config.id)}
-                disabled={runOneMutation.isPending || runAllMutation.isPending}
-                className="btn btn-secondary p-1.5"
-                title="Run auto-delete for this channel now"
-              >
-                {runOneMutation.isPending && runOneMutation.variables === config.id ? (
-                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
-                ) : runOneDone === config.id ? (
-                  <span className="text-xs text-green-400">✓</span>
-                ) : (
-                  <Play className="w-4 h-4" />
-                )}
-              </button>
-              <button
-                onClick={() => window.confirm(`Remove auto-delete for #${channelName(config.channel_id)}?`) && deleteMutation.mutate(config.id)}
-                className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+
+            {/* Inline edit form */}
+            {editingId === config.id && (
+              <div className="border-t border-discord-dark pt-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Max age (hours)</label>
+                    <input type="number" min="1" max="8760" value={editForm.max_age_hours} onChange={e => setEditForm(f => ({ ...f, max_age_hours: e.target.value }))} className="input w-full" placeholder="e.g. 24" />
+                    <p className="text-xs text-discord-light mt-1">Delete messages older than this</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Max messages</label>
+                    <input type="number" min="1" max="10000" value={editForm.max_messages} onChange={e => setEditForm(f => ({ ...f, max_messages: e.target.value }))} className="input w-full" placeholder="e.g. 50" />
+                    <p className="text-xs text-discord-light mt-1">Keep only this many recent messages</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Exempt roles <span className="text-discord-light font-normal">(messages from these roles are never deleted)</span></label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {editForm.exempt_roles.map(id => (
+                      <span key={id} className="flex items-center gap-1 bg-discord-darker px-2 py-0.5 rounded text-xs">
+                        {roleName(id)}
+                        <button onClick={() => setEditForm(f => ({ ...f, exempt_roles: f.exempt_roles.filter(r => r !== id) }))} className="text-discord-light hover:text-white">×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <select
+                    value=""
+                    onChange={e => { if (e.target.value) setEditForm(f => ({ ...f, exempt_roles: [...f.exempt_roles, e.target.value] })); }}
+                    className="input w-full"
+                  >
+                    <option value="">— Add exempt role —</option>
+                    {roles.filter(r => !editForm.exempt_roles.includes(r.id)).map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {editError && <p className="text-sm text-red-400">{editError}</p>}
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => { setEditingId(null); setEditError(null); }} className="btn btn-secondary">Cancel</button>
+                  <button onClick={() => handleEdit(config.id)} disabled={editMutation.isPending} className="btn btn-primary">
+                    {editMutation.isPending ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
