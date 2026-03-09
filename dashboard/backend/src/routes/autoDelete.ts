@@ -52,10 +52,12 @@ autoDeleteRouter.post('/', asyncHandler(async (req, res) => {
 // PATCH /api/guilds/:guildId/auto-delete/:id
 autoDeleteRouter.patch('/:id', asyncHandler(async (req, res) => {
   const { guildId, id } = req.params;
+  if (!/^\d+$/.test(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
   const parsed = AutoDeletePatchSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0].message }); return; }
   const d = parsed.data;
-  const fields = Object.keys(d) as (keyof typeof d)[];
+  const ALLOWED_PATCH_FIELDS = new Set(['max_age_hours', 'max_messages', 'exempt_roles', 'enabled']);
+  const fields = (Object.keys(d) as (keyof typeof d)[]).filter(f => ALLOWED_PATCH_FIELDS.has(f));
   if (fields.length === 0) { res.status(400).json({ error: 'No fields to update' }); return; }
   const setClauses = fields.map((f, i) => `${String(f)} = $${i + 3}`).join(', ');
   const values = fields.map(f => d[f]);
@@ -70,6 +72,7 @@ autoDeleteRouter.patch('/:id', asyncHandler(async (req, res) => {
 // DELETE /api/guilds/:guildId/auto-delete/:id
 autoDeleteRouter.delete('/:id', asyncHandler(async (req, res) => {
   const { guildId, id } = req.params;
+  if (!/^\d+$/.test(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
   const result = await db.query(
     'DELETE FROM auto_delete_channels WHERE id = $1 AND guild_id = $2 RETURNING id',
     [id, guildId],
