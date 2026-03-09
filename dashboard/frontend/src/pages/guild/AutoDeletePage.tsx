@@ -230,7 +230,7 @@ export default function AutoDeletePage() {
               </button>
               <button
                 onClick={() => runOneMutation.mutate(config.id)}
-                disabled={runOneMutation.isPending}
+                disabled={runOneMutation.isPending || runAllMutation.isPending}
                 className="btn btn-secondary p-1.5"
                 title="Run auto-delete for this channel now"
               >
