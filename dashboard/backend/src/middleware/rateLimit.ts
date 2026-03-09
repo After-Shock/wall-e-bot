@@ -8,10 +8,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { Redis } from 'ioredis';
-
-// Initialize Redis client (use same connection as session store if available)
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+import { redis } from '../redis.js';
 
 /**
  * Rate limit configuration options.
@@ -155,11 +152,4 @@ export function rateLimitByGuild(options: Omit<RateLimitOptions, 'keyGenerator'>
       return req.ip || req.connection.remoteAddress || 'unknown';
     },
   });
-}
-
-/**
- * Cleanup function to close Redis connection on shutdown.
- */
-export async function closeRateLimitRedis(): Promise<void> {
-  await redis.quit();
 }
