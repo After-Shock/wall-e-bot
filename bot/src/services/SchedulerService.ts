@@ -13,7 +13,7 @@
  */
 
 import { CronExpressionParser } from 'cron-parser';
-import { TextChannel, EmbedBuilder, ActivityType } from 'discord.js';
+import { TextChannel, EmbedBuilder, ActivityType, Message } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
@@ -48,6 +48,7 @@ export class SchedulerService {
   /** Interval handle for the background check loop */
   private checkInterval: NodeJS.Timeout | null = null;
   private autoCloseInterval: ReturnType<typeof setInterval> | null = null;
+  private autoDeleteInterval: ReturnType<typeof setInterval> | null = null;
   private activityInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(private client: WallEClient) {}
@@ -71,6 +72,10 @@ export class SchedulerService {
     this.autoCloseInterval = setInterval(() => { this.checkAutoClose(); }, 60 * 60 * 1000);
     this.checkAutoClose(); // run on start too
 
+    // Check auto-delete channels every hour
+    this.autoDeleteInterval = setInterval(() => { this.checkAutoDelete(); }, 60 * 60 * 1000);
+    this.checkAutoDelete(); // run on start too
+
     // Apply bot activity status every 5 minutes (re-applies after gateway reconnects)
     this.activityInterval = setInterval(() => { this.applyBotActivity(); }, 5 * 60 * 1000);
     this.applyBotActivity(); // apply on start
@@ -86,6 +91,10 @@ export class SchedulerService {
     if (this.autoCloseInterval) {
       clearInterval(this.autoCloseInterval);
       this.autoCloseInterval = null;
+    }
+    if (this.autoDeleteInterval) {
+      clearInterval(this.autoDeleteInterval);
+      this.autoDeleteInterval = null;
     }
     if (this.activityInterval) {
       clearInterval(this.activityInterval);
@@ -458,5 +467,99 @@ export class SchedulerService {
       [guildId],
     );
     return result.rows;
+  }
+
+  private async checkAutoDelete() {
+    try {
+      const result = await this.client.db.pool.query(
+        `SELECT * FROM auto_delete_channels WHERE enabled = TRUE`,
+      );
+      for (const config of result.rows) {
+        await this.runAutoDelete(config).catch(e =>
+          logger.error(`Auto-delete failed for channel ${config.channel_id}:`, e),
+        );
+      }
+    } catch (error) {
+      logger.error('Error in checkAutoDelete:', error);
+    }
+  }
+
+  private async runAutoDelete(config: {
+    guild_id: string;
+    channel_id: string;
+    max_age_hours: number | null;
+    max_messages: number | null;
+    exempt_roles: string[];
+  }) {
+    const guild = this.client.guilds.cache.get(config.guild_id);
+    if (!guild) return;
+
+    const channel = guild.channels.cache.get(config.channel_id);
+    if (!channel || !channel.isTextBased()) return;
+    const textChannel = channel as TextChannel;
+
+    // Fetch all messages (paginated, up to 500 max to avoid abuse)
+    const allMessages: Message[] = [];
+    let lastId: string | undefined;
+    for (let page = 0; page < 5; page++) {
+      const batch = await textChannel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
+      if (batch.size === 0) break;
+      allMessages.push(...batch.values());
+      lastId = batch.last()?.id;
+      if (batch.size < 100) break;
+    }
+
+    // Filter out pinned messages and messages from exempt roles
+    const candidates = allMessages.filter(msg => {
+      if (msg.pinned) return false;
+      if (config.exempt_roles.length > 0) {
+        const memberRoles = msg.member?.roles.cache;
+        if (memberRoles && config.exempt_roles.some(r => memberRoles.has(r))) return false;
+      }
+      return true;
+    });
+
+    // Determine which messages to delete
+    const toDelete: Message[] = [];
+    const now = Date.now();
+    const cutoff = config.max_age_hours ? now - config.max_age_hours * 60 * 60 * 1000 : null;
+
+    // Sort newest first
+    const sorted = candidates.sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+
+    sorted.forEach((msg, index) => {
+      let shouldDelete = false;
+      if (cutoff && msg.createdTimestamp < cutoff) shouldDelete = true;
+      if (config.max_messages != null && index >= config.max_messages) shouldDelete = true;
+      if (shouldDelete) toDelete.push(msg);
+    });
+
+    if (toDelete.length === 0) return;
+
+    const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
+    const bulk = toDelete.filter(m => m.createdTimestamp > fourteenDaysAgo);
+    const individual = toDelete.filter(m => m.createdTimestamp <= fourteenDaysAgo);
+
+    // Bulk delete recent messages (batches of 100)
+    for (let i = 0; i < bulk.length; i += 100) {
+      const batch = bulk.slice(i, i + 100);
+      if (batch.length === 1) {
+        await batch[0].delete().catch(e =>
+          logger.error(`Single delete failed in ${config.channel_id}:`, e),
+        );
+      } else {
+        await textChannel.bulkDelete(batch, true).catch(e =>
+          logger.error(`Bulk delete failed in ${config.channel_id}:`, e),
+        );
+      }
+    }
+
+    // Delete old messages one by one (rate-limit friendly)
+    for (const msg of individual) {
+      await msg.delete().catch(() => null);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    logger.info(`Auto-delete: removed ${toDelete.length} messages from ${config.channel_id} in ${config.guild_id}`);
   }
 }
