@@ -53,3 +53,53 @@ usersRouter.get('/me/stats', requireAuth, asyncHandler(async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch user stats' });
   }
 }));
+
+// Get user preferences
+usersRouter.get('/me/preferences', requireAuth, asyncHandler(async (req, res) => {
+  const authReq = req as AuthenticatedRequest;
+  try {
+    const result = await db.query(
+      'SELECT preferences FROM users WHERE discord_id = $1',
+      [authReq.user!.id],
+    );
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    res.json(result.rows[0].preferences);
+  } catch (error) {
+    logger.error('Error fetching preferences:', error);
+    res.status(500).json({ error: 'Failed to fetch preferences' });
+  }
+}));
+
+// Update user preferences (partial merge)
+usersRouter.patch('/me/preferences', requireAuth, asyncHandler(async (req, res) => {
+  const authReq = req as AuthenticatedRequest;
+  try {
+    const { hidden_nav } = req.body as { hidden_nav?: string[] };
+
+    if (!Array.isArray(hidden_nav) || !hidden_nav.every(x => typeof x === 'string')) {
+      res.status(400).json({ error: 'hidden_nav must be an array of strings' });
+      return;
+    }
+
+    const result = await db.query(
+      `UPDATE users
+       SET preferences = preferences || $1::jsonb, updated_at = NOW()
+       WHERE discord_id = $2
+       RETURNING preferences`,
+      [JSON.stringify({ hidden_nav }), authReq.user!.id],
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    res.json(result.rows[0].preferences);
+  } catch (error) {
+    logger.error('Error updating preferences:', error);
+    res.status(500).json({ error: 'Failed to update preferences' });
+  }
+}));
