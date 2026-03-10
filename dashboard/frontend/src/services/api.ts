@@ -82,3 +82,13 @@ export const ticketApi = {
   sendPanel: (guildId: string, panelId: number, data: { channel_id: string }) =>
     api.post(`/api/guilds/${guildId}/ticket-panels/${panelId}/send`, data).then(r => r.data),
 };
+
+// ─── Preferences API ──────────────────────────────────────────────────────────
+
+export const preferencesApi = {
+  get: () =>
+    api.get<{ hidden_nav: string[] }>('/api/me/preferences').then(r => r.data),
+
+  update: (data: { hidden_nav: string[] }) =>
+    api.patch<{ hidden_nav: string[] }>('/api/me/preferences', data).then(r => r.data),
+};
