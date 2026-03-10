@@ -159,14 +159,14 @@ function PanelSendButton({ panel, channels, guildId, onAfterSend }: {
 }
 
 function GroupCard({
-  group, channels, guildId, onDelete, onRemovePanel, onReorder,
+  group, channels, guildId, onDelete, onRemovePanel, onSwap,
 }: {
   group: PanelGroup;
   channels: DiscordChannel[];
   guildId: string;
   onDelete: () => void;
   onRemovePanel: (panelId: number) => void;
-  onReorder: (panelId: number, newPosition: number) => void;
+  onSwap: (panelId1: number, groupId1: number, pos1: number, panelId2: number, groupId2: number, pos2: number) => void;
 }) {
   const queryClient = useQueryClient();
   const [editingName, setEditingName] = useState(false);
@@ -189,8 +189,10 @@ function GroupCard({
     const idx = sorted.findIndex(p => p.id === panelId);
     const swapIdx = idx + dir;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    onReorder(panelId, sorted[swapIdx].stack_position);
-    onReorder(sorted[swapIdx].id!, sorted[idx].stack_position);
+    onSwap(
+      sorted[idx].id!, sorted[idx].group_id!, sorted[swapIdx].stack_position,
+      sorted[swapIdx].id!, sorted[swapIdx].group_id!, sorted[idx].stack_position,
+    );
   };
 
   return (
@@ -577,7 +579,12 @@ export default function TicketsPage() {
                 guildId={guildId!}
                 onDelete={() => deleteGroupMutation.mutate(group.id)}
                 onRemovePanel={panelId => assignGroupMutation.mutate({ panelId, groupId: null, position: 0 })}
-                onReorder={(panelId, position) => assignGroupMutation.mutate({ panelId, groupId: group.id, position })}
+                onSwap={async (id1, gid1, pos1, id2, gid2, pos2) => {
+                  await ticketApi.assignPanelGroup(guildId!, id1, { group_id: gid1, stack_position: pos1 });
+                  await ticketApi.assignPanelGroup(guildId!, id2, { group_id: gid2, stack_position: pos2 });
+                  invalidateGroups();
+                  fetchData();
+                }}
               />
             ))}
           </div>

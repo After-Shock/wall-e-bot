@@ -1144,11 +1144,23 @@ guildsRouter.delete('/:guildId/ticket-panel-groups/:groupId', requireAuth, requi
   rateLimitByGuild({ max: 10, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, groupId } = req.params;
-    const result = await db.query(
-      `DELETE FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
+    const checkResult = await db.query(
+      `SELECT id FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
       [groupId, guildId],
     );
-    if ((result.rowCount ?? 0) === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    if ((checkResult.rowCount ?? 0) === 0) { res.status(404).json({ error: 'Not found' }); return; }
+
+    // Clear send state on panels before disbanding
+    await db.query(
+      `UPDATE ticket_panels SET panel_channel_id = NULL, panel_message_id = NULL WHERE group_id = $1`,
+      [groupId],
+    );
+
+    // Delete group — FK ON DELETE SET NULL handles group_id on panels
+    await db.query(
+      `DELETE FROM ticket_panel_groups WHERE id = $1`,
+      [groupId],
+    );
     res.status(204).end();
   }),
 );
