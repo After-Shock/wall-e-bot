@@ -11,6 +11,7 @@ interface Guild {
   owner: boolean;
   botPresent: boolean;
   isAdmin: boolean;
+  premium: boolean;
 }
 
 export default function DashboardPage() {
@@ -83,7 +84,10 @@ export default function DashboardPage() {
             )}
             
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold truncate">{guild.name}</h3>
+              <h3 className="font-semibold truncate">
+                {guild.name}
+                {guild.premium && <span className="ml-1.5" title="Premium">👑</span>}
+              </h3>
               <div className="flex items-center gap-1 text-sm text-discord-light">
                 {guild.botPresent ? (
                   <>

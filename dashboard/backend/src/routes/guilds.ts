@@ -75,6 +75,18 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
       roleGuildsResult.rows.map((r: { guild_id: string }) => r.guild_id),
     );
 
+    // Fetch premium status for bot-present guilds
+    const botGuildIdsArray = [...botGuildIds];
+    const premiumResult = botGuildIdsArray.length > 0
+      ? await db.query(
+          `SELECT guild_id FROM guild_configs WHERE guild_id = ANY($1) AND (config->>'premium')::boolean = true`,
+          [botGuildIdsArray],
+        )
+      : { rows: [] };
+    const premiumGuildIds = new Set<string>(
+      premiumResult.rows.map((r: { guild_id: string }) => r.guild_id),
+    );
+
     // Show a guild if:
     //   (a) user is admin (MANAGE_GUILD / ADMINISTRATOR / owner) — with or without bot (to allow "Add Bot")
     //   (b) bot is present AND guild has dashboard_roles configured (role-based user may have access)
@@ -98,6 +110,7 @@ guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
           owner: guild.owner,
           botPresent: botGuildIds.has(guild.id),
           isAdmin,
+          premium: premiumGuildIds.has(guild.id),
         };
       });
 
