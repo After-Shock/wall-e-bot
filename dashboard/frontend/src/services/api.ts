@@ -60,4 +60,25 @@ export const ticketApi = {
 
   getTickets: (guildId: string, params?: { status?: string; panel_id?: number }) =>
     api.get(`/api/guilds/${guildId}/tickets`, { params }).then(r => r.data),
+
+  getGroups: (guildId: string) =>
+    api.get(`/api/guilds/${guildId}/ticket-panel-groups`),
+
+  createGroup: (guildId: string, data: { name: string }) =>
+    api.post(`/api/guilds/${guildId}/ticket-panel-groups`, data),
+
+  updateGroup: (guildId: string, groupId: number, data: { name: string }) =>
+    api.put(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}`, data),
+
+  deleteGroup: (guildId: string, groupId: number) =>
+    api.delete(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}`),
+
+  assignPanelGroup: (guildId: string, panelId: number, data: { group_id: number | null; stack_position: number }) =>
+    api.put(`/api/guilds/${guildId}/ticket-panels/${panelId}/group`, data),
+
+  sendGroup: (guildId: string, groupId: number, data: { channel_id: string }) =>
+    api.post(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}/send`, data),
+
+  sendPanel: (guildId: string, panelId: number, data: { channel_id: string }) =>
+    api.post(`/api/guilds/${guildId}/ticket-panels/${panelId}/send`, data),
 };

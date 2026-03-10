@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ticket, Save, Plus, Trash2, Hash, Clock,
-  ChevronDown, ChevronRight, FileText, Loader2
+  ChevronDown, ChevronRight, FileText, Loader2, Send, Pencil
 } from 'lucide-react';
-import { ticketApi } from '../../services/api';
+import { ticketApi, api } from '../../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,10 +42,27 @@ interface Panel {
   category_closed_id: string;
   overflow_category_id: string;
   channel_name_template: string;
-  stack_group?: string;
-  stack_position?: number;
+  group_id: number | null;
+  stack_position: number;
+  panel_channel_id: string | null;
+  panel_message_id: string | null;
   categories?: Category[];
   _expanded?: boolean;
+}
+
+interface PanelGroup {
+  id: number;
+  guild_id: string;
+  name: string;
+  last_channel_id: string | null;
+  last_message_id: string | null;
+  panels: Panel[];
+}
+
+interface DiscordChannel {
+  id: string;
+  name: string;
+  parent_id: string | null;
 }
 
 interface TicketConfig {
@@ -66,12 +84,193 @@ interface ActiveTicket {
   created_at: string;
 }
 
+// ─── Helper Components ────────────────────────────────────────────────────────
+
+function SendChannelModal({
+  channels, defaultChannelId, isPending, error, onSend, onClose,
+}: {
+  channels: DiscordChannel[];
+  defaultChannelId: string | null;
+  isPending: boolean;
+  error: string | null;
+  onSend: (channelId: string) => void;
+  onClose: () => void;
+}) {
+  const [channelId, setChannelId] = useState(defaultChannelId ?? '');
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div className="card w-full max-w-md space-y-4">
+        <h3 className="font-semibold">Send to Channel</h3>
+        <div>
+          <label className="block text-sm font-medium mb-1">Channel</label>
+          <select value={channelId} onChange={e => setChannelId(e.target.value)} className="input w-full">
+            <option value="">— Select channel —</option>
+            {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+          </select>
+        </div>
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="btn btn-secondary">Cancel</button>
+          <button
+            onClick={() => { if (channelId) onSend(channelId); }}
+            disabled={!channelId || isPending}
+            className="btn btn-primary"
+          >
+            {isPending ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PanelSendButton({ panel, channels, guildId }: { panel: Panel; channels: DiscordChannel[]; guildId: string }) {
+  const queryClient = useQueryClient();
+  const [showSend, setShowSend] = useState(false);
+  const sendMutation = useMutation({
+    mutationFn: (channelId: string) => ticketApi.sendPanel(guildId, panel.id!, { channel_id: channelId }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket-panels', guildId] }); setShowSend(false); },
+  });
+  return (
+    <>
+      <button onClick={() => setShowSend(true)} className="btn btn-secondary p-1.5" title="Send to channel">
+        <Send className="w-4 h-4" />
+      </button>
+      {showSend && (
+        <SendChannelModal
+          channels={channels}
+          defaultChannelId={panel.panel_channel_id ?? null}
+          isPending={sendMutation.isPending}
+          error={sendMutation.error ? ((sendMutation.error as any)?.response?.data?.error ?? 'Failed to send') : null}
+          onSend={channelId => sendMutation.mutate(channelId)}
+          onClose={() => setShowSend(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function GroupCard({
+  group, channels, guildId, onDelete, onRemovePanel, onReorder,
+}: {
+  group: PanelGroup;
+  channels: DiscordChannel[];
+  guildId: string;
+  onDelete: () => void;
+  onRemovePanel: (panelId: number) => void;
+  onReorder: (panelId: number, newPosition: number) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [editingName, setEditingName] = useState(false);
+  const [nameVal, setNameVal] = useState(group.name);
+  const [showSend, setShowSend] = useState(false);
+
+  const updateMutation = useMutation({
+    mutationFn: (name: string) => ticketApi.updateGroup(guildId, group.id, { name }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket-groups', guildId] }); setEditingName(false); },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: (channelId: string) => ticketApi.sendGroup(guildId, group.id, { channel_id: channelId }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket-groups', guildId] }); setShowSend(false); },
+  });
+
+  const sorted = [...group.panels].sort((a, b) => a.stack_position - b.stack_position);
+
+  const move = (panelId: number, dir: -1 | 1) => {
+    const idx = sorted.findIndex(p => p.id === panelId);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    onReorder(panelId, sorted[swapIdx].stack_position);
+    onReorder(sorted[swapIdx].id!, sorted[idx].stack_position);
+  };
+
+  return (
+    <div className="card border border-discord-blurple/20 space-y-3">
+      <div className="flex items-center gap-2">
+        {editingName ? (
+          <input
+            value={nameVal}
+            onChange={e => setNameVal(e.target.value)}
+            className="input flex-1"
+            autoFocus
+            onKeyDown={e => {
+              if (e.key === 'Enter' && nameVal.trim()) updateMutation.mutate(nameVal.trim());
+              if (e.key === 'Escape') { setEditingName(false); setNameVal(group.name); }
+            }}
+          />
+        ) : (
+          <h4 className="font-semibold flex-1">{group.name}</h4>
+        )}
+        <button onClick={() => setEditingName(v => !v)} className="btn btn-secondary p-1.5" title="Rename">
+          <Pencil className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => setShowSend(true)}
+          className="btn btn-primary flex items-center gap-2 text-sm"
+        >
+          <Send className="w-4 h-4" />
+          {group.last_channel_id ? 'Re-send' : 'Send to Channel'}
+        </button>
+        <button
+          onClick={() => window.confirm(`Disband "${group.name}"? Panels will become ungrouped.`) && onDelete()}
+          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {sorted.length === 0 && (
+        <p className="text-sm text-discord-light">No panels yet. Use "Add to group…" on an ungrouped panel.</p>
+      )}
+
+      {sorted.map((panel, idx) => (
+        <div key={panel.id} className="flex items-center gap-2 bg-discord-darker rounded-lg px-3 py-2">
+          <div className="flex flex-col">
+            <button
+              onClick={() => move(panel.id!, -1)}
+              disabled={idx === 0}
+              className="text-discord-light hover:text-white disabled:opacity-30 text-xs leading-tight"
+            >▲</button>
+            <button
+              onClick={() => move(panel.id!, 1)}
+              disabled={idx === sorted.length - 1}
+              className="text-discord-light hover:text-white disabled:opacity-30 text-xs leading-tight"
+            >▼</button>
+          </div>
+          <span className="flex-1 font-medium text-sm">{panel.name}</span>
+          <span className="text-xs text-discord-light">
+            {panel.panel_type} · {(panel as any).categories?.length ?? 0} categories
+          </span>
+          <button
+            onClick={() => onRemovePanel(panel.id!)}
+            className="btn btn-secondary text-xs py-0.5 px-2"
+          >Remove</button>
+        </div>
+      ))}
+
+      {showSend && (
+        <SendChannelModal
+          channels={channels}
+          defaultChannelId={group.last_channel_id}
+          isPending={sendMutation.isPending}
+          error={sendMutation.error ? ((sendMutation.error as any)?.response?.data?.error ?? 'Failed to send') : null}
+          onSend={channelId => sendMutation.mutate(channelId)}
+          onClose={() => setShowSend(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 type Tab = 'panels' | 'settings' | 'tickets';
 
 export default function TicketsPage() {
   const { guildId } = useParams<{ guildId: string }>();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('panels');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -88,6 +287,43 @@ export default function TicketsPage() {
 
   const [showNewPanel, setShowNewPanel] = useState(false);
   const [newPanelName, setNewPanelName] = useState('');
+
+  // Groups state
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+
+  const { data: groups = [] } = useQuery<PanelGroup[]>({
+    queryKey: ['ticket-groups', guildId],
+    queryFn: () => ticketApi.getGroups(guildId!).then(r => r.data),
+    enabled: !!guildId,
+  });
+
+  const { data: channels = [] } = useQuery<DiscordChannel[]>({
+    queryKey: ['channels', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/channels`).then(r => r.data),
+    enabled: !!guildId,
+  });
+
+  const invalidateGroups = () => queryClient.invalidateQueries({ queryKey: ['ticket-groups', guildId] });
+  const invalidatePanels = () => queryClient.invalidateQueries({ queryKey: ['ticket-panels', guildId] });
+
+  const createGroupMutation = useMutation({
+    mutationFn: (name: string) => ticketApi.createGroup(guildId!, { name }),
+    onSuccess: () => { invalidateGroups(); setShowNewGroup(false); setNewGroupName(''); },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (groupId: number) => ticketApi.deleteGroup(guildId!, groupId),
+    onSuccess: () => { invalidateGroups(); invalidatePanels(); },
+  });
+
+  const assignGroupMutation = useMutation({
+    mutationFn: ({ panelId, groupId, position }: { panelId: number; groupId: number | null; position: number }) =>
+      ticketApi.assignPanelGroup(guildId!, panelId, { group_id: groupId, stack_position: position }),
+    onSuccess: () => { invalidateGroups(); invalidatePanels(); fetchData(); },
+  });
+
+  const ungroupedPanels = panels.filter(p => p.group_id == null);
 
   const fetchData = useCallback(async () => {
     if (!guildId) return;
@@ -284,265 +520,305 @@ export default function TicketsPage() {
 
       {/* ── PANELS TAB ── */}
       {activeTab === 'panels' && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <p className="text-sm text-discord-light">
-              Each panel is a separate message sent to a channel. Users click it to open tickets.
-            </p>
-            <button onClick={() => setShowNewPanel(true)} className="btn btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4" /> New Panel
-            </button>
+        <div className="space-y-6">
+          {/* Groups section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-discord-light uppercase tracking-wider">Groups</h3>
+              <button
+                onClick={() => setShowNewGroup(true)}
+                className="btn btn-secondary flex items-center gap-1 text-xs py-1 px-2"
+              >
+                <Plus className="w-3 h-3" /> New Group
+              </button>
+            </div>
+
+            {showNewGroup && (
+              <div className="card flex items-center gap-2 border border-discord-blurple/30">
+                <input
+                  value={newGroupName}
+                  onChange={e => setNewGroupName(e.target.value)}
+                  placeholder="Group name"
+                  className="input flex-1"
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newGroupName.trim()) createGroupMutation.mutate(newGroupName.trim());
+                    if (e.key === 'Escape') { setShowNewGroup(false); setNewGroupName(''); }
+                  }}
+                />
+                <button
+                  onClick={() => { if (newGroupName.trim()) createGroupMutation.mutate(newGroupName.trim()); }}
+                  disabled={!newGroupName.trim() || createGroupMutation.isPending}
+                  className="btn btn-primary text-sm"
+                >Create</button>
+                <button onClick={() => { setShowNewGroup(false); setNewGroupName(''); }} className="btn btn-secondary text-sm">Cancel</button>
+              </div>
+            )}
+
+            {groups.length === 0 && !showNewGroup && (
+              <p className="text-sm text-discord-light">
+                No groups yet. Create a group to deploy multiple panels as one Discord message.
+              </p>
+            )}
+
+            {groups.map(group => (
+              <GroupCard
+                key={group.id}
+                group={group}
+                channels={channels}
+                guildId={guildId!}
+                onDelete={() => deleteGroupMutation.mutate(group.id)}
+                onRemovePanel={panelId => assignGroupMutation.mutate({ panelId, groupId: null, position: 0 })}
+                onReorder={(panelId, position) => assignGroupMutation.mutate({ panelId, groupId: group.id, position })}
+              />
+            ))}
           </div>
 
-          {showNewPanel && (
-            <div className="card flex gap-3 items-center">
-              <input
-                value={newPanelName}
-                onChange={e => setNewPanelName(e.target.value)}
-                className="input flex-1"
-                placeholder="Panel name (e.g. Support, Appeals, Partnerships)"
-                onKeyDown={e => e.key === 'Enter' && createPanel()}
-                autoFocus
-              />
-              <button onClick={createPanel} className="btn btn-primary">Create</button>
-              <button onClick={() => setShowNewPanel(false)} className="btn btn-secondary">Cancel</button>
+          {/* Ungrouped Panels section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-discord-light uppercase tracking-wider">Ungrouped Panels</h3>
+              <button onClick={() => setShowNewPanel(true)} className="btn btn-primary flex items-center gap-2">
+                <Plus className="w-4 h-4" /> New Panel
+              </button>
             </div>
-          )}
 
-          {panels.length === 0 && !showNewPanel && (
-            <div className="card text-center py-12 text-discord-light">
-              <Ticket className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>No panels yet. Create your first panel to get started.</p>
-            </div>
-          )}
-
-          {panels.map(panel => (
-            <div key={panel.id} className="card">
-              {/* Panel header */}
-              <div className="flex items-center gap-3">
-                <button onClick={() => panel.id && togglePanel(panel.id)} className="flex items-center gap-2 flex-1 text-left">
-                  {panel._expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  <span className="font-semibold">{panel.name}</span>
-                  <span className="text-xs text-discord-light bg-discord-dark px-2 py-0.5 rounded">
-                    {panel.style} / {panel.panel_type}
-                  </span>
-                  {panel.stack_group && (
-                    <span className="text-xs bg-discord-blurple/20 text-discord-blurple px-2 py-0.5 rounded flex items-center gap-1">
-                      Stack: {panel.stack_group}
-                    </span>
-                  )}
-                  <span className="text-xs text-discord-light">
-                    {panel.categories?.length || 0} categories
-                  </span>
-                </button>
-                <button
-                  onClick={() => panel.id && deletePanel(panel.id)}
-                  className="p-2 text-discord-light hover:text-red-400 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+            {showNewPanel && (
+              <div className="card flex gap-3 items-center">
+                <input
+                  value={newPanelName}
+                  onChange={e => setNewPanelName(e.target.value)}
+                  className="input flex-1"
+                  placeholder="Panel name (e.g. Support, Appeals, Partnerships)"
+                  onKeyDown={e => e.key === 'Enter' && createPanel()}
+                  autoFocus
+                />
+                <button onClick={createPanel} className="btn btn-primary">Create</button>
+                <button onClick={() => setShowNewPanel(false)} className="btn btn-secondary">Cancel</button>
               </div>
+            )}
 
-              {/* Expanded panel editor */}
-              {panel._expanded && (
-                <div className="mt-4 space-y-4 border-t border-discord-dark pt-4">
-                  {/* Panel settings */}
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <label className="block font-medium mb-1">Style</label>
-                      <select
-                        value={panel.style}
-                        onChange={async e => {
-                          if (!guildId || !panel.id) return;
-                          const updated = await ticketApi.updatePanel(guildId, panel.id, { style: e.target.value });
-                          setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
-                        }}
-                        className="input w-full"
-                      >
-                        <option value="channel">Channel tickets</option>
-                        <option value="thread">Thread tickets</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-medium mb-1">Panel Type</label>
-                      <select
-                        value={panel.panel_type}
-                        onChange={async e => {
-                          if (!guildId || !panel.id) return;
-                          const updated = await ticketApi.updatePanel(guildId, panel.id, { panel_type: e.target.value });
-                          setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
-                        }}
-                        className="input w-full"
-                      >
-                        <option value="buttons">Buttons</option>
-                        <option value="dropdown">Dropdown</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-medium mb-1">Channel Name Template</label>
-                      <input
-                        defaultValue={panel.channel_name_template}
-                        onBlur={async e => {
-                          if (!guildId || !panel.id) return;
-                          await ticketApi.updatePanel(guildId, panel.id, { channel_name_template: e.target.value });
-                        }}
-                        className="input w-full"
-                        placeholder="{type}-{number}"
-                      />
-                      <p className="text-xs text-discord-light mt-1">
-                        Variables: {'{type}'} {'{number}'} {'{username}'} {'{userid}'}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block font-medium mb-1">Open Category ID</label>
-                      <input
-                        defaultValue={panel.category_open_id}
-                        onBlur={async e => {
-                          if (!guildId || !panel.id) return;
-                          await ticketApi.updatePanel(guildId, panel.id, { category_open_id: e.target.value || null });
-                        }}
-                        className="input w-full"
-                        placeholder="Discord category ID"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-medium mb-1">Closed Category ID</label>
-                      <input
-                        defaultValue={panel.category_closed_id}
-                        onBlur={async e => {
-                          if (!guildId || !panel.id) return;
-                          await ticketApi.updatePanel(guildId, panel.id, { category_closed_id: e.target.value || null });
-                        }}
-                        className="input w-full"
-                        placeholder="Discord category ID (for archived tickets)"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-medium mb-1">Overflow Category ID</label>
-                      <input
-                        defaultValue={panel.overflow_category_id}
-                        onBlur={async e => {
-                          if (!guildId || !panel.id) return;
-                          await ticketApi.updatePanel(guildId, panel.id, { overflow_category_id: e.target.value || null });
-                        }}
-                        className="input w-full"
-                        placeholder="Used when open category hits 50 channels"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block font-medium mb-1">Stack Group</label>
-                      <input
-                        defaultValue={panel.stack_group || ''}
-                        onBlur={async e => {
-                          if (!guildId || !panel.id) return;
-                          const val = e.target.value.trim() || null;
-                          const updated = await ticketApi.updatePanel(guildId, panel.id, { stack_group: val });
-                          setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
-                        }}
-                        className="input w-full"
-                        placeholder="e.g. main-tickets (leave blank for standalone)"
-                      />
-                      <p className="text-xs text-discord-light mt-1">
-                        Panels sharing the same stack group name deploy together as one Discord message.
-                        Use <code className="bg-discord-dark px-1 rounded">/ticket panel send</code> with any panel in the group.
-                      </p>
-                    </div>
-                  </div>
+            {ungroupedPanels.length === 0 && !showNewPanel && (
+              <p className="text-sm text-discord-light">No ungrouped panels.</p>
+            )}
 
-                  {/* Categories */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-semibold text-sm">
-                        Categories ({panel.categories?.length || 0}/5)
-                      </h4>
-                      <button
-                        onClick={() => panel.id && addCategory(panel.id)}
-                        className="btn btn-secondary text-xs flex items-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" /> Add Category
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {(panel.categories || []).map(cat => (
-                        <div key={cat.id} className="bg-discord-dark rounded-lg">
-                          {/* Category row */}
-                          <div className="flex items-center gap-3 p-3">
-                            <span className="text-xl">{cat.emoji || '🎫'}</span>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{cat.name}</p>
-                              <p className="text-xs text-discord-light">{cat.description || '(no description)'}</p>
-                            </div>
-                            <span className="text-xs text-discord-light flex items-center gap-1">
-                              <FileText className="w-3 h-3" />
-                              {cat.form_fields?.length || 0} fields
-                            </span>
-                            <button
-                              onClick={() => {
-                                if (!cat.id) return;
-                                setPanels(prev => prev.map(p => p.id === panel.id ? {
-                                  ...p,
-                                  categories: (p.categories || []).map(c =>
-                                    c.id === cat.id ? { ...c, _expanded: !c._expanded } : c
-                                  ),
-                                } : p));
-                              }}
-                              className="text-xs text-discord-light hover:text-white transition-colors px-2 py-1 rounded"
-                            >
-                              {cat._expanded ? 'Hide' : 'Edit Form'}
-                            </button>
-                            <button
-                              onClick={() => guildId && cat.id && panel.id && deleteCategory(guildId, cat.id, panel.id)}
-                              className="p-1 text-discord-light hover:text-red-400 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
-                          {/* Form builder */}
-                          {cat._expanded && (
-                            <div className="border-t border-discord-mid px-3 pb-3 pt-2 space-y-2">
-                              <p className="text-xs text-discord-light mb-2">
-                                Form fields shown to users when they open this ticket type (max 5).
-                              </p>
-                              {(cat.form_fields || []).map(field => (
-                                <div key={field.id} className="flex items-center gap-2 bg-discord-mid rounded p-2">
-                                  <div className="flex-1">
-                                    <span className="text-sm font-medium">{field.label}</span>
-                                    <span className="text-xs text-discord-light ml-2">
-                                      ({field.style}, {field.required ? 'required' : 'optional'})
-                                    </span>
-                                  </div>
-                                  <button
-                                    onClick={() => guildId && field.id && cat.id && panel.id && deleteFormField(field.id, cat.id, panel.id)}
-                                    className="text-discord-light hover:text-red-400 transition-colors"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ))}
-                              {(cat.form_fields?.length || 0) < 5 && (
-                                <button
-                                  onClick={() => guildId && cat.id && panel.id && addFormField(cat.id, panel.id)}
-                                  className="btn btn-secondary text-xs w-full flex items-center justify-center gap-1"
-                                >
-                                  <Plus className="w-3 h-3" /> Add Question
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-discord-light">
-                    After configuring, use <code className="bg-discord-dark px-1 rounded">/ticket panel send panel_id:{panel.id} #channel</code> to deploy.
-                  </p>
+            {ungroupedPanels.map(panel => (
+              <div key={panel.id} className="card">
+                {/* Panel header */}
+                <div className="flex items-center gap-3">
+                  <button onClick={() => panel.id && togglePanel(panel.id)} className="flex items-center gap-2 flex-1 text-left">
+                    {panel._expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    <span className="font-semibold">{panel.name}</span>
+                    <span className="text-xs text-discord-light bg-discord-dark px-2 py-0.5 rounded">
+                      {panel.style} / {panel.panel_type}
+                    </span>
+                    <span className="text-xs text-discord-light">
+                      {panel.categories?.length || 0} categories
+                    </span>
+                  </button>
+                  <select
+                    value=""
+                    onChange={e => {
+                      if (e.target.value)
+                        assignGroupMutation.mutate({ panelId: panel.id!, groupId: parseInt(e.target.value, 10), position: 0 });
+                    }}
+                    className="input text-xs py-1 h-auto"
+                  >
+                    <option value="">Add to group…</option>
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                  <PanelSendButton panel={panel} channels={channels} guildId={guildId!} />
+                  <button
+                    onClick={() => panel.id && deletePanel(panel.id)}
+                    className="p-2 text-discord-light hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Expanded panel editor */}
+                {panel._expanded && (
+                  <div className="mt-4 space-y-4 border-t border-discord-dark pt-4">
+                    {/* Panel settings */}
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <label className="block font-medium mb-1">Style</label>
+                        <select
+                          value={panel.style}
+                          onChange={async e => {
+                            if (!guildId || !panel.id) return;
+                            const updated = await ticketApi.updatePanel(guildId, panel.id, { style: e.target.value });
+                            setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
+                          }}
+                          className="input w-full"
+                        >
+                          <option value="channel">Channel tickets</option>
+                          <option value="thread">Thread tickets</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-1">Panel Type</label>
+                        <select
+                          value={panel.panel_type}
+                          onChange={async e => {
+                            if (!guildId || !panel.id) return;
+                            const updated = await ticketApi.updatePanel(guildId, panel.id, { panel_type: e.target.value });
+                            setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
+                          }}
+                          className="input w-full"
+                        >
+                          <option value="buttons">Buttons</option>
+                          <option value="dropdown">Dropdown</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-1">Channel Name Template</label>
+                        <input
+                          defaultValue={panel.channel_name_template}
+                          onBlur={async e => {
+                            if (!guildId || !panel.id) return;
+                            await ticketApi.updatePanel(guildId, panel.id, { channel_name_template: e.target.value });
+                          }}
+                          className="input w-full"
+                          placeholder="{type}-{number}"
+                        />
+                        <p className="text-xs text-discord-light mt-1">
+                          Variables: {'{type}'} {'{number}'} {'{username}'} {'{userid}'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-1">Open Category ID</label>
+                        <input
+                          defaultValue={panel.category_open_id}
+                          onBlur={async e => {
+                            if (!guildId || !panel.id) return;
+                            await ticketApi.updatePanel(guildId, panel.id, { category_open_id: e.target.value || null });
+                          }}
+                          className="input w-full"
+                          placeholder="Discord category ID"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-1">Closed Category ID</label>
+                        <input
+                          defaultValue={panel.category_closed_id}
+                          onBlur={async e => {
+                            if (!guildId || !panel.id) return;
+                            await ticketApi.updatePanel(guildId, panel.id, { category_closed_id: e.target.value || null });
+                          }}
+                          className="input w-full"
+                          placeholder="Discord category ID (for archived tickets)"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-1">Overflow Category ID</label>
+                        <input
+                          defaultValue={panel.overflow_category_id}
+                          onBlur={async e => {
+                            if (!guildId || !panel.id) return;
+                            await ticketApi.updatePanel(guildId, panel.id, { overflow_category_id: e.target.value || null });
+                          }}
+                          className="input w-full"
+                          placeholder="Used when open category hits 50 channels"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Categories */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-semibold text-sm">
+                          Categories ({panel.categories?.length || 0}/5)
+                        </h4>
+                        <button
+                          onClick={() => panel.id && addCategory(panel.id)}
+                          className="btn btn-secondary text-xs flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" /> Add Category
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {(panel.categories || []).map(cat => (
+                          <div key={cat.id} className="bg-discord-dark rounded-lg">
+                            {/* Category row */}
+                            <div className="flex items-center gap-3 p-3">
+                              <span className="text-xl">{cat.emoji || '🎫'}</span>
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">{cat.name}</p>
+                                <p className="text-xs text-discord-light">{cat.description || '(no description)'}</p>
+                              </div>
+                              <span className="text-xs text-discord-light flex items-center gap-1">
+                                <FileText className="w-3 h-3" />
+                                {cat.form_fields?.length || 0} fields
+                              </span>
+                              <button
+                                onClick={() => {
+                                  if (!cat.id) return;
+                                  setPanels(prev => prev.map(p => p.id === panel.id ? {
+                                    ...p,
+                                    categories: (p.categories || []).map(c =>
+                                      c.id === cat.id ? { ...c, _expanded: !c._expanded } : c
+                                    ),
+                                  } : p));
+                                }}
+                                className="text-xs text-discord-light hover:text-white transition-colors px-2 py-1 rounded"
+                              >
+                                {cat._expanded ? 'Hide' : 'Edit Form'}
+                              </button>
+                              <button
+                                onClick={() => guildId && cat.id && panel.id && deleteCategory(guildId, cat.id, panel.id)}
+                                className="p-1 text-discord-light hover:text-red-400 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Form builder */}
+                            {cat._expanded && (
+                              <div className="border-t border-discord-mid px-3 pb-3 pt-2 space-y-2">
+                                <p className="text-xs text-discord-light mb-2">
+                                  Form fields shown to users when they open this ticket type (max 5).
+                                </p>
+                                {(cat.form_fields || []).map(field => (
+                                  <div key={field.id} className="flex items-center gap-2 bg-discord-mid rounded p-2">
+                                    <div className="flex-1">
+                                      <span className="text-sm font-medium">{field.label}</span>
+                                      <span className="text-xs text-discord-light ml-2">
+                                        ({field.style}, {field.required ? 'required' : 'optional'})
+                                      </span>
+                                    </div>
+                                    <button
+                                      onClick={() => guildId && field.id && cat.id && panel.id && deleteFormField(field.id, cat.id, panel.id)}
+                                      className="text-discord-light hover:text-red-400 transition-colors"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                                {(cat.form_fields?.length || 0) < 5 && (
+                                  <button
+                                    onClick={() => guildId && cat.id && panel.id && addFormField(cat.id, panel.id)}
+                                    className="btn btn-secondary text-xs w-full flex items-center justify-center gap-1"
+                                  >
+                                    <Plus className="w-3 h-3" /> Add Question
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-discord-light">
+                      After configuring, use the Send button above to deploy this panel to a channel.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
