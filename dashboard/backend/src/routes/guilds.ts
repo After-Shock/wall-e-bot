@@ -1316,9 +1316,13 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
       res.json({ channel_id: message.channel_id, message_id: message.id });
     } catch (e) {
       logger.error('Discord send failed:', e);
-      if (e instanceof DiscordAPIError && e.body.includes('"code":10008')) {
+      if (e instanceof DiscordAPIError && e.status === 404) {
         await db.query(
           `UPDATE ticket_panel_groups SET last_message_id = NULL, last_channel_id = NULL WHERE id = $1`,
+          [groupId],
+        );
+        await db.query(
+          `UPDATE ticket_panels SET panel_message_id = NULL, panel_channel_id = NULL WHERE group_id = $1`,
           [groupId],
         );
       }
@@ -1375,7 +1379,7 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireG
       res.json({ channel_id: message.channel_id, message_id: message.id });
     } catch (e) {
       logger.error('Discord send failed:', e);
-      if (e instanceof DiscordAPIError && e.body.includes('"code":10008')) {
+      if (e instanceof DiscordAPIError && e.status === 404) {
         await db.query(
           `UPDATE ticket_panels SET panel_message_id = NULL, panel_channel_id = NULL WHERE id = $1`,
           [panelId],
