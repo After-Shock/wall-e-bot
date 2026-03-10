@@ -125,12 +125,18 @@ function SendChannelModal({
   );
 }
 
-function PanelSendButton({ panel, channels, guildId }: { panel: Panel; channels: DiscordChannel[]; guildId: string }) {
+function PanelSendButton({ panel, channels, guildId, onAfterSend }: {
+  panel: Panel; channels: DiscordChannel[]; guildId: string; onAfterSend?: () => void;
+}) {
   const queryClient = useQueryClient();
   const [showSend, setShowSend] = useState(false);
   const sendMutation = useMutation({
     mutationFn: (channelId: string) => ticketApi.sendPanel(guildId, panel.id!, { channel_id: channelId }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket-panels', guildId] }); setShowSend(false); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ticket-panels', guildId] });
+      setShowSend(false);
+      onAfterSend?.();
+    },
   });
   return (
     <>
@@ -139,6 +145,7 @@ function PanelSendButton({ panel, channels, guildId }: { panel: Panel; channels:
       </button>
       {showSend && (
         <SendChannelModal
+          key={panel.panel_channel_id ?? 'new'}
           channels={channels}
           defaultChannelId={panel.panel_channel_id ?? null}
           isPending={sendMutation.isPending}
@@ -241,7 +248,7 @@ function GroupCard({
           </div>
           <span className="flex-1 font-medium text-sm">{panel.name}</span>
           <span className="text-xs text-discord-light">
-            {panel.panel_type} · {(panel as any).categories?.length ?? 0} categories
+            {panel.panel_type} · {panel.categories?.length ?? 0} categories
           </span>
           <button
             onClick={() => onRemovePanel(panel.id!)}
@@ -252,6 +259,7 @@ function GroupCard({
 
       {showSend && (
         <SendChannelModal
+          key={group.last_channel_id ?? 'new'}
           channels={channels}
           defaultChannelId={group.last_channel_id}
           isPending={sendMutation.isPending}
@@ -294,7 +302,7 @@ export default function TicketsPage() {
 
   const { data: groups = [] } = useQuery<PanelGroup[]>({
     queryKey: ['ticket-groups', guildId],
-    queryFn: () => ticketApi.getGroups(guildId!).then(r => r.data),
+    queryFn: () => ticketApi.getGroups(guildId!),
     enabled: !!guildId,
   });
 
@@ -306,24 +314,6 @@ export default function TicketsPage() {
 
   const invalidateGroups = () => queryClient.invalidateQueries({ queryKey: ['ticket-groups', guildId] });
   const invalidatePanels = () => queryClient.invalidateQueries({ queryKey: ['ticket-panels', guildId] });
-
-  const createGroupMutation = useMutation({
-    mutationFn: (name: string) => ticketApi.createGroup(guildId!, { name }),
-    onSuccess: () => { invalidateGroups(); setShowNewGroup(false); setNewGroupName(''); },
-  });
-
-  const deleteGroupMutation = useMutation({
-    mutationFn: (groupId: number) => ticketApi.deleteGroup(guildId!, groupId),
-    onSuccess: () => { invalidateGroups(); invalidatePanels(); },
-  });
-
-  const assignGroupMutation = useMutation({
-    mutationFn: ({ panelId, groupId, position }: { panelId: number; groupId: number | null; position: number }) =>
-      ticketApi.assignPanelGroup(guildId!, panelId, { group_id: groupId, stack_position: position }),
-    onSuccess: () => { invalidateGroups(); invalidatePanels(); fetchData(); },
-  });
-
-  const ungroupedPanels = panels.filter(p => p.group_id == null);
 
   const fetchData = useCallback(async () => {
     if (!guildId) return;
@@ -346,6 +336,24 @@ export default function TicketsPage() {
   }, [guildId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const createGroupMutation = useMutation({
+    mutationFn: (name: string) => ticketApi.createGroup(guildId!, { name }),
+    onSuccess: () => { invalidateGroups(); setShowNewGroup(false); setNewGroupName(''); },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (groupId: number) => ticketApi.deleteGroup(guildId!, groupId),
+    onSuccess: () => { invalidateGroups(); invalidatePanels(); fetchData(); },
+  });
+
+  const assignGroupMutation = useMutation({
+    mutationFn: ({ panelId, groupId, position }: { panelId: number; groupId: number | null; position: number }) =>
+      ticketApi.assignPanelGroup(guildId!, panelId, { group_id: groupId, stack_position: position }),
+    onSuccess: () => { invalidateGroups(); invalidatePanels(); fetchData(); },
+  });
+
+  const ungroupedPanels = panels.filter(p => p.group_id == null);
 
   const saveConfig = async () => {
     if (!guildId) return;
@@ -627,7 +635,7 @@ export default function TicketsPage() {
                     <option value="">Add to group…</option>
                     {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
-                  <PanelSendButton panel={panel} channels={channels} guildId={guildId!} />
+                  <PanelSendButton panel={panel} channels={channels} guildId={guildId!} onAfterSend={fetchData} />
                   <button
                     onClick={() => panel.id && deletePanel(panel.id)}
                     className="p-2 text-discord-light hover:text-red-400 transition-colors"

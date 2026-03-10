@@ -62,23 +62,23 @@ export const ticketApi = {
     api.get(`/api/guilds/${guildId}/tickets`, { params }).then(r => r.data),
 
   getGroups: (guildId: string) =>
-    api.get(`/api/guilds/${guildId}/ticket-panel-groups`),
+    api.get(`/api/guilds/${guildId}/ticket-panel-groups`).then(r => r.data),
 
   createGroup: (guildId: string, data: { name: string }) =>
-    api.post(`/api/guilds/${guildId}/ticket-panel-groups`, data),
+    api.post(`/api/guilds/${guildId}/ticket-panel-groups`, data).then(r => r.data),
 
   updateGroup: (guildId: string, groupId: number, data: { name: string }) =>
-    api.put(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}`, data),
+    api.put(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}`, data).then(r => r.data),
 
   deleteGroup: (guildId: string, groupId: number) =>
-    api.delete(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}`),
+    api.delete(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}`).then(r => r.data),
 
   assignPanelGroup: (guildId: string, panelId: number, data: { group_id: number | null; stack_position: number }) =>
-    api.put(`/api/guilds/${guildId}/ticket-panels/${panelId}/group`, data),
+    api.put(`/api/guilds/${guildId}/ticket-panels/${panelId}/group`, data).then(r => r.data),
 
   sendGroup: (guildId: string, groupId: number, data: { channel_id: string }) =>
-    api.post(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}/send`, data),
+    api.post(`/api/guilds/${guildId}/ticket-panel-groups/${groupId}/send`, data).then(r => r.data),
 
   sendPanel: (guildId: string, panelId: number, data: { channel_id: string }) =>
-    api.post(`/api/guilds/${guildId}/ticket-panels/${panelId}/send`, data),
+    api.post(`/api/guilds/${guildId}/ticket-panels/${panelId}/send`, data).then(r => r.data),
 };
