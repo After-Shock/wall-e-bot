@@ -1177,6 +1177,166 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId/group', requireAuth, requireG
   }),
 );
 
+function buildPanelComponents(panel: {
+  id: number;
+  panel_type: string;
+  categories: Array<{ id: number; name: string; emoji: string | null; description: string | null }> | null;
+}): object[] {
+  const cats = panel.categories ?? [];
+  if (panel.panel_type === 'dropdown') {
+    return [{
+      type: 1,
+      components: [{
+        type: 3,
+        custom_id: `ticket_select:${panel.id}`,
+        placeholder: 'Select a ticket type',
+        options: cats.map(c => ({
+          label: c.name,
+          value: String(c.id),
+          ...(c.emoji ? { emoji: { name: c.emoji } } : {}),
+          ...(c.description ? { description: c.description } : {}),
+        })),
+      }],
+    }];
+  }
+  // buttons: up to 5 per ActionRow
+  const rows = [];
+  for (let i = 0; i < cats.length; i += 5) {
+    rows.push({
+      type: 1,
+      components: cats.slice(i, i + 5).map(c => ({
+        type: 2,
+        style: 1,
+        label: c.name,
+        custom_id: `ticket_open:${panel.id}:${c.id}`,
+        ...(c.emoji ? { emoji: { name: c.emoji } } : {}),
+      })),
+    });
+  }
+  return rows;
+}
+
+async function discordSend(
+  channelId: string,
+  messageId: string | null,
+  body: object,
+): Promise<{ id: string; channel_id: string }> {
+  const url = messageId
+    ? `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`
+    : `https://discord.com/api/v10/channels/${channelId}/messages`;
+  const method = messageId ? 'PATCH' : 'POST';
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Discord API ${res.status}: ${err}`);
+  }
+  return res.json() as Promise<{ id: string; channel_id: string }>;
+}
+
+// POST /api/guilds/:guildId/ticket-panel-groups/:groupId/send
+guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 5, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, groupId } = req.params;
+    const { channel_id } = req.body as { channel_id: string };
+    if (!channel_id) { res.status(400).json({ error: 'channel_id is required' }); return; }
+
+    const groupResult = await db.query(
+      `SELECT * FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId],
+    );
+    if (groupResult.rows.length === 0) { res.status(404).json({ error: 'Group not found' }); return; }
+    const group = groupResult.rows[0] as {
+      id: number; name: string; last_channel_id: string | null; last_message_id: string | null;
+    };
+
+    const panelsResult = await db.query(
+      `SELECT p.*, COALESCE(json_agg(c ORDER BY c.position) FILTER (WHERE c.id IS NOT NULL), '[]') AS categories
+       FROM ticket_panels p
+       LEFT JOIN ticket_categories c ON c.panel_id = p.id
+       WHERE p.group_id = $1
+       GROUP BY p.id
+       ORDER BY p.stack_position`,
+      [groupId],
+    );
+    if (panelsResult.rows.length === 0) { res.status(400).json({ error: 'Group has no panels' }); return; }
+
+    const components = panelsResult.rows.flatMap(p => buildPanelComponents(p));
+    const body = {
+      embeds: [{ color: 5793266, title: '🎫 Open a Ticket', description: group.name }],
+      components,
+    };
+
+    try {
+      const targetChannelId = group.last_message_id ? (group.last_channel_id ?? channel_id) : channel_id;
+      const message = await discordSend(targetChannelId, group.last_message_id, body);
+
+      await db.query(
+        `UPDATE ticket_panel_groups SET last_channel_id = $1, last_message_id = $2 WHERE id = $3`,
+        [message.channel_id, message.id, groupId],
+      );
+      await db.query(
+        `UPDATE ticket_panels SET panel_channel_id = $1, panel_message_id = $2 WHERE group_id = $3`,
+        [message.channel_id, message.id, groupId],
+      );
+      res.json({ channel_id: message.channel_id, message_id: message.id });
+    } catch (e) {
+      logger.error('Discord send failed:', e);
+      res.status(502).json({ error: (e as Error).message });
+    }
+  }),
+);
+
+// POST /api/guilds/:guildId/ticket-panels/:panelId/send
+guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 5, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, panelId } = req.params;
+    const { channel_id } = req.body as { channel_id: string };
+    if (!channel_id) { res.status(400).json({ error: 'channel_id is required' }); return; }
+
+    const panelResult = await db.query(
+      `SELECT p.*, COALESCE(json_agg(c ORDER BY c.position) FILTER (WHERE c.id IS NOT NULL), '[]') AS categories
+       FROM ticket_panels p
+       LEFT JOIN ticket_categories c ON c.panel_id = p.id
+       WHERE p.id = $1 AND p.guild_id = $2
+       GROUP BY p.id`,
+      [panelId, guildId],
+    );
+    if (panelResult.rows.length === 0) { res.status(404).json({ error: 'Panel not found' }); return; }
+    const panel = panelResult.rows[0] as {
+      id: number; name: string; panel_channel_id: string | null; panel_message_id: string | null;
+      panel_type: string; categories: Array<{ id: number; name: string; emoji: string | null; description: string | null }>;
+    };
+
+    const components = buildPanelComponents(panel);
+    const body = {
+      embeds: [{ color: 5793266, title: '🎫 Open a Ticket', description: panel.name }],
+      components,
+    };
+
+    try {
+      const targetChannelId = panel.panel_message_id ? (panel.panel_channel_id ?? channel_id) : channel_id;
+      const message = await discordSend(targetChannelId, panel.panel_message_id, body);
+      await db.query(
+        `UPDATE ticket_panels SET panel_channel_id = $1, panel_message_id = $2 WHERE id = $3`,
+        [message.channel_id, message.id, panelId],
+      );
+      res.json({ channel_id: message.channel_id, message_id: message.id });
+    } catch (e) {
+      logger.error('Discord send failed:', e);
+      res.status(502).json({ error: (e as Error).message });
+    }
+  }),
+);
+
 // POST /guilds/:guildId/ticket-panels/:panelId/categories
 guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, requireGuildAccess,
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
