@@ -419,6 +419,8 @@ ALTER TABLE ticket_panels
   ADD COLUMN IF NOT EXISTS group_id INTEGER
     REFERENCES ticket_panel_groups(id) ON DELETE SET NULL;
 
+CREATE INDEX IF NOT EXISTS idx_ticket_panels_group_id ON ticket_panels(group_id);
+
 ALTER TABLE ticket_panels
   DROP COLUMN IF EXISTS stack_group;
 `;

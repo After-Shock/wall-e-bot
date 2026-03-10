@@ -1005,14 +1005,13 @@ guildsRouter.post('/:guildId/ticket-panels', requireAuth, requireGuildAccess,
   asyncHandler(async (req, res) => {
     const { guildId } = req.params;
     const { name, style = 'channel', panel_type = 'buttons', category_open_id, category_closed_id,
-            overflow_category_id, channel_name_template = '{type}-{number}',
-            stack_group, stack_position = 0 } = req.body;
+            overflow_category_id, channel_name_template = '{type}-{number}' } = req.body;
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
     try {
       const r = await db.query(
-        `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template,stack_group,stack_position)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template, stack_group||null, stack_position],
+        `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template],
       );
       res.json(r.rows[0]);
     } catch (error) {
@@ -1058,17 +1057,15 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
   asyncHandler(async (req, res) => {
     const { guildId, panelId } = req.params;
     const { name, style, panel_type, category_open_id, category_closed_id, overflow_category_id,
-            channel_name_template, stack_group, stack_position } = req.body;
+            channel_name_template } = req.body;
     try {
       const r = await db.query(
         `UPDATE ticket_panels SET
            name=COALESCE($3,name), style=COALESCE($4,style), panel_type=COALESCE($5,panel_type),
            category_open_id=$6, category_closed_id=$7, overflow_category_id=$8,
-           channel_name_template=COALESCE($9,channel_name_template),
-           stack_group=COALESCE($10,stack_group),
-           stack_position=COALESCE($11,stack_position)
+           channel_name_template=COALESCE($9,channel_name_template)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template, stack_group??null, stack_position??null],
+        [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
       res.json(r.rows[0]);
