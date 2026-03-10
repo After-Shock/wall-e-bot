@@ -231,38 +231,6 @@ export default function GuildOverviewPage() {
         </div>
       </div>
 
-      {/* Module Status */}
-      <div>
-        <h2 className="text-xl font-semibold mb-4">Module Status</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { name: 'Moderation', enabled: true },
-            { name: 'Leveling', enabled: true },
-            { name: 'Welcome', enabled: false },
-            { name: 'Auto-Mod', enabled: false },
-            { name: 'Logging', enabled: false },
-            { name: 'Starboard', enabled: false },
-            { name: 'Tickets', enabled: false },
-            { name: 'Suggestions', enabled: false },
-          ].map((module) => (
-            <div
-              key={module.name}
-              className="card py-3 flex items-center justify-between"
-            >
-              <span className="text-sm font-medium">{module.name}</span>
-              <span
-                className={`text-xs px-2 py-1 rounded-full ${
-                  module.enabled
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-discord-dark text-discord-light'
-                }`}
-              >
-                {module.enabled ? 'Enabled' : 'Disabled'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

@@ -9,6 +9,7 @@ interface Guild {
   id: string;
   name: string;
   icon: string | null;
+  premium?: boolean;
 }
 
 export default function GuildLayout() {
@@ -108,7 +109,10 @@ export default function GuildLayout() {
                 </div>
               )}
               <div>
-                <h1 className="font-semibold text-lg">{guild?.name || <span className="inline-block w-32 h-4 bg-discord-dark rounded animate-pulse" />}</h1>
+                <h1 className="font-semibold text-lg flex items-center gap-1.5">
+                  {guild?.name || <span className="inline-block w-32 h-4 bg-discord-dark rounded animate-pulse" />}
+                  {guild?.premium && <span title="Premium">👑</span>}
+                </h1>
                 <p className="text-sm text-discord-light">Server Dashboard</p>
               </div>
             </div>
