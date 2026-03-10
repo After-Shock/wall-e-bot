@@ -162,10 +162,10 @@ const command: Command = {
 
           // Determine the set of panels to include: stack group (sorted) or just this panel
           let panelsToSend: any[];
-          if (rootPanel.stack_group) {
+          if (rootPanel.group_id) {
             const stackResult = await client.db.pool.query(
-              'SELECT * FROM ticket_panels WHERE guild_id = $1 AND stack_group = $2 ORDER BY stack_position, id',
-              [interaction.guild!.id, rootPanel.stack_group],
+              'SELECT * FROM ticket_panels WHERE group_id = $1 ORDER BY stack_position, id',
+              [rootPanel.group_id],
             );
             panelsToSend = stackResult.rows;
           } else {
