@@ -1109,41 +1109,49 @@ guildsRouter.get('/:guildId/ticket-panel-groups', requireAuth, requireGuildAcces
 }));
 
 // POST /api/guilds/:guildId/ticket-panel-groups
-guildsRouter.post('/:guildId/ticket-panel-groups', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
-  const { guildId } = req.params;
-  const { name } = req.body as { name: string };
-  if (!name || !name.trim()) { res.status(400).json({ error: 'name is required' }); return; }
-  const result = await db.query(
-    `INSERT INTO ticket_panel_groups (guild_id, name) VALUES ($1, $2) RETURNING *`,
-    [guildId, name.trim()],
-  );
-  res.status(201).json(result.rows[0]);
-}));
+guildsRouter.post('/:guildId/ticket-panel-groups', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { name } = req.body as { name: string };
+    if (!name || !name.trim()) { res.status(400).json({ error: 'name is required' }); return; }
+    const result = await db.query(
+      `INSERT INTO ticket_panel_groups (guild_id, name) VALUES ($1, $2) RETURNING *`,
+      [guildId, name.trim()],
+    );
+    res.status(201).json(result.rows[0]);
+  }),
+);
 
 // PUT /api/guilds/:guildId/ticket-panel-groups/:groupId
-guildsRouter.put('/:guildId/ticket-panel-groups/:groupId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
-  const { guildId, groupId } = req.params;
-  const { name } = req.body as { name: string };
-  if (!name || !name.trim()) { res.status(400).json({ error: 'name is required' }); return; }
-  const result = await db.query(
-    `UPDATE ticket_panel_groups SET name = $1 WHERE id = $2 AND guild_id = $3 RETURNING *`,
-    [name.trim(), groupId, guildId],
-  );
-  if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
-  res.json(result.rows[0]);
-}));
+guildsRouter.put('/:guildId/ticket-panel-groups/:groupId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, groupId } = req.params;
+    const { name } = req.body as { name: string };
+    if (!name || !name.trim()) { res.status(400).json({ error: 'name is required' }); return; }
+    const result = await db.query(
+      `UPDATE ticket_panel_groups SET name = $1 WHERE id = $2 AND guild_id = $3 RETURNING *`,
+      [name.trim(), groupId, guildId],
+    );
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    res.json(result.rows[0]);
+  }),
+);
 
 // DELETE /api/guilds/:guildId/ticket-panel-groups/:groupId
-guildsRouter.delete('/:guildId/ticket-panel-groups/:groupId', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
-  const { guildId, groupId } = req.params;
-  await db.query(`UPDATE ticket_panels SET group_id = NULL WHERE group_id = $1`, [groupId]);
-  const result = await db.query(
-    `DELETE FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
-    [groupId, guildId],
-  );
-  if ((result.rowCount ?? 0) === 0) { res.status(404).json({ error: 'Not found' }); return; }
-  res.status(204).end();
-}));
+guildsRouter.delete('/:guildId/ticket-panel-groups/:groupId', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, groupId } = req.params;
+    const result = await db.query(
+      `DELETE FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
+      [groupId, guildId],
+    );
+    if ((result.rowCount ?? 0) === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    res.status(204).end();
+  }),
+);
 
 // POST /guilds/:guildId/ticket-panels/:panelId/categories
 guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, requireGuildAccess,
