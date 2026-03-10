@@ -186,36 +186,36 @@ function NavItemComponent({ item, depth = 0, editMode = false, isHidden = false,
 
   const hiddenClasses = `opacity-50`;
 
-  if (hasChildren && !isHidden) {
+  if (hasChildren) {
     return (
-      <div className={editMode ? hiddenClasses : ''}>
+      <div className={isHidden ? hiddenClasses : ''}>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setIsOpen(!isOpen)}
-            className={`${baseClasses} flex-1 justify-between`}
+            onClick={() => !isHidden && setIsOpen(!isOpen)}
+            className={`${baseClasses} flex-1 justify-between ${isHidden ? 'cursor-default' : ''}`}
             style={{ paddingLeft: `${12 + depth * 12}px` }}
           >
             <div className="flex items-center gap-3">
               <item.icon className="w-5 h-5 shrink-0" />
               <span className="text-sm font-medium">{item.name}</span>
             </div>
-            {isOpen ? (
+            {!isHidden && (isOpen ? (
               <ChevronDown className="w-4 h-4" />
             ) : (
               <ChevronRight className="w-4 h-4" />
-            )}
+            ))}
           </button>
           {editMode && onToggleHide && (
             <button
               onClick={() => onToggleHide(item.name)}
               className="p-1.5 text-discord-light hover:text-white shrink-0"
-              title="Hide item"
+              title={isHidden ? 'Restore item' : 'Hide item'}
             >
-              <EyeOff className="w-4 h-4" />
+              {isHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
             </button>
           )}
         </div>
-        {isOpen && (
+        {isOpen && !isHidden && (
           <div className="ml-2 mt-1 space-y-1">
             {item.children!.map((child) => (
               <NavItemComponent key={child.href} item={child} depth={depth + 1} />
@@ -275,7 +275,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     mutationFn: preferencesApi.update,
     onMutate: async (newPrefs) => {
       await queryClient.cancelQueries({ queryKey: ['me-preferences'] });
-      const previous = queryClient.getQueryData(['me-preferences']);
+      const previous = queryClient.getQueryData<{ hidden_nav: string[] }>(['me-preferences']);
       queryClient.setQueryData(['me-preferences'], newPrefs);
       return { previous };
     },
