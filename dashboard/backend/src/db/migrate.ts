@@ -423,6 +423,9 @@ CREATE INDEX IF NOT EXISTS idx_ticket_panels_group_id ON ticket_panels(group_id)
 
 ALTER TABLE ticket_panels
   DROP COLUMN IF EXISTS stack_group;
+
+-- User preferences (hidden nav items, etc.)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
 `;
 
 async function migrate() {
