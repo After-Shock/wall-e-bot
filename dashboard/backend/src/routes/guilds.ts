@@ -1183,6 +1183,17 @@ function buildPanelComponents(panel: {
   categories: Array<{ id: number; name: string; emoji: string | null; description: string | null }> | null;
 }): object[] {
   const cats = panel.categories ?? [];
+  if (cats.length === 0) {
+    return [{
+      type: 1,
+      components: [{
+        type: 2,
+        style: 2,
+        label: 'Open Ticket',
+        custom_id: `ticket_open:${panel.id}:0`,
+      }],
+    }];
+  }
   if (panel.panel_type === 'dropdown') {
     return [{
       type: 1,
@@ -1216,6 +1227,12 @@ function buildPanelComponents(panel: {
   return rows;
 }
 
+class DiscordAPIError extends Error {
+  constructor(public status: number, public body: string) {
+    super(`Discord API ${status}: ${body}`);
+  }
+}
+
 async function discordSend(
   channelId: string,
   messageId: string | null,
@@ -1235,7 +1252,7 @@ async function discordSend(
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Discord API ${res.status}: ${err}`);
+    throw new DiscordAPIError(res.status, err);
   }
   return res.json() as Promise<{ id: string; channel_id: string }>;
 }
@@ -1247,6 +1264,16 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
     const { guildId, groupId } = req.params;
     const { channel_id } = req.body as { channel_id: string };
     if (!channel_id) { res.status(400).json({ error: 'channel_id is required' }); return; }
+
+    // Verify channel belongs to this guild
+    const channelCheck = await fetch(
+      `https://discord.com/api/v10/channels/${channel_id}`,
+      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } },
+    );
+    const channelData = await channelCheck.json() as { guild_id?: string };
+    if (!channelCheck.ok || channelData.guild_id !== guildId) {
+      res.status(400).json({ error: 'Invalid channel' }); return;
+    }
 
     const groupResult = await db.query(
       `SELECT * FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
@@ -1268,7 +1295,7 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
     );
     if (panelsResult.rows.length === 0) { res.status(400).json({ error: 'Group has no panels' }); return; }
 
-    const components = panelsResult.rows.flatMap(p => buildPanelComponents(p));
+    const components = panelsResult.rows.flatMap(p => buildPanelComponents(p)).slice(0, 5);
     const body = {
       embeds: [{ color: 5793266, title: '🎫 Open a Ticket', description: group.name }],
       components,
@@ -1289,6 +1316,12 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
       res.json({ channel_id: message.channel_id, message_id: message.id });
     } catch (e) {
       logger.error('Discord send failed:', e);
+      if (e instanceof DiscordAPIError && e.body.includes('"code":10008')) {
+        await db.query(
+          `UPDATE ticket_panel_groups SET last_message_id = NULL, last_channel_id = NULL WHERE id = $1`,
+          [groupId],
+        );
+      }
       res.status(502).json({ error: (e as Error).message });
     }
   }),
@@ -1301,6 +1334,16 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireG
     const { guildId, panelId } = req.params;
     const { channel_id } = req.body as { channel_id: string };
     if (!channel_id) { res.status(400).json({ error: 'channel_id is required' }); return; }
+
+    // Verify channel belongs to this guild
+    const channelCheck = await fetch(
+      `https://discord.com/api/v10/channels/${channel_id}`,
+      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } },
+    );
+    const channelData = await channelCheck.json() as { guild_id?: string };
+    if (!channelCheck.ok || channelData.guild_id !== guildId) {
+      res.status(400).json({ error: 'Invalid channel' }); return;
+    }
 
     const panelResult = await db.query(
       `SELECT p.*, COALESCE(json_agg(c ORDER BY c.position) FILTER (WHERE c.id IS NOT NULL), '[]') AS categories
@@ -1332,6 +1375,12 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireG
       res.json({ channel_id: message.channel_id, message_id: message.id });
     } catch (e) {
       logger.error('Discord send failed:', e);
+      if (e instanceof DiscordAPIError && e.body.includes('"code":10008')) {
+        await db.query(
+          `UPDATE ticket_panels SET panel_message_id = NULL, panel_channel_id = NULL WHERE id = $1`,
+          [panelId],
+        );
+      }
       res.status(502).json({ error: (e as Error).message });
     }
   }),
