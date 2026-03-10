@@ -583,6 +583,7 @@ export default function TicketsPage() {
                   await ticketApi.assignPanelGroup(guildId!, id1, { group_id: gid1, stack_position: pos1 });
                   await ticketApi.assignPanelGroup(guildId!, id2, { group_id: gid2, stack_position: pos2 });
                   invalidateGroups();
+                  invalidatePanels();
                   fetchData();
                 }}
               />
