@@ -401,6 +401,26 @@ CREATE TABLE IF NOT EXISTS dashboard_roles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dashboard_roles_guild ON dashboard_roles(guild_id);
+
+-- Ticket panel groups: replace string-based stack_group with a first-class table
+CREATE TABLE IF NOT EXISTS ticket_panel_groups (
+  id SERIAL PRIMARY KEY,
+  guild_id VARCHAR(20) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  last_channel_id VARCHAR(20),
+  last_message_id VARCHAR(20),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_panel_groups_guild
+  ON ticket_panel_groups(guild_id);
+
+ALTER TABLE ticket_panels
+  ADD COLUMN IF NOT EXISTS group_id INTEGER
+    REFERENCES ticket_panel_groups(id) ON DELETE SET NULL;
+
+ALTER TABLE ticket_panels
+  DROP COLUMN IF EXISTS stack_group;
 `;
 
 async function migrate() {
