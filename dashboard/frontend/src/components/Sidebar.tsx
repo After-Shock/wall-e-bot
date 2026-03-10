@@ -340,12 +340,11 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           </div>
 
           <nav className="space-y-1">
-            {(editMode ? allNavItems : visibleItems).map((item) => (
+            {visibleItems.map((item) => (
               <NavItemComponent
                 key={item.href}
                 item={item}
                 editMode={editMode}
-                isHidden={hiddenNav.includes(item.name)}
                 onToggleHide={editMode ? toggleHide : undefined}
               />
             ))}
