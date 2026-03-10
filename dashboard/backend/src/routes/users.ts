@@ -66,7 +66,7 @@ usersRouter.get('/me/preferences', requireAuth, asyncHandler(async (req, res) =>
       res.status(404).json({ error: 'User not found' });
       return;
     }
-    res.json(result.rows[0].preferences);
+    res.json(result.rows[0].preferences ?? {});
   } catch (error) {
     logger.error('Error fetching preferences:', error);
     res.status(500).json({ error: 'Failed to fetch preferences' });
@@ -86,7 +86,7 @@ usersRouter.patch('/me/preferences', requireAuth, asyncHandler(async (req, res) 
 
     const result = await db.query(
       `UPDATE users
-       SET preferences = preferences || $1::jsonb, updated_at = NOW()
+       SET preferences = COALESCE(preferences, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
        WHERE discord_id = $2
        RETURNING preferences`,
       [JSON.stringify({ hidden_nav }), authReq.user!.id],
