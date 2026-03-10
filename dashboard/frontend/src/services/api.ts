@@ -87,8 +87,8 @@ export const ticketApi = {
 
 export const preferencesApi = {
   get: () =>
-    api.get<{ hidden_nav: string[] }>('/api/me/preferences').then(r => r.data),
+    api.get<{ hidden_nav: string[] }>('/api/users/me/preferences').then(r => r.data),
 
   update: (data: { hidden_nav: string[] }) =>
-    api.patch<{ hidden_nav: string[] }>('/api/me/preferences', data).then(r => r.data),
+    api.patch<{ hidden_nav: string[] }>('/api/users/me/preferences', data).then(r => r.data),
 };
