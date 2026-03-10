@@ -1153,6 +1153,30 @@ guildsRouter.delete('/:guildId/ticket-panel-groups/:groupId', requireAuth, requi
   }),
 );
 
+// PUT /api/guilds/:guildId/ticket-panels/:panelId/group
+guildsRouter.put('/:guildId/ticket-panels/:panelId/group', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, panelId } = req.params;
+    const { group_id, stack_position } = req.body as { group_id: number | null; stack_position: number };
+
+    if (group_id != null) {
+      const groupCheck = await db.query(
+        `SELECT id FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
+        [group_id, guildId],
+      );
+      if (groupCheck.rows.length === 0) { res.status(404).json({ error: 'Group not found' }); return; }
+    }
+
+    const result = await db.query(
+      `UPDATE ticket_panels SET group_id = $1, stack_position = $2 WHERE id = $3 AND guild_id = $4 RETURNING *`,
+      [group_id ?? null, stack_position ?? 0, panelId, guildId],
+    );
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Panel not found' }); return; }
+    res.json(result.rows[0]);
+  }),
+);
+
 // POST /guilds/:guildId/ticket-panels/:panelId/categories
 guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, requireGuildAccess,
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
