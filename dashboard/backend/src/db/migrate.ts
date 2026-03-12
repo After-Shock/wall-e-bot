@@ -174,6 +174,12 @@ CREATE TABLE IF NOT EXISTS ticket_config (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS ticket_counters (
+  guild_id VARCHAR(20) PRIMARY KEY,
+  next_ticket_number INTEGER NOT NULL DEFAULT 1,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Ticket panels (one per panel message; a guild can have many)
 CREATE TABLE IF NOT EXISTS ticket_panels (
   id SERIAL PRIMARY KEY,
@@ -331,8 +337,35 @@ CREATE INDEX IF NOT EXISTS idx_ticket_categories_panel ON ticket_categories(pane
 CREATE INDEX IF NOT EXISTS idx_ticket_form_fields_category ON ticket_form_fields(category_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(guild_id, status);
 CREATE INDEX IF NOT EXISTS idx_tickets_last_activity ON tickets(last_activity) WHERE status = 'open';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_guild_channel_unique ON tickets(guild_id, channel_id);
 CREATE INDEX IF NOT EXISTS idx_message_logs_guild ON message_logs(guild_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_message_logs_channel ON message_logs(guild_id, channel_id, created_at DESC);
+
+INSERT INTO ticket_counters (guild_id, next_ticket_number)
+SELECT guild_id, COALESCE(MAX(ticket_number), 0) + 1
+FROM tickets
+GROUP BY guild_id
+ON CONFLICT (guild_id) DO UPDATE SET
+  next_ticket_number = GREATEST(ticket_counters.next_ticket_number, EXCLUDED.next_ticket_number),
+  updated_at = NOW();
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = 'public' AND indexname = 'idx_tickets_guild_ticket_number_unique'
+  ) THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM tickets
+      GROUP BY guild_id, ticket_number
+      HAVING COUNT(*) > 1
+    ) THEN
+      CREATE UNIQUE INDEX idx_tickets_guild_ticket_number_unique ON tickets(guild_id, ticket_number);
+    END IF;
+  END IF;
+END $$;
 
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN DEFAULT FALSE;
 ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS trigger_on_edit BOOLEAN DEFAULT FALSE;

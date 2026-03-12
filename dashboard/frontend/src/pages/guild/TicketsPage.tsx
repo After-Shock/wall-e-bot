@@ -65,6 +65,12 @@ interface DiscordChannel {
   parent_id: string | null;
 }
 
+interface DiscordRole {
+  id: string;
+  name: string;
+  color: number;
+}
+
 interface TicketConfig {
   transcript_channel_id: string;
   max_tickets_per_user: number;
@@ -314,6 +320,12 @@ export default function TicketsPage() {
     enabled: !!guildId,
   });
 
+  const { data: roles = [] } = useQuery<DiscordRole[]>({
+    queryKey: ['roles', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/roles`).then(r => r.data),
+    enabled: !!guildId,
+  });
+
   const invalidateGroups = () => queryClient.invalidateQueries({ queryKey: ['ticket-groups', guildId] });
   const invalidatePanels = () => queryClient.invalidateQueries({ queryKey: ['ticket-panels', guildId] });
 
@@ -421,6 +433,22 @@ export default function TicketsPage() {
       ));
     } catch (e: any) {
       setError(e?.response?.data?.error || 'Failed to delete category');
+    }
+  };
+
+  const updateCategory = async (panelId: number, categoryId: number, updates: Partial<Category>) => {
+    if (!guildId) return;
+    try {
+      const updated = await ticketApi.updateCategory(guildId, categoryId, updates);
+      setPanels(prev => prev.map(panel => panel.id === panelId ? {
+        ...panel,
+        categories: (panel.categories || []).map(category => category.id === categoryId
+          ? { ...category, ...updated }
+          : category
+        ),
+      } : panel));
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to update category');
     }
   };
 
@@ -669,7 +697,6 @@ export default function TicketsPage() {
                           className="input w-full"
                         >
                           <option value="channel">Channel tickets</option>
-                          <option value="thread">Thread tickets</option>
                         </select>
                       </div>
                       <div>
@@ -780,7 +807,7 @@ export default function TicketsPage() {
                                 }}
                                 className="text-xs text-discord-light hover:text-white transition-colors px-2 py-1 rounded"
                               >
-                                {cat._expanded ? 'Hide' : 'Edit Form'}
+                                {cat._expanded ? 'Hide' : 'Edit Category'}
                               </button>
                               <button
                                 onClick={() => guildId && cat.id && panel.id && deleteCategory(guildId, cat.id, panel.id)}
@@ -793,6 +820,88 @@ export default function TicketsPage() {
                             {/* Form builder */}
                             {cat._expanded && (
                               <div className="border-t border-discord-mid px-3 pb-3 pt-2 space-y-2">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                  <div>
+                                    <label className="block text-xs text-discord-light mb-1">Category Name</label>
+                                    <input
+                                      value={cat.name}
+                                      onChange={e => setPanels(prev => prev.map(p => p.id === panel.id ? {
+                                        ...p,
+                                        categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, name: e.target.value } : c),
+                                      } : p))}
+                                      onBlur={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { name: e.target.value })}
+                                      className="input w-full"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-discord-light mb-1">Emoji</label>
+                                    <input
+                                      value={cat.emoji || ''}
+                                      onChange={e => setPanels(prev => prev.map(p => p.id === panel.id ? {
+                                        ...p,
+                                        categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, emoji: e.target.value } : c),
+                                      } : p))}
+                                      onBlur={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { emoji: e.target.value })}
+                                      className="input w-full"
+                                      placeholder="🎫"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="block text-xs text-discord-light mb-1">Description</label>
+                                    <input
+                                      value={cat.description || ''}
+                                      onChange={e => setPanels(prev => prev.map(p => p.id === panel.id ? {
+                                        ...p,
+                                        categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, description: e.target.value } : c),
+                                      } : p))}
+                                      onBlur={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { description: e.target.value })}
+                                      className="input w-full"
+                                      placeholder="Who should open this ticket?"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-discord-light mb-1">Support Roles</label>
+                                    <select
+                                      multiple
+                                      value={cat.support_role_ids || []}
+                                      onChange={e => {
+                                        const support_role_ids = Array.from(e.target.selectedOptions, option => option.value);
+                                        setPanels(prev => prev.map(p => p.id === panel.id ? {
+                                          ...p,
+                                          categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, support_role_ids } : c),
+                                        } : p));
+                                        if (panel.id && cat.id) void updateCategory(panel.id, cat.id, { support_role_ids });
+                                      }}
+                                      className="input w-full min-h-32"
+                                    >
+                                      {roles.map(role => (
+                                        <option key={role.id} value={role.id}>{role.name}</option>
+                                      ))}
+                                    </select>
+                                    <p className="text-xs text-discord-light mt-1">Hold Ctrl or Cmd to select multiple roles.</p>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-discord-light mb-1">Observer Roles</label>
+                                    <select
+                                      multiple
+                                      value={cat.observer_role_ids || []}
+                                      onChange={e => {
+                                        const observer_role_ids = Array.from(e.target.selectedOptions, option => option.value);
+                                        setPanels(prev => prev.map(p => p.id === panel.id ? {
+                                          ...p,
+                                          categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, observer_role_ids } : c),
+                                        } : p));
+                                        if (panel.id && cat.id) void updateCategory(panel.id, cat.id, { observer_role_ids });
+                                      }}
+                                      className="input w-full min-h-32"
+                                    >
+                                      {roles.map(role => (
+                                        <option key={role.id} value={role.id}>{role.name}</option>
+                                      ))}
+                                    </select>
+                                    <p className="text-xs text-discord-light mt-1">Observers can view ticket channels without replying.</p>
+                                  </div>
+                                </div>
                                 <p className="text-xs text-discord-light mb-2">
                                   Form fields shown to users when they open this ticket type (max 5).
                                 </p>

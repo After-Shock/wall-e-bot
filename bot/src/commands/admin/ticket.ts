@@ -29,10 +29,9 @@ const command: Command = {
               opt.setName('name').setDescription('Panel name').setRequired(true))
             .addStringOption(opt =>
               opt.setName('style')
-                .setDescription('Channel or thread tickets')
+                .setDescription('Ticket creation style')
                 .addChoices(
                   { name: 'Channel (default)', value: 'channel' },
-                  { name: 'Thread', value: 'thread' },
                 ))
             .addStringOption(opt =>
               opt.setName('type')
@@ -72,6 +71,14 @@ const command: Command = {
               opt.setName('name').setDescription('Category name').setRequired(true))
             .addRoleOption(opt =>
               opt.setName('support_role').setDescription('Role that handles this category').setRequired(true))
+            .addRoleOption(opt =>
+              opt.setName('support_role_2').setDescription('Additional support role'))
+            .addRoleOption(opt =>
+              opt.setName('support_role_3').setDescription('Additional support role'))
+            .addRoleOption(opt =>
+              opt.setName('support_role_4').setDescription('Additional support role'))
+            .addRoleOption(opt =>
+              opt.setName('support_role_5').setDescription('Additional support role'))
             .addStringOption(opt =>
               opt.setName('emoji').setDescription('Emoji for this category'))
             .addStringOption(opt =>
@@ -308,7 +315,15 @@ const command: Command = {
           const name = interaction.options.getString('name', true);
           const emoji = interaction.options.getString('emoji') || '🎫';
           const description = interaction.options.getString('description') || '';
-          const supportRole = interaction.options.getRole('support_role', true);
+          const supportRoles = [
+            interaction.options.getRole('support_role', true),
+            interaction.options.getRole('support_role_2'),
+            interaction.options.getRole('support_role_3'),
+            interaction.options.getRole('support_role_4'),
+            interaction.options.getRole('support_role_5'),
+          ]
+            .filter((role): role is NonNullable<typeof role> => Boolean(role))
+            .filter((role, index, roles) => roles.findIndex(candidate => candidate.id === role.id) === index);
 
           const panelCheck = await client.db.pool.query(
             'SELECT id FROM ticket_panels WHERE id = $1 AND guild_id = $2',
@@ -328,12 +343,12 @@ const command: Command = {
           await client.db.pool.query(
             `INSERT INTO ticket_categories (panel_id, guild_id, name, emoji, description, support_role_ids, position)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [panelId, interaction.guild!.id, name, emoji, description, [supportRole.id], position],
+            [panelId, interaction.guild!.id, name, emoji, description, supportRoles.map(role => role.id), position],
           );
 
           await interaction.reply({
             embeds: [successEmbed('Category Added',
-              `Category **${emoji} ${name}** added to panel ${panelId}.\n` +
+              `Category **${emoji} ${name}** added to panel ${panelId} for ${supportRoles.map(role => role.toString()).join(', ')}.\n` +
               'Re-send the panel with `/ticket panel send` to update the Discord message.',
             )],
             ephemeral: true,
@@ -383,9 +398,10 @@ const command: Command = {
         }
 
         const reason = interaction.options.getString('reason') || 'No reason provided';
+        const encodedReason = encodeURIComponent(reason).slice(0, 80);
 
         const confirmBtn = new ButtonBuilder()
-          .setCustomId(`ticket_close_confirm:${ticket.rows[0].id}:${encodeURIComponent(reason)}`)
+          .setCustomId(`ticket_close_confirm:${ticket.rows[0].id}:${encodedReason}`)
           .setLabel('Confirm Close')
           .setEmoji('🔒')
           .setStyle(ButtonStyle.Danger);

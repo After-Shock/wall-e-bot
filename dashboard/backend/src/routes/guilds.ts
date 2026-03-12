@@ -1007,6 +1007,8 @@ guildsRouter.post('/:guildId/ticket-panels', requireAuth, requireGuildAccess,
     const { name, style = 'channel', panel_type = 'buttons', category_open_id, category_closed_id,
             overflow_category_id, channel_name_template = '{type}-{number}' } = req.body;
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+    if (style !== 'channel') { res.status(400).json({ error: 'Only channel-style tickets are currently supported' }); return; }
+    if (!['buttons', 'dropdown'].includes(panel_type)) { res.status(400).json({ error: 'Invalid panel_type' }); return; }
     try {
       const r = await db.query(
         `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template)
@@ -1058,6 +1060,14 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
     const { guildId, panelId } = req.params;
     const { name, style, panel_type, category_open_id, category_closed_id, overflow_category_id,
             channel_name_template } = req.body;
+    if (style !== undefined && style !== 'channel') {
+      res.status(400).json({ error: 'Only channel-style tickets are currently supported' });
+      return;
+    }
+    if (panel_type !== undefined && !['buttons', 'dropdown'].includes(panel_type)) {
+      res.status(400).json({ error: 'Invalid panel_type' });
+      return;
+    }
     try {
       const r = await db.query(
         `UPDATE ticket_panels SET
@@ -1409,13 +1419,15 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
     const { guildId, panelId } = req.params;
     const { name, emoji, description, support_role_ids = [], observer_role_ids = [] } = req.body;
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+    const normalizedSupportRoleIds = [...new Set(support_role_ids)];
+    const normalizedObserverRoleIds = [...new Set(observer_role_ids)].filter(id => !normalizedSupportRoleIds.includes(id));
     // Validate role ID arrays
     const isValidSnowflake = (id: string) => /^\d{17,20}$/.test(id);
-    if (!Array.isArray(support_role_ids) || support_role_ids.length > 10 || !support_role_ids.every(isValidSnowflake)) {
+    if (!Array.isArray(support_role_ids) || normalizedSupportRoleIds.length > 10 || !normalizedSupportRoleIds.every(isValidSnowflake)) {
       res.status(400).json({ error: 'support_role_ids must be an array of up to 10 Discord snowflakes' });
       return;
     }
-    if (!Array.isArray(observer_role_ids) || observer_role_ids.length > 10 || !observer_role_ids.every(isValidSnowflake)) {
+    if (!Array.isArray(observer_role_ids) || normalizedObserverRoleIds.length > 10 || !normalizedObserverRoleIds.every(isValidSnowflake)) {
       res.status(400).json({ error: 'observer_role_ids must be an array of up to 10 Discord snowflakes' });
       return;
     }
@@ -1427,7 +1439,7 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
       const r = await db.query(
         `INSERT INTO ticket_categories (panel_id,guild_id,name,emoji,description,support_role_ids,observer_role_ids,position)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [panelId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, posResult.rows[0].next],
+        [panelId, guildId, name, emoji||null, description||null, normalizedSupportRoleIds, normalizedObserverRoleIds, posResult.rows[0].next],
       );
       res.json(r.rows[0]);
     } catch (error) {
@@ -1443,16 +1455,20 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
     const { name, emoji, description, support_role_ids, observer_role_ids, position } = req.body;
+    const normalizedSupportRoleIds = support_role_ids === undefined ? undefined : [...new Set(support_role_ids)];
+    const normalizedObserverRoleIds = observer_role_ids === undefined
+      ? undefined
+      : [...new Set(observer_role_ids)].filter(id => !normalizedSupportRoleIds?.includes(id));
     // Validate role ID arrays if provided
     const isValidSnowflake = (id: string) => /^\d{17,20}$/.test(id);
     if (support_role_ids !== undefined) {
-      if (!Array.isArray(support_role_ids) || support_role_ids.length > 10 || !support_role_ids.every(isValidSnowflake)) {
+      if (!Array.isArray(support_role_ids) || normalizedSupportRoleIds!.length > 10 || !normalizedSupportRoleIds!.every(isValidSnowflake)) {
         res.status(400).json({ error: 'support_role_ids must be an array of up to 10 Discord snowflakes' });
         return;
       }
     }
     if (observer_role_ids !== undefined) {
-      if (!Array.isArray(observer_role_ids) || observer_role_ids.length > 10 || !observer_role_ids.every(isValidSnowflake)) {
+      if (!Array.isArray(observer_role_ids) || normalizedObserverRoleIds!.length > 10 || !normalizedObserverRoleIds!.every(isValidSnowflake)) {
         res.status(400).json({ error: 'observer_role_ids must be an array of up to 10 Discord snowflakes' });
         return;
       }
@@ -1465,7 +1481,7 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
            observer_role_ids=COALESCE($7,observer_role_ids),
            position=COALESCE($8,position)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [categoryId, guildId, name, emoji||null, description||null, support_role_ids, observer_role_ids, position],
+        [categoryId, guildId, name, emoji||null, description||null, normalizedSupportRoleIds, normalizedObserverRoleIds, position],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
       res.json(r.rows[0]);
