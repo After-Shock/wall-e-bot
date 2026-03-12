@@ -1455,10 +1455,10 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
     const { name, emoji, description, support_role_ids, observer_role_ids, position } = req.body;
-    const normalizedSupportRoleIds = support_role_ids === undefined ? undefined : [...new Set(support_role_ids)];
+    const normalizedSupportRoleIds = support_role_ids === undefined ? undefined : [...new Set(support_role_ids as string[])];
     const normalizedObserverRoleIds = observer_role_ids === undefined
       ? undefined
-      : [...new Set(observer_role_ids)].filter(id => !normalizedSupportRoleIds?.includes(id));
+      : [...new Set(observer_role_ids as string[])].filter(id => !normalizedSupportRoleIds?.includes(id));
     // Validate role ID arrays if provided
     const isValidSnowflake = (id: string) => /^\d{17,20}$/.test(id);
     if (support_role_ids !== undefined) {
