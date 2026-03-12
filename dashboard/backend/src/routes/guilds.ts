@@ -1419,8 +1419,8 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
     const { guildId, panelId } = req.params;
     const { name, emoji, description, support_role_ids = [], observer_role_ids = [] } = req.body;
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
-    const normalizedSupportRoleIds = [...new Set(support_role_ids)];
-    const normalizedObserverRoleIds = [...new Set(observer_role_ids)].filter(id => !normalizedSupportRoleIds.includes(id));
+    const normalizedSupportRoleIds = [...new Set(support_role_ids as string[])];
+    const normalizedObserverRoleIds = [...new Set(observer_role_ids as string[])].filter(id => !normalizedSupportRoleIds.includes(id));
     // Validate role ID arrays
     const isValidSnowflake = (id: string) => /^\d{17,20}$/.test(id);
     if (!Array.isArray(support_role_ids) || normalizedSupportRoleIds.length > 10 || !normalizedSupportRoleIds.every(isValidSnowflake)) {
