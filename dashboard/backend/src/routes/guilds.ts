@@ -1713,7 +1713,7 @@ guildsRouter.post(
           'SELECT id, name, description, position FROM command_groups WHERE guild_id = $1 ORDER BY position',
           [sourceGuildId],
         );
-        // DELETE target groups (cascades to custom_commands via FK)
+        // DELETE target groups (group_id on custom_commands is ON DELETE SET NULL; explicit DELETE below handles commands)
         await client.query('DELETE FROM command_groups WHERE guild_id = $1', [targetGuildId]);
 
         const groupIdMap = new Map<number, number>();
@@ -1856,6 +1856,7 @@ guildsRouter.post(
           [sourceGuildId],
         );
         await client.query('DELETE FROM ticket_panel_groups WHERE guild_id = $1', [targetGuildId]);
+        await client.query('DELETE FROM ticket_panels WHERE guild_id = $1', [targetGuildId]);
 
         const panelGroupIdMap = new Map<number, number>();
         for (const pg of srcPanelGroups.rows) {
@@ -1922,7 +1923,7 @@ guildsRouter.post(
           const fPlaceholders: (string | null)[] = [];
           const fMinLengths: (number | null)[] = [];
           const fMaxLengths: (number | null)[] = [];
-          const fStyles: (number | null)[] = [];
+          const fStyles: (string | null)[] = [];
           const fRequireds: boolean[] = [];
           const fPositions: number[] = [];
           for (const f of srcFields.rows) {
@@ -1940,7 +1941,7 @@ guildsRouter.post(
                (category_id, label, placeholder, min_length, max_length, style, required, position)
              SELECT
                unnest($1::int[]), unnest($2::text[]), unnest($3::text[]),
-               unnest($4::int[]), unnest($5::int[]), unnest($6::int[]),
+               unnest($4::int[]), unnest($5::int[]), unnest($6::text[]),
                unnest($7::bool[]), unnest($8::int[])`,
             [fCatIds, fLabels, fPlaceholders, fMinLengths, fMaxLengths, fStyles, fRequireds, fPositions],
           );
