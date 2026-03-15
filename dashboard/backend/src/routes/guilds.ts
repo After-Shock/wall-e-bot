@@ -1743,7 +1743,7 @@ guildsRouter.post(
             guildIds: [] as string[],
             names: [] as string[],
             responses: [] as (string | null)[],
-            embedResponses: [] as (unknown)[],
+            embedResponses: [] as (boolean | null)[],
             embedColors: [] as (string | null)[],
             cooldowns: [] as (number | null)[],
             deleteCommands: [] as (boolean | null)[],
@@ -1757,7 +1757,7 @@ guildsRouter.post(
             caseSensitives: [] as (boolean | null)[],
             triggerOnEdits: [] as (boolean | null)[],
             enableds: [] as (boolean | null)[],
-            cembedResponses: [] as (unknown)[],
+            cembedResponses: [] as (boolean | null)[],
             descriptions: [] as (string | null)[],
           };
           for (const c of srcCmds.rows) {
@@ -1792,22 +1792,22 @@ guildsRouter.post(
                 case_sensitive, trigger_on_edit, enabled, cembed_response, description)
              SELECT
                unnest($1::text[]), unnest($2::text[]), unnest($3::text[]),
-               unnest($4::jsonb[]), unnest($5::text[]),
+               unnest($4::bool[]), unnest($5::text[]),
                '{}', '{}',
                unnest($6::int[]), unnest($7::bool[]), unnest($8::text[]), 0,
                unnest($9::text[]), unnest($10::int[]), unnest($11::jsonb[]), unnest($12::text[]),
                NULL, NULL, NULL, NULL,
                unnest($13::text[]), unnest($14::text[]),
                unnest($15::bool[]), unnest($16::bool[]), unnest($17::bool[]),
-               unnest($18::jsonb[]), unnest($19::text[])`,
+               unnest($18::bool[]), unnest($19::text[])`,
             [
               cols.guildIds, cols.names, cols.responses,
-              cols.embedResponses.map(v => JSON.stringify(v)), cols.embedColors,
+              cols.embedResponses, cols.embedColors,
               cols.cooldowns, cols.deleteCommands, cols.createdBys,
               cols.triggerTypes, cols.groupIds, cols.responsesJson.map(v => JSON.stringify(v)),
               cols.intervalCrons, cols.reactionEmojis, cols.reactionTypes,
               cols.caseSensitives, cols.triggerOnEdits, cols.enableds,
-              cols.cembedResponses.map(v => JSON.stringify(v)), cols.descriptions,
+              cols.cembedResponses, cols.descriptions,
             ],
           );
         }
