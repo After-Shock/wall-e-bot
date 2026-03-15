@@ -24,7 +24,7 @@ New modal with three internal states:
 - "Select All" and "Deselect All" buttons
 - 6 category cards in a 2-column grid, all pre-selected by default
 - Each card: emoji, name, short description of what it contains, blue border + checkmark when selected
-- Warning banner: "Channel and role assignments will be cleared — they reference IDs specific to each server."
+- Warning banner: "Channel and role assignments will be cleared where possible — you'll need to reassign them after syncing. Scheduled messages and auto-delete channels retain their channel IDs and must be reconfigured manually."
 - Footer: Cancel button + "Copy N Categories →" button (N updates as cards are toggled)
 
 **Loading state**
@@ -33,7 +33,7 @@ New modal with three internal states:
 - Modal cannot be closed during sync
 
 **Result state**
-- Success: green checkmark icon, "All N categories synced!", reminder to reassign channels/roles, "Done" button dismisses modal and invalidates guild config query cache
+- Success: green checkmark icon, "N categories synced!" (N = count of categories that had data; categories with zero source rows are silently skipped and not counted), reminder to reassign channels/roles, "Done" button dismisses modal and invalidates guild config query cache
 - Error: red icon, actual error message from server (never a generic fallback), "Try Again" button returns to idle state with selections preserved
 
 ### Category cards
@@ -43,7 +43,7 @@ New modal with three internal states:
 | General | ⚙️ | Welcome, leveling, starboard, prefix |
 | Moderation | 🛡️ | Logging, automod, spam, word filters, link protection |
 | Custom Commands | 🤖 | Commands & groups, triggers, responses |
-| Roles | 🎭 | Auto roles, reaction roles |
+| Roles | 🎭 | Auto roles (reaction roles not copied — see backend notes) |
 | Tickets | 🎫 | Panels, categories, forms, ticket config |
 | Automation | ⏰ | Scheduled messages, auto-delete channels |
 
@@ -57,55 +57,69 @@ New modal with three internal states:
 
 ### Category → table mapping
 
-| Category key | Tables written |
-|---|---|
-| `general` | `guild_configs` (non-moderation sections) |
-| `moderation` | `guild_configs` (moderation/automod/logging/spam/wordfilter/linkprotection sections) |
-| `commands` | `command_groups`, `custom_commands` |
-| `roles` | `auto_roles`, `reaction_roles`, `reaction_role_messages` |
-| `tickets` | `ticket_config`, `ticket_panel_groups`, `ticket_panels`, `ticket_categories`, `ticket_form_fields` |
-| `automation` | `scheduled_messages`, `auto_delete_channels` |
+| Category key | Tables written | Notes |
+|---|---|---|
+| `general` | `guild_configs` (non-moderation sections) | Merged with `moderation` if both selected |
+| `moderation` | `guild_configs` (moderation/automod/logging/spam/wordfilter/linkprotection sections) | Merged with `general` if both selected |
+| `commands` | `command_groups`, `custom_commands` | FK remapping required — see insert strategy |
+| `roles` | `auto_roles` only | `reaction_roles` and `reaction_role_messages` are **not copied** — their `message_id`/`channel_id` columns are `NOT NULL` and reference server-specific Discord message IDs that cannot be transferred. These rows are silently dropped. |
+| `tickets` | `ticket_config`, `ticket_panel_groups`, `ticket_panels`, `ticket_categories`, `ticket_form_fields` | FK remapping required — see insert strategy and write order |
+| `automation` | `scheduled_messages`, `auto_delete_channels` | Rows are copied with `channel_id` preserved (server-specific but `NOT NULL` — cannot be nulled). Admin must reassign channels after sync. |
 
-**Note:** `general` and `moderation` both live in `guild_configs`. If either or both are selected, the config is fetched once, sections are merged selectively, and written in one upsert.
+**Note on `general` and `moderation`:** Both live in `guild_configs`. If either or both are selected, the config is fetched once, sections are merged selectively, and written in one upsert. `stripServerIds` handles nulling all `*_channel_id` and `*_role_id` keys within the JSON.
 
 ### Transaction
 
-All selected category writes execute inside a single DB transaction. Any failure rolls back everything and returns the DB error message to the client.
+All selected category writes execute inside a **single DB transaction** using a dedicated client acquired from the pool (`db.connect()`). The implementation must:
+1. Call `client.query('BEGIN')`
+2. Execute all writes on the same `client` instance
+3. Call `client.query('COMMIT')` on success
+4. Call `client.query('ROLLBACK')` on any error, then re-throw
+5. Release the client in a `finally` block
 
-### Batch inserts
+Pool-level `db.query()` calls must not be used inside the transaction — they may resolve on different pool clients and will not participate in the transaction.
 
-Replace per-row loops with batch `INSERT ... SELECT` queries (copy directly from source guild to target guild in one query per table). This avoids the nginx 60s proxy timeout that currently breaks the sync.
+### Insert strategy
+
+Two patterns are used depending on whether FK remapping is required:
+
+**Flat tables** (`auto_roles`, `guild_configs`, `ticket_config`, `scheduled_messages`, `auto_delete_channels`): use a single `INSERT INTO target SELECT ... FROM source WHERE guild_id = $sourceGuildId` query per table, with `ON CONFLICT (guild_id) DO UPDATE` where applicable.
+
+**FK-remapping tables** (`command_groups`→`custom_commands`, `ticket_panel_groups`→`ticket_panels`→`ticket_categories`→`ticket_form_fields`): use sequential inserts with `RETURNING id` to capture new IDs, building an in-process map (old ID → new ID) used to rewrite FK columns in child rows. CTEs with `RETURNING` are an acceptable alternative if the implementer prefers a single-query approach.
+
+This avoids the nginx 60s proxy timeout that breaks the current per-row loop approach.
 
 ### Fields cleared on copy
 
-All values referencing server-specific Discord IDs are nulled/emptied:
-- `allowed_roles`, `allowed_channels` → `'{}'`
-- `interval_channel_id`, `reaction_channel_id`, `reaction_message_id` → `NULL`
-- Any `*_channel_id`, `*_role_id` fields in `guild_configs` → `NULL` (via existing `stripServerIds`)
+- `allowed_roles`, `allowed_channels` arrays → `'{}'` (empty array)
+- `interval_channel_id`, `reaction_channel_id`, `reaction_message_id` in `custom_commands` → `NULL`
+- All `*_channel_id` and `*_role_id` keys inside the `guild_configs` JSON blob → `NULL` (via existing `stripServerIds`)
+- `scheduled_messages.channel_id` and `auto_delete_channels.channel_id`: preserved as-is (NOT NULL constraint; admin must reassign after sync)
 
 ### Atomicity rules
 
-- **Tickets** are always written as a unit (`ticket_panel_groups` → `ticket_panels` → `ticket_categories` → `ticket_form_fields` → `ticket_config`), in dependency order. The UI presents this as one card.
-- **Commands** are always written as a unit (`command_groups` first, then `custom_commands` with remapped `group_id`). One card.
+- **Tickets** are always written as a unit, in FK dependency order: `ticket_config` (independent), then `ticket_panel_groups` → `ticket_panels` → `ticket_categories` → `ticket_form_fields`. The UI presents this as one card with no sub-checkboxes.
+- **Commands** are always written as a unit: `command_groups` first (capturing new IDs), then `custom_commands` with `group_id` remapped. One card.
+- A category with zero source rows is a silent no-op — not an error. The success message counts only categories where at least one row was written.
 
 ### Error responses
 
 | Condition | HTTP | Message |
 |---|---|---|
-| No categories selected | 400 | "Select at least one category to sync" |
+| No categories selected / empty array | 400 | "Select at least one category to sync" |
 | Same source and target | 400 | "Cannot copy settings to the same server" |
 | No permission on source | 403 | "You don't have permission to access the source server" |
-| Source has no config | 404 | "Source server has no configuration" |
+| Source has no guild_configs row | 404 | "Source server has no configuration" |
 | DB error | 500 | Actual DB error message (not a generic fallback) |
 
 ## Data Flow
 
-1. User selects source server on SyncPage → "Open Sync Modal" enables
+1. User selects source server on SyncPage → "Open Sync Modal" button enables
 2. Modal opens → all 6 cards pre-selected
 3. User deselects unwanted cards → button label updates to "Copy N Categories"
 4. User clicks copy → modal enters loading state → `POST copy-from` fires with `categories` array
-5. On success → modal shows success state → user clicks "Done" → modal closes, TanStack Query cache for `['guild', guildId]` invalidated
-6. On error → modal shows error message with "Try Again" → returns to idle with prior selections intact
+5. On success → modal shows success state with count of categories that had data → user clicks "Done" → modal closes, TanStack Query cache for `['guild', guildId]` invalidated
+6. On error → modal shows actual server error message with "Try Again" → returns to idle with prior selections intact
 
 ## Files Affected
 
