@@ -1648,7 +1648,7 @@ guildsRouter.get('/:guildId/tickets', requireAuth, requireGuildAccess, asyncHand
   }
 }));
 
-// Copy settings from one guild to another
+// Copy settings from one guild to another (selective categories)
 guildsRouter.post(
   '/:guildId/copy-from/:sourceGuildId',
   requireAuth,
@@ -1658,14 +1658,19 @@ guildsRouter.post(
     const authReq = req as AuthenticatedRequest;
     const targetGuildId = req.params.guildId;
     const { sourceGuildId } = req.params;
+    const categories: string[] = Array.isArray(req.body?.categories) ? req.body.categories : [];
 
-    // Guard: same guild
+    const VALID = new Set(['general', 'moderation', 'commands', 'roles', 'tickets', 'automation']);
+    const selected = categories.filter(c => VALID.has(c));
+
+    if (selected.length === 0) {
+      res.status(400).json({ error: 'Select at least one category to sync' });
+      return;
+    }
     if (targetGuildId === sourceGuildId) {
       res.status(400).json({ error: 'Cannot copy settings to the same server' });
       return;
     }
-
-    // Guard: user must also have access to source guild
     if (!authReq.user?.guilds) {
       res.status(401).json({ error: 'Not authenticated' });
       return;
@@ -1675,77 +1680,311 @@ guildsRouter.post(
       return;
     }
 
+    const client = await db.connect();
+    let syncedCount = 0;
     try {
-      // Fetch source config
-      const sourceResult = await db.query(
-        'SELECT config FROM guild_configs WHERE guild_id = $1',
-        [sourceGuildId],
-      );
+      await client.query('BEGIN');
 
-      if (sourceResult.rows.length === 0) {
-        res.status(404).json({ error: 'Source server has no configuration' });
-        return;
-      }
-
-      const sourceConfig = sourceResult.rows[0].config;
-      const cleanedConfig = stripServerIds(sourceConfig);
-
-      await db.query(
-        `INSERT INTO guild_configs (guild_id, config, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (guild_id)
-         DO UPDATE SET config = $2, updated_at = NOW()`,
-        [targetGuildId, JSON.stringify(cleanedConfig)],
-      );
-
-      // Copy command groups (clear role/channel arrays, remap IDs)
-      const sourceGroups = await db.query(
-        'SELECT * FROM command_groups WHERE guild_id = $1 ORDER BY position',
-        [sourceGuildId],
-      );
-      await db.query('DELETE FROM command_groups WHERE guild_id = $1', [targetGuildId]);
-      const groupIdMap = new Map<number, number>(); // old id → new id
-      for (const g of sourceGroups.rows) {
-        const inserted = await db.query(
-          `INSERT INTO command_groups (guild_id, name, description, allowed_roles, allowed_channels, ignore_roles, ignore_channels, position)
-           VALUES ($1, $2, $3, '{}', '{}', '{}', '{}', $4) RETURNING id`,
-          [targetGuildId, g.name, g.description, g.position],
+      // ── general / moderation (both live in guild_configs) ──────────────────
+      if (selected.includes('general') || selected.includes('moderation')) {
+        const srcCfg = await client.query(
+          'SELECT config FROM guild_configs WHERE guild_id = $1',
+          [sourceGuildId],
         );
-        groupIdMap.set(g.id, inserted.rows[0].id);
-      }
-
-      // Copy custom commands (clear server-specific IDs, remap group_id)
-      const sourceCommands = await db.query(
-        'SELECT * FROM custom_commands WHERE guild_id = $1',
-        [sourceGuildId],
-      );
-      await db.query('DELETE FROM custom_commands WHERE guild_id = $1', [targetGuildId]);
-      for (const c of sourceCommands.rows) {
-        const newGroupId = c.group_id != null ? (groupIdMap.get(c.group_id) ?? null) : null;
-        await db.query(
-          `INSERT INTO custom_commands
-             (guild_id, name, response, embed_response, embed_color, allowed_roles, allowed_channels,
-              cooldown, delete_command, created_by, uses, trigger_type, group_id, responses,
-              interval_cron, interval_channel_id, interval_next_run,
-              reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
-              case_sensitive, trigger_on_edit, enabled, cembed_response, description)
-           VALUES ($1,$2,$3,$4,$5,'{}','{}', $6,$7,$8,0,$9,$10,$11,$12,NULL,NULL,NULL,NULL,$13,$14,$15,$16,$17,$18,$19)`,
-          [
-            targetGuildId, c.name, c.response, c.embed_response, c.embed_color,
-            c.cooldown, c.delete_command, c.created_by,
-            c.trigger_type, newGroupId, c.responses,
-            c.interval_cron,
-            c.reaction_emoji, c.reaction_type,
-            c.case_sensitive, c.trigger_on_edit, c.enabled, c.cembed_response, c.description,
-          ],
+        if (srcCfg.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ error: 'Source server has no configuration' });
+          return;
+        }
+        const cleaned = stripServerIds(srcCfg.rows[0].config);
+        await client.query(
+          `INSERT INTO guild_configs (guild_id, config, updated_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (guild_id) DO UPDATE SET config = $2, updated_at = NOW()`,
+          [targetGuildId, JSON.stringify(cleaned)],
         );
+        syncedCount++;
+        if (selected.includes('general') && selected.includes('moderation')) syncedCount++; // both selected → both count
       }
 
-      logger.info('Guild config copied', { sourceGuildId, targetGuildId, userId: authReq.user!.id });
-      res.json({ success: true });
+      // ── commands ───────────────────────────────────────────────────────────
+      if (selected.includes('commands')) {
+        const srcGroups = await client.query(
+          'SELECT id, name, description, position FROM command_groups WHERE guild_id = $1 ORDER BY position',
+          [sourceGuildId],
+        );
+        // DELETE target groups (cascades to custom_commands via FK)
+        await client.query('DELETE FROM command_groups WHERE guild_id = $1', [targetGuildId]);
+
+        const groupIdMap = new Map<number, number>();
+        for (const g of srcGroups.rows) {
+          const ins = await client.query(
+            `INSERT INTO command_groups
+               (guild_id, name, description, allowed_roles, allowed_channels, ignore_roles, ignore_channels, position)
+             VALUES ($1, $2, $3, '{}', '{}', '{}', '{}', $4)
+             RETURNING id`,
+            [targetGuildId, g.name, g.description, g.position],
+          );
+          groupIdMap.set(g.id as number, ins.rows[0].id as number);
+        }
+
+        const srcCmds = await client.query(
+          `SELECT name, response, embed_response, embed_color, cooldown, delete_command,
+                  created_by, trigger_type, group_id, responses, interval_cron,
+                  reaction_emoji, reaction_type, case_sensitive, trigger_on_edit,
+                  enabled, cembed_response, description
+           FROM custom_commands WHERE guild_id = $1`,
+          [sourceGuildId],
+        );
+        await client.query('DELETE FROM custom_commands WHERE guild_id = $1', [targetGuildId]);
+
+        if (srcCmds.rows.length > 0) {
+          const cols = {
+            guildIds: [] as string[],
+            names: [] as string[],
+            responses: [] as (string | null)[],
+            embedResponses: [] as (unknown)[],
+            embedColors: [] as (string | null)[],
+            cooldowns: [] as (number | null)[],
+            deleteCommands: [] as (boolean | null)[],
+            createdBys: [] as (string | null)[],
+            triggerTypes: [] as (string | null)[],
+            groupIds: [] as (number | null)[],
+            responsesJson: [] as (unknown)[],
+            intervalCrons: [] as (string | null)[],
+            reactionEmojis: [] as (string | null)[],
+            reactionTypes: [] as (string | null)[],
+            caseSensitives: [] as (boolean | null)[],
+            triggerOnEdits: [] as (boolean | null)[],
+            enableds: [] as (boolean | null)[],
+            cembedResponses: [] as (unknown)[],
+            descriptions: [] as (string | null)[],
+          };
+          for (const c of srcCmds.rows) {
+            cols.guildIds.push(targetGuildId);
+            cols.names.push(c.name);
+            cols.responses.push(c.response);
+            cols.embedResponses.push(c.embed_response);
+            cols.embedColors.push(c.embed_color);
+            cols.cooldowns.push(c.cooldown);
+            cols.deleteCommands.push(c.delete_command);
+            cols.createdBys.push(c.created_by);
+            cols.triggerTypes.push(c.trigger_type);
+            cols.groupIds.push(c.group_id != null ? (groupIdMap.get(c.group_id) ?? null) : null);
+            cols.responsesJson.push(c.responses);
+            cols.intervalCrons.push(c.interval_cron);
+            cols.reactionEmojis.push(c.reaction_emoji);
+            cols.reactionTypes.push(c.reaction_type);
+            cols.caseSensitives.push(c.case_sensitive);
+            cols.triggerOnEdits.push(c.trigger_on_edit);
+            cols.enableds.push(c.enabled);
+            cols.cembedResponses.push(c.cembed_response);
+            cols.descriptions.push(c.description);
+          }
+          await client.query(
+            `INSERT INTO custom_commands
+               (guild_id, name, response, embed_response, embed_color,
+                allowed_roles, allowed_channels, cooldown, delete_command, created_by, uses,
+                trigger_type, group_id, responses, interval_cron,
+                interval_channel_id, interval_next_run,
+                reaction_message_id, reaction_channel_id,
+                reaction_emoji, reaction_type,
+                case_sensitive, trigger_on_edit, enabled, cembed_response, description)
+             SELECT
+               unnest($1::text[]), unnest($2::text[]), unnest($3::text[]),
+               unnest($4::jsonb[]), unnest($5::text[]),
+               '{}', '{}',
+               unnest($6::int[]), unnest($7::bool[]), unnest($8::text[]), 0,
+               unnest($9::text[]), unnest($10::int[]), unnest($11::jsonb[]), unnest($12::text[]),
+               NULL, NULL, NULL, NULL,
+               unnest($13::text[]), unnest($14::text[]),
+               unnest($15::bool[]), unnest($16::bool[]), unnest($17::bool[]),
+               unnest($18::jsonb[]), unnest($19::text[])`,
+            [
+              cols.guildIds, cols.names, cols.responses,
+              cols.embedResponses.map(v => JSON.stringify(v)), cols.embedColors,
+              cols.cooldowns, cols.deleteCommands, cols.createdBys,
+              cols.triggerTypes, cols.groupIds, cols.responsesJson.map(v => JSON.stringify(v)),
+              cols.intervalCrons, cols.reactionEmojis, cols.reactionTypes,
+              cols.caseSensitives, cols.triggerOnEdits, cols.enableds,
+              cols.cembedResponses.map(v => JSON.stringify(v)), cols.descriptions,
+            ],
+          );
+        }
+        syncedCount++;
+      }
+
+      // ── roles ──────────────────────────────────────────────────────────────
+      if (selected.includes('roles')) {
+        await client.query('DELETE FROM auto_roles WHERE guild_id = $1', [targetGuildId]);
+        const rolesIns = await client.query(
+          `INSERT INTO auto_roles (guild_id, role_id, delay_minutes, include_bots)
+           SELECT $2, role_id, delay_minutes, include_bots
+           FROM auto_roles WHERE guild_id = $1`,
+          [sourceGuildId, targetGuildId],
+        );
+        if (rolesIns.rowCount && rolesIns.rowCount > 0) syncedCount++;
+      }
+
+      // ── tickets ────────────────────────────────────────────────────────────
+      if (selected.includes('tickets')) {
+        let ticketRows = 0;
+
+        // ticket_config (flat, one row per guild)
+        const srcTktCfg = await client.query(
+          'SELECT transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message FROM ticket_config WHERE guild_id = $1',
+          [sourceGuildId],
+        );
+        if (srcTktCfg.rows.length > 0) {
+          const tc = srcTktCfg.rows[0];
+          await client.query(
+            `INSERT INTO ticket_config (guild_id, transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message)
+             VALUES ($1, NULL, $2, $3, $4)
+             ON CONFLICT (guild_id) DO UPDATE
+               SET transcript_channel_id = NULL,
+                   max_tickets_per_user = $2,
+                   auto_close_hours = $3,
+                   welcome_message = $4`,
+            [targetGuildId, tc.max_tickets_per_user, tc.auto_close_hours, tc.welcome_message],
+          );
+          ticketRows++;
+        }
+
+        // ticket_panel_groups → ticket_panels → ticket_categories → ticket_form_fields
+        const srcPanelGroups = await client.query(
+          'SELECT id, name FROM ticket_panel_groups WHERE guild_id = $1',
+          [sourceGuildId],
+        );
+        await client.query('DELETE FROM ticket_panel_groups WHERE guild_id = $1', [targetGuildId]);
+
+        const panelGroupIdMap = new Map<number, number>();
+        for (const pg of srcPanelGroups.rows) {
+          const ins = await client.query(
+            `INSERT INTO ticket_panel_groups (guild_id, name, last_channel_id, last_message_id)
+             VALUES ($1, $2, NULL, NULL) RETURNING id`,
+            [targetGuildId, pg.name],
+          );
+          panelGroupIdMap.set(pg.id as number, ins.rows[0].id as number);
+          ticketRows++;
+        }
+
+        const srcPanels = await client.query(
+          `SELECT id, name, style, panel_type, panel_group_id, channel_name_template
+           FROM ticket_panels WHERE guild_id = $1`,
+          [sourceGuildId],
+        );
+        const panelIdMap = new Map<number, number>();
+        for (const p of srcPanels.rows) {
+          const newGroupId = p.panel_group_id != null ? (panelGroupIdMap.get(p.panel_group_id) ?? null) : null;
+          const ins = await client.query(
+            `INSERT INTO ticket_panels
+               (guild_id, name, style, panel_type, panel_group_id,
+                panel_channel_id, panel_message_id,
+                category_open_id, category_closed_id, overflow_category_id,
+                channel_name_template)
+             VALUES ($1, $2, $3, $4, $5, NULL, NULL, NULL, NULL, NULL, $6)
+             RETURNING id`,
+            [targetGuildId, p.name, p.style, p.panel_type, newGroupId, p.channel_name_template],
+          );
+          panelIdMap.set(p.id as number, ins.rows[0].id as number);
+          ticketRows++;
+        }
+
+        const srcCats = await client.query(
+          `SELECT id, panel_id, name, emoji, description, support_role_ids, observer_role_ids, position
+           FROM ticket_categories WHERE guild_id = $1`,
+          [sourceGuildId],
+        );
+        const categoryIdMap = new Map<number, number>();
+        for (const cat of srcCats.rows) {
+          const newPanelId = panelIdMap.get(cat.panel_id) ?? null;
+          const ins = await client.query(
+            `INSERT INTO ticket_categories
+               (panel_id, guild_id, name, emoji, description, support_role_ids, observer_role_ids, position)
+             VALUES ($1, $2, $3, $4, $5, '{}', '{}', $6)
+             RETURNING id`,
+            [newPanelId, targetGuildId, cat.name, cat.emoji, cat.description, cat.position],
+          );
+          categoryIdMap.set(cat.id as number, ins.rows[0].id as number);
+          ticketRows++;
+        }
+
+        const srcFields = await client.query(
+          `SELECT tf.category_id, tf.label, tf.placeholder, tf.min_length, tf.max_length, tf.style, tf.required, tf.position
+           FROM ticket_form_fields tf
+           JOIN ticket_categories tc ON tc.id = tf.category_id
+           WHERE tc.guild_id = $1`,
+          [sourceGuildId],
+        );
+        if (srcFields.rows.length > 0) {
+          const fCatIds: number[] = [];
+          const fLabels: string[] = [];
+          const fPlaceholders: (string | null)[] = [];
+          const fMinLengths: (number | null)[] = [];
+          const fMaxLengths: (number | null)[] = [];
+          const fStyles: (number | null)[] = [];
+          const fRequireds: boolean[] = [];
+          const fPositions: number[] = [];
+          for (const f of srcFields.rows) {
+            fCatIds.push(categoryIdMap.get(f.category_id) ?? f.category_id);
+            fLabels.push(f.label);
+            fPlaceholders.push(f.placeholder);
+            fMinLengths.push(f.min_length);
+            fMaxLengths.push(f.max_length);
+            fStyles.push(f.style);
+            fRequireds.push(f.required);
+            fPositions.push(f.position);
+          }
+          await client.query(
+            `INSERT INTO ticket_form_fields
+               (category_id, label, placeholder, min_length, max_length, style, required, position)
+             SELECT
+               unnest($1::int[]), unnest($2::text[]), unnest($3::text[]),
+               unnest($4::int[]), unnest($5::int[]), unnest($6::int[]),
+               unnest($7::bool[]), unnest($8::int[])`,
+            [fCatIds, fLabels, fPlaceholders, fMinLengths, fMaxLengths, fStyles, fRequireds, fPositions],
+          );
+          ticketRows++;
+        }
+
+        if (ticketRows > 0) syncedCount++;
+      }
+
+      // ── automation ─────────────────────────────────────────────────────────
+      if (selected.includes('automation')) {
+        await client.query('DELETE FROM scheduled_messages WHERE guild_id = $1', [targetGuildId]);
+        const smIns = await client.query(
+          `INSERT INTO scheduled_messages
+             (guild_id, channel_id, message, cron_expression, interval_minutes, next_run, enabled, created_by)
+           SELECT $2, channel_id, message, cron_expression, interval_minutes, next_run, enabled, created_by
+           FROM scheduled_messages WHERE guild_id = $1`,
+          [sourceGuildId, targetGuildId],
+        );
+
+        await client.query('DELETE FROM auto_delete_channels WHERE guild_id = $1', [targetGuildId]);
+        const adcIns = await client.query(
+          `INSERT INTO auto_delete_channels
+             (guild_id, channel_id, max_age_hours, max_messages, exempt_roles, enabled)
+           SELECT $2, channel_id, max_age_hours, max_messages, '{}', enabled
+           FROM auto_delete_channels WHERE guild_id = $1
+           ON CONFLICT (guild_id, channel_id) DO NOTHING`,
+          [sourceGuildId, targetGuildId],
+        );
+        if ((smIns.rowCount ?? 0) + (adcIns.rowCount ?? 0) > 0) syncedCount++;
+      }
+
+      await client.query('COMMIT');
+      logger.info('Guild config copied', {
+        sourceGuildId, targetGuildId, userId: authReq.user!.id, selected, syncedCount,
+      });
+      res.json({ syncedCount });
     } catch (error) {
-      logger.error('Error copying guild config:', { sourceGuildId, targetGuildId, error });
-      res.status(500).json({ error: 'Failed to copy guild settings' });
+      await client.query('ROLLBACK');
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('Error copying guild config:', { sourceGuildId, targetGuildId, error: msg });
+      res.status(500).json({ error: msg });
+    } finally {
+      client.release();
     }
   }),
 );
