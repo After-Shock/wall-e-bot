@@ -1698,6 +1698,49 @@ guildsRouter.post(
         [targetGuildId, JSON.stringify(cleanedConfig)],
       );
 
+      // Copy command groups (clear role/channel arrays, remap IDs)
+      const sourceGroups = await db.query(
+        'SELECT * FROM command_groups WHERE guild_id = $1 ORDER BY position',
+        [sourceGuildId],
+      );
+      await db.query('DELETE FROM command_groups WHERE guild_id = $1', [targetGuildId]);
+      const groupIdMap = new Map<number, number>(); // old id → new id
+      for (const g of sourceGroups.rows) {
+        const inserted = await db.query(
+          `INSERT INTO command_groups (guild_id, name, description, allowed_roles, allowed_channels, ignore_roles, ignore_channels, position)
+           VALUES ($1, $2, $3, '{}', '{}', '{}', '{}', $4) RETURNING id`,
+          [targetGuildId, g.name, g.description, g.position],
+        );
+        groupIdMap.set(g.id, inserted.rows[0].id);
+      }
+
+      // Copy custom commands (clear server-specific IDs, remap group_id)
+      const sourceCommands = await db.query(
+        'SELECT * FROM custom_commands WHERE guild_id = $1',
+        [sourceGuildId],
+      );
+      await db.query('DELETE FROM custom_commands WHERE guild_id = $1', [targetGuildId]);
+      for (const c of sourceCommands.rows) {
+        const newGroupId = c.group_id != null ? (groupIdMap.get(c.group_id) ?? null) : null;
+        await db.query(
+          `INSERT INTO custom_commands
+             (guild_id, name, response, embed_response, embed_color, allowed_roles, allowed_channels,
+              cooldown, delete_command, created_by, uses, trigger_type, group_id, responses,
+              interval_cron, interval_channel_id, interval_next_run,
+              reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
+              case_sensitive, trigger_on_edit, enabled, cembed_response, description)
+           VALUES ($1,$2,$3,$4,$5,'{}','{}', $6,$7,$8,0,$9,$10,$11,$12,NULL,NULL,NULL,NULL,$13,$14,$15,$16,$17,$18,$19)`,
+          [
+            targetGuildId, c.name, c.response, c.embed_response, c.embed_color,
+            c.cooldown, c.delete_command, c.created_by,
+            c.trigger_type, newGroupId, c.responses,
+            c.interval_cron,
+            c.reaction_emoji, c.reaction_type,
+            c.case_sensitive, c.trigger_on_edit, c.enabled, c.cembed_response, c.description,
+          ],
+        );
+      }
+
       logger.info('Guild config copied', { sourceGuildId, targetGuildId, userId: authReq.user!.id });
       res.json({ success: true });
     } catch (error) {
