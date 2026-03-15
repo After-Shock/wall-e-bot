@@ -92,7 +92,7 @@ export default function SyncPage() {
               onClick={() => setModalOpen(true)}
             >
               <Copy className="w-4 h-4" />
-              Open Sync Modal
+              Copy Settings…
             </button>
           </>
         )}
