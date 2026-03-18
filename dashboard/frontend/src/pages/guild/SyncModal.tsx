@@ -81,7 +81,7 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
       onClick={isLoading ? undefined : onClose}
     >
       <div
-        className="bg-discord-secondary rounded-xl w-full max-w-lg mx-4 overflow-hidden shadow-2xl"
+        className="bg-discord-darker rounded-xl w-full max-w-lg mx-4 overflow-hidden shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -188,7 +188,7 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
         {modalState === 'success' && (
           <div className="px-6 pb-6">
             <div className="flex flex-col items-center py-6 gap-3">
-              <div className="w-12 h-12 rounded-full bg-green-500/15 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
                 <CheckCircle className="w-7 h-7 text-green-400" />
               </div>
               <div className="text-green-400 font-semibold">
@@ -210,7 +210,7 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
         {modalState === 'error' && (
           <div className="px-6 pb-6">
             <div className="flex flex-col items-center py-6 gap-3">
-              <div className="w-12 h-12 rounded-full bg-red-500/15 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
                 <AlertTriangle className="w-7 h-7 text-red-400" />
               </div>
               <div className="text-red-400 font-semibold text-sm text-center">{errorMsg}</div>
