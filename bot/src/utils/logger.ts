@@ -1,6 +1,8 @@
 import winston from 'winston';
+import { resolveLogDirectory } from './logDirectory.js';
 
 const { combine, timestamp, printf, colorize, errors } = winston.format;
+const logDirectory = resolveLogDirectory();
 
 const logFormat = printf(({ level, message, timestamp, stack }) => {
   return `${timestamp} [${level}]: ${stack || message}`;
@@ -17,12 +19,12 @@ export const logger = winston.createLogger({
     new winston.transports.Console({
       format: combine(colorize(), logFormat),
     }),
-    new winston.transports.File({ 
-      filename: 'logs/error.log', 
-      level: 'error', 
+    new winston.transports.File({
+      filename: `${logDirectory}/error.log`,
+      level: 'error',
     }),
-    new winston.transports.File({ 
-      filename: 'logs/combined.log', 
+    new winston.transports.File({
+      filename: `${logDirectory}/combined.log`,
     }),
   ],
 });
