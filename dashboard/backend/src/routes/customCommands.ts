@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import Handlebars from 'handlebars';
+import { isSafeCustomCommandRegex } from '@wall-e/shared';
 import { db } from '../db/index.js';
 import { requireAuth, requireGuildAccess } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -41,8 +42,8 @@ const CommandSchema = z.object({
 function validateCommand(data: z.infer<typeof CommandSchema>): string | null {
   // Validate regex
   if (data.trigger_type === 'regex') {
-    try { new RegExp(data.name); } catch (e: unknown) {
-      return `Invalid regex pattern: ${(e as Error).message}`;
+    if (!isSafeCustomCommandRegex(data.name)) {
+      return 'Regex pattern is unsafe or invalid';
     }
   }
   // Validate Handlebars templates (skip for cembed — Go template syntax, not Handlebars)

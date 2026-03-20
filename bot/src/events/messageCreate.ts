@@ -1,4 +1,5 @@
 import { Events, Message } from 'discord.js';
+import { canExecuteCustomCommand, isSafeCustomCommandRegex } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
 import { sendLong } from '../utils/sendLong.js';
@@ -28,8 +29,18 @@ async function handleCustomCommands(
   const config = await client.db.getGuildConfig(guild.id);
   const prefix = config?.prefix ?? '!';
   const channel = message.channel as import('discord.js').TextChannel;
+  const memberRoleIds = message.member?.roles.cache.map((role) => role.id) ?? [];
 
   for (const cmd of result.rows) {
+    if (!canExecuteCustomCommand({
+      allowedChannels: cmd.allowed_channels,
+      allowedRoles: cmd.allowed_roles,
+      channelId: message.channel.id,
+      memberRoleIds,
+    })) {
+      continue;
+    }
+
     const nameLower = cmd.name.toLowerCase();
     const checkContent = cmd.case_sensitive ? content : contentLower;
     const checkName = cmd.case_sensitive ? cmd.name : nameLower;
@@ -64,6 +75,9 @@ async function handleCustomCommands(
         }
         break;
       case 'regex':
+        if (!isSafeCustomCommandRegex(cmd.name)) {
+          continue;
+        }
         try {
           const regex = new RegExp(cmd.name, cmd.case_sensitive ? '' : 'i');
           if (regex.test(content)) {

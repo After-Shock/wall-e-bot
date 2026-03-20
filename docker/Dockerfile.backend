@@ -1,15 +1,20 @@
+ARG NODE_IMAGE=node:20.19.4-alpine
+
 # Development stage
-FROM node:20-alpine AS development
+FROM ${NODE_IMAGE} AS development
 
 WORKDIR /app
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
 
 # Copy package files
 COPY package*.json ./
 COPY dashboard/backend/package*.json ./dashboard/backend/
 COPY shared/package*.json ./shared/
 
-# Install dependencies (using npm install since workspaces don't have individual lock files)
-RUN npm install
+# Install dependencies
+RUN npm ci
 
 # Copy source
 COPY shared ./shared
@@ -24,9 +29,12 @@ WORKDIR /app/dashboard/backend
 CMD ["npm", "run", "dev"]
 
 # Production stage
-FROM node:20-alpine AS production
+FROM ${NODE_IMAGE} AS production
 
 WORKDIR /app
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
 
 # Copy package files
 COPY package*.json ./
@@ -34,7 +42,7 @@ COPY dashboard/backend/package*.json ./dashboard/backend/
 COPY shared/package*.json ./shared/
 
 # Install ALL dependencies first (need devDeps for build)
-RUN npm install
+RUN npm ci
 
 # Copy source
 COPY shared ./shared
@@ -47,6 +55,7 @@ RUN npm run build -w dashboard/backend
 
 # Prune devDependencies after build
 RUN npm prune --omit=dev
+USER node
 
 WORKDIR /app/dashboard/backend
 

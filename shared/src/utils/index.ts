@@ -110,3 +110,5 @@ export function stripServerIds<T extends object>(obj: T): T {
 
   return result;
 }
+
+export * from './customCommandSecurity.js';

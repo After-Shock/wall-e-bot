@@ -247,7 +247,7 @@ guildsRouter.get('/:guildId/stats', requireAuth, requireGuildAccess, asyncHandle
 }));
 
 // Get guild leaderboard
-guildsRouter.get('/:guildId/leaderboard', requireAuth, asyncHandler(async (req, res) => {
+guildsRouter.get('/:guildId/leaderboard', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     const page = parseInt(req.query.page as string) || 1;

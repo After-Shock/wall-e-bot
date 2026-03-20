@@ -14,8 +14,6 @@
 #
 # =============================================================================
 
-version: '3.8'
-
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL Database
@@ -72,6 +70,7 @@ services:
       dockerfile: docker/Dockerfile.bot
       target: production    # Use production stage from multi-stage build
     container_name: wall-e-bot
+    init: true
     restart: unless-stopped
     depends_on:
       postgres:
@@ -87,6 +86,8 @@ services:
       - ../.env  # Discord tokens and secrets
     networks:
       - wall-e-network
+    security_opt:
+      - no-new-privileges:true
     # Note: Bot doesn't expose ports - outbound only to Discord API
 
   # ---------------------------------------------------------------------------
@@ -100,6 +101,7 @@ services:
       dockerfile: docker/Dockerfile.backend
       target: production
     container_name: wall-e-backend
+    init: true
     restart: unless-stopped
     depends_on:
       postgres:
@@ -117,6 +119,8 @@ services:
       - ../.env
     networks:
       - wall-e-network
+    security_opt:
+      - no-new-privileges:true
 
   # ---------------------------------------------------------------------------
   # Dashboard Frontend
@@ -133,6 +137,7 @@ services:
         - VITE_DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
         - VITE_API_URL=${VITE_API_URL}
     container_name: wall-e-frontend
+    init: true
     restart: unless-stopped
     ports:
       - "3000:80"  # nginx serves on port 80 internally
@@ -141,6 +146,8 @@ services:
     networks:
       - wall-e-network
       - pangolin  # External Traefik network for HTTPS routing
+    security_opt:
+      - no-new-privileges:true
 
 # =============================================================================
 # Volumes - Persistent storage

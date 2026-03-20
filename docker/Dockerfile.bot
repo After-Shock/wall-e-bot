@@ -1,7 +1,12 @@
+ARG NODE_IMAGE=node:20.19.4-alpine
+
 # Development stage
-FROM node:20-alpine AS development
+FROM ${NODE_IMAGE} AS development
 
 WORKDIR /app
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
 
 # Copy package files
 COPY package*.json ./
@@ -9,7 +14,7 @@ COPY bot/package*.json ./bot/
 COPY shared/package*.json ./shared/
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source
 COPY shared ./shared
@@ -24,9 +29,12 @@ WORKDIR /app/bot
 CMD ["npm", "run", "dev"]
 
 # Production stage
-FROM node:20-alpine AS production
+FROM ${NODE_IMAGE} AS production
 
 WORKDIR /app
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
 
 # Copy package files
 COPY package*.json ./
@@ -34,7 +42,7 @@ COPY bot/package*.json ./bot/
 COPY shared/package*.json ./shared/
 
 # Install ALL dependencies (including dev) for building
-RUN npm install
+RUN npm ci
 
 # Copy source
 COPY shared ./shared
@@ -47,6 +55,7 @@ RUN npm run build -w bot
 
 # Remove dev dependencies after build
 RUN npm prune --omit=dev
+USER node
 
 WORKDIR /app/bot
 

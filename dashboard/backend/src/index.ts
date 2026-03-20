@@ -18,9 +18,11 @@ import { commandGroupsRouter } from './routes/commandGroups.js';
 import { dashboardRolesRouter } from './routes/dashboardRoles.js';
 import { autoDeleteRouter } from './routes/autoDelete.js';
 import { db } from './db/index.js';
+import { assertValidSessionSecret } from './utils/security.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const sessionSecret = assertValidSessionSecret(process.env.SESSION_SECRET);
 
 // Trust the first proxy (Traefik) so secure cookies work behind HTTPS termination
 app.set('trust proxy', 1);
@@ -39,7 +41,7 @@ app.use(express.json());
 // Session
 app.use(session({
   store: new RedisStore({ client: redis }),
-  secret: process.env.SESSION_SECRET || 'super-secret-key',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {

@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import axios from 'axios';
-import { requireAuth, requireGuildAccess, AuthenticatedRequest } from '../middleware/auth.js';
+import { requireAuth, requireGuildAccess, requireBotOwner, AuthenticatedRequest } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { db } from '../db/index.js';
+import { isSafeExternalImageUrl } from '../utils/security.js';
+import { rateLimitByUser } from '../middleware/rateLimit.js';
 
 export const botRouter = Router();
+const sensitiveBotRouteLimit = rateLimitByUser({ max: 5, windowSeconds: 60 });
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
@@ -48,14 +51,14 @@ botRouter.get('/stats', asyncHandler(async (req, res) => {
 }));
 
 // Get bot activity status (global)
-botRouter.get('/activity', requireAuth, asyncHandler(async (req, res) => {
+botRouter.get('/activity', requireAuth, requireBotOwner, sensitiveBotRouteLimit, asyncHandler(async (req, res) => {
   const result = await db.query("SELECT value FROM bot_settings WHERE key = 'activity'");
   const data = result.rows[0]?.value || { type: 'PLAYING', text: '' };
   res.json(data);
 }));
 
 // Set bot activity status (global — shows in Discord's status bar)
-botRouter.patch('/activity', requireAuth, asyncHandler(async (req, res) => {
+botRouter.patch('/activity', requireAuth, requireBotOwner, sensitiveBotRouteLimit, asyncHandler(async (req, res) => {
   const { type, text } = req.body;
   const validTypes = ['PLAYING', 'WATCHING', 'LISTENING', 'COMPETING'];
   if (!validTypes.includes(type)) {
@@ -76,7 +79,7 @@ botRouter.patch('/activity', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 // Update bot nickname for a guild (per-server, not global)
-botRouter.patch('/guilds/:guildId/nickname', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+botRouter.patch('/guilds/:guildId/nickname', requireAuth, requireGuildAccess, sensitiveBotRouteLimit, asyncHandler(async (req, res) => {
   try {
     const { guildId } = req.params;
     const { nickname } = req.body;
@@ -109,7 +112,7 @@ botRouter.patch('/guilds/:guildId/nickname', requireAuth, requireGuildAccess, as
 }));
 
 // Update bot avatar (global — applies across all servers)
-botRouter.patch('/avatar', requireAuth, asyncHandler(async (req, res) => {
+botRouter.patch('/avatar', requireAuth, requireBotOwner, sensitiveBotRouteLimit, asyncHandler(async (req, res) => {
   try {
     const { imageUrl } = req.body;
 
@@ -119,13 +122,8 @@ botRouter.patch('/avatar', requireAuth, asyncHandler(async (req, res) => {
     }
 
     // Validate it looks like a URL
-    let parsed: URL;
-    try { parsed = new URL(imageUrl); } catch {
-      res.status(400).json({ error: 'imageUrl must be a valid URL' });
-      return;
-    }
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      res.status(400).json({ error: 'imageUrl must use http or https' });
+    if (!isSafeExternalImageUrl(imageUrl)) {
+      res.status(400).json({ error: 'imageUrl must be a public http(s) image URL' });
       return;
     }
 

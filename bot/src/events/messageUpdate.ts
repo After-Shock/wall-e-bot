@@ -1,4 +1,5 @@
 import { Events } from 'discord.js';
+import { canExecuteCustomCommand } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
 
@@ -32,7 +33,8 @@ export default {
       if (!rawName) return;
 
       const result = await client.db.pool.query(
-        `SELECT response, embed_response, embed_color, delete_command, case_sensitive
+        `SELECT response, embed_response, embed_color, delete_command, case_sensitive,
+                allowed_roles, allowed_channels
          FROM custom_commands
          WHERE guild_id = $1
            AND enabled = TRUE
@@ -43,6 +45,17 @@ export default {
       if (result.rows.length === 0) return;
 
       const cmd = result.rows[0];
+      const member = await newMessage.guild.members.fetch(newMessage.author.id).catch(() => null);
+      const memberRoleIds = member?.roles.cache.map((role: { id: string }) => role.id) ?? [];
+
+      if (!canExecuteCustomCommand({
+        allowedChannels: cmd.allowed_channels,
+        allowedRoles: cmd.allowed_roles,
+        channelId: newMessage.channel.id,
+        memberRoleIds,
+      })) {
+        return;
+      }
 
       if (cmd.embed_response) {
         const { EmbedBuilder } = await import('discord.js');

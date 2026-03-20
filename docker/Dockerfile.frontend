@@ -1,16 +1,28 @@
+ARG NODE_IMAGE=node:20.19.4-alpine
+ARG NGINX_IMAGE=nginx:1.27-alpine
+
 # Development stage
-FROM node:20-alpine AS development
+FROM ${NODE_IMAGE} AS development
 
-WORKDIR /app/dashboard/frontend
+WORKDIR /app
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
 
-# Copy package files
-COPY dashboard/frontend/package*.json ./
+# Copy monorepo package files
+COPY package*.json ./
+COPY shared/package*.json ./shared/
+COPY dashboard/frontend/package*.json ./dashboard/frontend/
 
-# Install dependencies (using npm install for dev since workspaces don't have lock files)
-RUN npm install
+# Install dependencies
+RUN npm ci
 
 # Copy source
-COPY dashboard/frontend ./
+COPY shared ./shared
+COPY dashboard/frontend ./dashboard/frontend
+COPY tsconfig.base.json ./
+
+WORKDIR /app/dashboard/frontend
 
 EXPOSE 3000
 
@@ -18,9 +30,12 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 # Build stage
 # Mirrors Dockerfile.backend: build from monorepo root so @wall-e/shared is available
-FROM node:20-alpine AS build
+FROM ${NODE_IMAGE} AS build
 
 WORKDIR /app
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
 
 # Copy monorepo root and all package manifests
 COPY package*.json ./
@@ -28,7 +43,7 @@ COPY shared/package*.json ./shared/
 COPY dashboard/frontend/package*.json ./dashboard/frontend/
 
 # Install all workspace dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source
 COPY shared ./shared
@@ -54,7 +69,7 @@ ENV VITE_BOT_OWNER_ID=$VITE_BOT_OWNER_ID
 RUN npx vite build
 
 # Production stage
-FROM nginx:alpine AS production
+FROM ${NGINX_IMAGE} AS production
 
 COPY --from=build /app/dashboard/frontend/dist /usr/share/nginx/html
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
