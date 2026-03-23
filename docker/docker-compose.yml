@@ -1,7 +1,7 @@
 # =============================================================================
 # Wall-E Bot - Production Docker Compose
 # =============================================================================
-# 
+#
 # Usage:
 #   docker compose -f docker/docker-compose.yml up -d
 #   docker compose -f docker/docker-compose.yml down
@@ -11,6 +11,9 @@
 #   - Health checks for reliability
 #   - Automatic restart policies
 #   - Internal networking (no exposed DB ports)
+#   - Memory limits to prevent OOMKiller data corruption
+#   - Redis AOF persistence to survive restarts
+#   - Docker log rotation to prevent disk exhaustion
 #
 # =============================================================================
 
@@ -18,18 +21,18 @@ services:
   # ---------------------------------------------------------------------------
   # PostgreSQL Database
   # ---------------------------------------------------------------------------
-  # Primary data store for guild configs, user data, warnings, etc.
-  # Uses Alpine variant for smaller image size (~80MB vs ~400MB)
   postgres:
     image: postgres:16-alpine
     container_name: wall-e-postgres
-    restart: unless-stopped  # Auto-restart on failure (not on manual stop)
+    restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-wallE}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: ${DB_NAME:-wall_e_bot}
     volumes:
-      - postgres_data:/var/lib/postgresql/data  # Persist data across restarts
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-wallE} -d ${DB_NAME:-wall_e_bot}"]
       interval: 10s
@@ -42,14 +45,17 @@ services:
   # ---------------------------------------------------------------------------
   # Redis Cache
   # ---------------------------------------------------------------------------
-  # Used for session storage, rate limiting, and temporary data caching.
-  # Configured with AOF persistence for data durability.
+  # AOF persistence enabled: data survives container restarts.
+  # maxmemory-policy allkeys-lru: evict least-recently-used keys when full.
   redis:
     image: redis:7-alpine
     container_name: wall-e-redis
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 200mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data  # Persist Redis data (AOF/RDB)
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -62,39 +68,42 @@ services:
   # ---------------------------------------------------------------------------
   # Discord Bot
   # ---------------------------------------------------------------------------
-  # The main Discord bot application. Handles all Discord interactions,
-  # commands, events, and background tasks (scheduled messages, etc.)
   bot:
     build:
-      context: ..           # Build from project root
+      context: ..
       dockerfile: docker/Dockerfile.bot
-      target: production    # Use production stage from multi-stage build
+      target: production
     container_name: wall-e-bot
     init: true
     restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       postgres:
-        condition: service_healthy  # Wait for DB to be ready
+        condition: service_healthy
       redis:
-        condition: service_healthy  # Wait for cache to be ready
+        condition: service_healthy
     environment:
-      # Internal Docker network URLs (not localhost)
       DATABASE_URL: postgresql://${DB_USER:-wallE}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-wall_e_bot}
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=400"
     env_file:
-      - ../.env  # Discord tokens and secrets
+      - ../.env
     networks:
       - wall-e-network
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Note: Bot doesn't expose ports - outbound only to Discord API
 
   # ---------------------------------------------------------------------------
   # Dashboard Backend (API)
   # ---------------------------------------------------------------------------
-  # Express.js REST API for the web dashboard.
-  # Handles Discord OAuth2, guild management, and bot configuration.
   backend:
     build:
       context: ..
@@ -103,30 +112,36 @@ services:
     container_name: wall-e-backend
     init: true
     restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 512m
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      - "3001:3001"  # Expose API port
+      - "3001:3001"
     environment:
       DATABASE_URL: postgresql://${DB_USER:-wallE}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-wall_e_bot}
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
       PORT: 3001
+      NODE_OPTIONS: "--max-old-space-size=400"
     env_file:
       - ../.env
     networks:
       - wall-e-network
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ---------------------------------------------------------------------------
   # Dashboard Frontend
   # ---------------------------------------------------------------------------
-  # React web dashboard served via nginx.
-  # Provides UI for guild admins to configure the bot.
   frontend:
     build:
       context: ..
@@ -139,13 +154,15 @@ services:
     container_name: wall-e-frontend
     init: true
     restart: unless-stopped
+    mem_limit: 128m
+    memswap_limit: 128m
     ports:
-      - "3000:80"  # nginx serves on port 80 internally
+      - "3000:80"
     depends_on:
       - backend
     networks:
       - wall-e-network
-      - pangolin  # External Traefik network for HTTPS routing
+      - pangolin
     security_opt:
       - no-new-privileges:true
 
@@ -153,14 +170,14 @@ services:
 # Volumes - Persistent storage
 # =============================================================================
 volumes:
-  postgres_data:  # PostgreSQL data directory
-  redis_data:     # Redis persistence (AOF/RDB)
+  postgres_data:
+  redis_data:     # Redis AOF data
 
 # =============================================================================
 # Networks - Internal communication
 # =============================================================================
 networks:
   wall-e-network:
-    driver: bridge  # Default bridge network for container communication
+    driver: bridge
   pangolin:
-    external: true  # Traefik reverse proxy network (managed by pangolin)
+    external: true
