@@ -460,6 +460,18 @@ ALTER TABLE ticket_panels
 
 -- User preferences (hidden nav items, etc.)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
+
+-- Failed jobs dead-letter queue (BullMQ DLQ)
+CREATE TABLE IF NOT EXISTS failed_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  queue_name VARCHAR(100) NOT NULL,
+  job_name VARCHAR(200) NOT NULL,
+  job_data JSONB,
+  error_message TEXT,
+  attempt_count INTEGER DEFAULT 1,
+  failed_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_failed_jobs_queue ON failed_jobs(queue_name, failed_at DESC);
 `;
 
 async function encryptExistingTokens(client: any): Promise<void> {

@@ -26,6 +26,15 @@ const mockGuild = {
   },
 };
 
+const mockRedisClient = {
+  duplicate: () => ({
+    on: jest.fn(),
+    subscribe: jest.fn(),
+    unsubscribe: jest.fn(),
+    disconnect: jest.fn(),
+  }),
+};
+
 const mockClient = {
   db: {
     pool: {
@@ -34,6 +43,12 @@ const mockClient = {
   },
   guilds: {
     cache: new Map([['guild-123', mockGuild]]),
+  },
+  cache: {
+    redisClient: mockRedisClient,
+  },
+  template: {
+    render: jest.fn<any>((raw: string) => raw),
   },
 };
 
@@ -57,35 +72,27 @@ describe('SchedulerService', () => {
   });
 
   describe('start', () => {
-    it('should start the check interval', () => {
+    it('should run immediate checks on start', () => {
       scheduler.start();
 
       expect(mockQuery).toHaveBeenCalled(); // Immediate check
     });
-
-    it('should check for tasks every 60 seconds', async () => {
-      mockQuery.mockResolvedValue({ rows: [] });
-      
-      scheduler.start();
-      mockQuery.mockClear();
-
-      // Advance time by 60 seconds
-      jest.advanceTimersByTime(60 * 1000);
-
-      expect(mockQuery).toHaveBeenCalled();
-    });
   });
 
   describe('stop', () => {
-    it('should clear the interval', () => {
+    it('should stop without error', () => {
       scheduler.start();
-      scheduler.stop();
+      expect(() => scheduler.stop()).not.toThrow();
+    });
+  });
 
-      mockQuery.mockClear();
-      jest.advanceTimersByTime(120 * 1000);
+  describe('runSchedulerTick', () => {
+    it('should query for due tasks when ticked', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
 
-      // Query should not be called after stop
-      expect(mockQuery).not.toHaveBeenCalled();
+      await scheduler.runSchedulerTick();
+
+      expect(mockQuery).toHaveBeenCalled();
     });
   });
 

@@ -26,6 +26,7 @@ import { ModerationService } from '../services/ModerationService.js';
 import { AutoModService } from '../services/AutoModService.js';
 import { SchedulerService } from '../services/SchedulerService.js';
 import { TemplateService } from '../services/TemplateService.js';
+import { QueueService } from '../services/queue/QueueService.js';
 import { logger } from '../utils/logger.js';
 
 // ES Module compatibility - get __dirname equivalent
@@ -75,6 +76,9 @@ export class WallEClient extends Client {
 
   /** Handlebars template engine for custom command responses */
   public template!: TemplateService;
+
+  /** BullMQ-backed job queue for reliable scheduled task execution */
+  public queue!: QueueService;
 
   /**
    * Initialize the Discord client with required intents and partials.
@@ -142,6 +146,7 @@ export class WallEClient extends Client {
     this.automod = new AutoModService(this);
     this.scheduler = new SchedulerService(this);
     this.template = new TemplateService();
+    this.queue = new QueueService(process.env.REDIS_URL ?? 'redis://localhost:6379', this);
 
     // Step 4-5: Load commands and events
     await this.loadCommands();
@@ -281,6 +286,12 @@ export class WallEClient extends Client {
     if (this.scheduler) {
       logger.info('  → Stopping scheduler...');
       this.scheduler.stop();
+    }
+
+    // Stop BullMQ queue
+    if (this.queue) {
+      logger.info('  → Stopping job queue...');
+      await this.queue.stop();
     }
 
     // Step 3: Brief delay for in-flight operations to complete

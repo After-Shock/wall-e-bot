@@ -45,8 +45,6 @@ interface ScheduledTask {
  * Handles scheduled messages, temp ban expirations, and other timed operations.
  */
 export class SchedulerService {
-  /** Interval handle for the background check loop */
-  private checkInterval: NodeJS.Timeout | null = null;
   private autoCloseInterval: ReturnType<typeof setInterval> | null = null;
   private autoDeleteInterval: ReturnType<typeof setInterval> | null = null;
   private activityInterval: ReturnType<typeof setInterval> | null = null;
@@ -58,14 +56,26 @@ export class SchedulerService {
    * Start the scheduler background loop.
    * Should be called once during bot initialization.
    */
-  start() {
-    // Check every minute for tasks due to execute
-    this.checkInterval = setInterval(() => {
-      this.checkScheduledTasks();
-      this.checkIntervalCommands();
-    }, 60 * 1000); // 60 seconds
+  /**
+   * Public method called by QueueService (BullMQ) every 60s.
+   * Runs the critical scheduled-message and interval-command checks.
+   */
+  async runSchedulerTick(): Promise<void> {
+    try {
+      await this.checkScheduledTasks();
+    } catch (err) {
+      logger.error('[Scheduler] checkScheduledTasks failed:', err);
+    }
+    try {
+      await this.checkIntervalCommands();
+    } catch (err) {
+      logger.error('[Scheduler] checkIntervalCommands failed:', err);
+    }
+  }
 
-    // Run immediately on start to catch any missed tasks
+  start() {
+    // Critical 60s tick is now driven by BullMQ (QueueService).
+    // Run immediately on start to catch any missed tasks.
     this.checkScheduledTasks();
     this.checkIntervalCommands();
 
@@ -111,10 +121,6 @@ export class SchedulerService {
   }
 
   stop() {
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = null;
-    }
     if (this.autoCloseInterval) {
       clearInterval(this.autoCloseInterval);
       this.autoCloseInterval = null;
