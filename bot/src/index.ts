@@ -8,6 +8,8 @@
  */
 
 import 'dotenv/config';
+import { initSentry, Sentry } from './utils/sentry.js';
+initSentry();
 import { WallEClient } from './structures/Client.js';
 import { logger } from './utils/logger.js';
 
@@ -21,10 +23,12 @@ const client = new WallEClient();
 // =============================================================================
 
 process.on('unhandledRejection', (error: Error) => {
+  Sentry.captureException(error);
   logger.error('Unhandled rejection:', error);
 });
 
 process.on('uncaughtException', (error: Error) => {
+  Sentry.captureException(error);
   logger.error('Uncaught exception:', error);
   // Give time for logs to flush, then exit
   setTimeout(() => process.exit(1), 1000);

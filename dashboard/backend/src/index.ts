@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { initSentry, Sentry } from './utils/sentry.js';
+initSentry();
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -110,6 +112,7 @@ app.get('/health', (req, res) => {
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  Sentry.captureException(err);
   logger.error('Express error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });

@@ -17,6 +17,7 @@
     "lint:fix": "eslint src --ext .ts --fix"
   },
   "dependencies": {
+    "@sentry/node": "^10.45.0",
     "@wall-e/shared": "1.0.0",
     "cron-parser": "^5.5.0",
     "discord.js": "^14.14.1",

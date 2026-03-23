@@ -13,6 +13,7 @@
     "seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
+    "@sentry/node": "^10.45.0",
     "@wall-e/shared": "1.0.0",
     "axios": "^1.6.3",
     "connect-redis": "^6.1.3",
