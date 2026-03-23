@@ -19,6 +19,7 @@ import { dashboardRolesRouter } from './routes/dashboardRoles.js';
 import { autoDeleteRouter } from './routes/autoDelete.js';
 import { db } from './db/index.js';
 import { assertValidSessionSecret } from './utils/security.js';
+import { encryptToken } from './utils/crypto.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,16 +64,20 @@ passport.use(new DiscordStrategy({
   scope: ['identify', 'guilds', 'email'],
 }, async (accessToken, refreshToken, profile, done) => {
   try {
-    // Upsert user in database
+    const encryptedAccess = encryptToken(accessToken);
+    const encryptedRefresh = refreshToken ? encryptToken(refreshToken) : null;
+
     await db.query(
       `INSERT INTO users (discord_id, username, discriminator, avatar, email, access_token, refresh_token)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (discord_id) DO UPDATE SET
-         username = $2, discriminator = $3, avatar = $4, email = $5, 
+         username = $2, discriminator = $3, avatar = $4, email = $5,
          access_token = $6, refresh_token = $7, updated_at = NOW()`,
-      [profile.id, profile.username, profile.discriminator, profile.avatar, profile.email, accessToken, refreshToken],
+      [profile.id, profile.username, profile.discriminator, profile.avatar, profile.email,
+       encryptedAccess, encryptedRefresh],
     );
 
+    // Pass plaintext tokens in session (encrypted only at rest in DB)
     return done(null, { ...profile, accessToken, refreshToken });
   } catch (error) {
     return done(error as Error);

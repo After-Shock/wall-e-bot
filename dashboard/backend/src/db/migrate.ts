@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import { encryptToken, isEncrypted } from '../utils/crypto.js';
 
 const { Pool } = pg;
 
@@ -461,6 +462,30 @@ ALTER TABLE ticket_panels
 ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
 `;
 
+async function encryptExistingTokens(client: any): Promise<void> {
+  console.log('Encrypting existing plaintext OAuth tokens...');
+  const { rows } = await client.query(
+    `SELECT discord_id, access_token, refresh_token FROM users WHERE access_token IS NOT NULL`
+  );
+
+  let count = 0;
+  for (const row of rows) {
+    const newAccess = isEncrypted(row.access_token) ? row.access_token : encryptToken(row.access_token);
+    const newRefresh = row.refresh_token && !isEncrypted(row.refresh_token)
+      ? encryptToken(row.refresh_token)
+      : row.refresh_token;
+
+    if (newAccess !== row.access_token || newRefresh !== row.refresh_token) {
+      await client.query(
+        `UPDATE users SET access_token = $1, refresh_token = $2 WHERE discord_id = $3`,
+        [newAccess, newRefresh, row.discord_id]
+      );
+      count++;
+    }
+  }
+  console.log(`Encrypted ${count} user token(s).`);
+}
+
 async function migrate() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -470,6 +495,7 @@ async function migrate() {
     console.log('Running migrations...');
     await pool.query(schema);
     console.log('Migrations completed successfully!');
+    await encryptExistingTokens(pool);
   } catch (error) {
     console.error('Migration failed:', error);
     process.exit(1);
