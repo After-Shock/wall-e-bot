@@ -33,4 +33,31 @@ describe('QueueService', () => {
     );
     await qs.stop();
   });
+
+  it('passes a processor function to Worker and it invokes runSchedulerTick', async () => {
+    const { Worker } = await import('bullmq');
+    const { QueueService } = await import('../src/services/queue/QueueService.js');
+
+    const runSchedulerTick = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const fakeClient = {
+      scheduler: { runSchedulerTick },
+      db: { pool: { query: jest.fn<() => Promise<{ rows: unknown[] }>>().mockResolvedValue({ rows: [] }) } },
+    };
+
+    const qs = new QueueService('redis://localhost:6379', fakeClient);
+    await qs.start();
+
+    // Retrieve the processor function that was passed as 2nd arg to Worker constructor
+    const workerCalls = (Worker as unknown as jest.Mock).mock.calls;
+    const lastCall = workerCalls[workerCalls.length - 1];
+    const processor = lastCall[1] as (job: unknown) => Promise<void>;
+
+    expect(typeof processor).toBe('function');
+
+    // Invoke the processor with a scheduler-tick job
+    await processor({ name: 'scheduler-tick', data: {} });
+    expect(runSchedulerTick).toHaveBeenCalledTimes(1);
+
+    await qs.stop();
+  });
 });

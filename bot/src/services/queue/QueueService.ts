@@ -33,7 +33,12 @@ export class QueueService {
       SCHEDULER_QUEUE,
       async (job: Job) => {
         if (job.name === TICK_JOB) {
-          await this.client.scheduler.runSchedulerTick();
+          try {
+            await this.client.scheduler.runSchedulerTick();
+          } catch (err) {
+            logger.error('[Queue] Scheduler tick failed:', err);
+            throw err; // Re-throw so BullMQ marks the job as failed and triggers onFailed handler
+          }
         }
       },
       {
@@ -63,7 +68,9 @@ export class QueueService {
   }
 
   async stop(): Promise<void> {
-    await this.worker?.close();
+    if (this.worker) {
+      await this.worker.close(); // BullMQ close() drains in-flight jobs by default
+    }
     await this.queue.close();
     logger.info('[Queue] Scheduler queue stopped');
   }
