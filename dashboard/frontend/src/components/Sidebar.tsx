@@ -176,12 +176,13 @@ function NavItemComponent({ item, depth = 0, editMode = false, isHidden = false,
   const onClose = useContext(OnCloseContext);
 
   const baseClasses = `
-    flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
+    flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200
     text-discord-light hover:text-white hover:bg-discord-dark
+    border-l-2 border-transparent
   `;
 
   const activeClasses = `
-    bg-discord-blurple/20 text-white border-l-2 border-discord-blurple
+    bg-discord-blurple/20 text-white border-discord-blurple
   `;
 
   const hiddenClasses = `opacity-50`;
