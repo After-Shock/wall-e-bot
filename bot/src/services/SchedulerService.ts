@@ -514,7 +514,7 @@ export class SchedulerService {
       );
       for (const config of result.rows) {
         await this.runAutoDelete(config).catch(e =>
-          logger.error(`Auto-delete failed for channel ${config.channel_id}:`, e),
+          logger.error(`Auto-delete failed for channel ${config.channel_id}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`),
         );
       }
     } catch (error) {
@@ -530,11 +530,11 @@ export class SchedulerService {
       );
       for (const config of result.rows) {
         await this.runAutoDelete(config).catch(e =>
-          logger.error(`Auto-delete failed for channel ${config.channel_id}:`, e),
+          logger.error(`Auto-delete failed for channel ${config.channel_id}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`),
         );
       }
     } catch (error) {
-      logger.error(`Error in checkAutoDeleteForGuild for ${guildId}:`, error);
+      logger.error(`Error in checkAutoDeleteForGuild for ${guildId}: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     }
   }
 
@@ -550,7 +550,7 @@ export class SchedulerService {
       }
       await this.runAutoDelete(result.rows[0]);
     } catch (error) {
-      logger.error(`Error in runAutoDeleteById for config ${configId}:`, error);
+      logger.error(`Error in runAutoDeleteById for config ${configId}: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     }
   }
 
@@ -619,14 +619,14 @@ export class SchedulerService {
         );
       } else {
         await textChannel.bulkDelete(batch, true).catch(e =>
-          logger.error(`Bulk delete failed in ${config.channel_id}:`, e),
+          logger.error(`Bulk delete failed in ${config.channel_id}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`),
         );
       }
     }
 
     // Delete old messages one by one (rate-limit friendly)
     for (const msg of individual) {
-      await msg.delete().catch(e => logger.warn(`Failed to delete old message ${msg.id} in ${config.channel_id}:`, e));
+      await msg.delete().catch(e => logger.warn(`Failed to delete old message ${msg.id} in ${config.channel_id}: ${e instanceof Error ? e.message : String(e)}`));
       await new Promise(r => setTimeout(r, 1000));
     }
 

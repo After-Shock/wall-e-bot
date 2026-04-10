@@ -3,6 +3,7 @@
  */
 
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { logger } from '../../src/utils/logger.js';
 
 // Mock timers
 jest.useFakeTimers();
@@ -249,6 +250,43 @@ describe('SchedulerService', () => {
       const result = await scheduler.deleteScheduledMessage('guild-123', 999);
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('auto-delete error logging', () => {
+    it('includes channel_id and error message in a single log argument when messages.fetch fails', async () => {
+      const loggerErrorSpy = jest.spyOn(logger, 'error').mockImplementation((() => logger) as any);
+
+      const fetchError = Object.assign(new Error('Missing Access'), { code: 50001 });
+      const testChannelId = 'ad-test-channel';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (mockGuild.channels.cache as Map<string, any>).set(testChannelId, {
+        id: testChannelId,
+        isTextBased: () => true,
+        messages: { fetch: jest.fn<any>().mockRejectedValue(fetchError) },
+      });
+
+      mockQuery.mockImplementation((sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('auto_delete_channels')) {
+          return Promise.resolve({ rows: [{ guild_id: 'guild-123', channel_id: testChannelId, max_age_hours: 24, max_messages: null, exempt_roles: [] }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      scheduler.start();
+      // Drain the microtask queue: checkAutoDelete → db.query → runAutoDelete → messages.fetch → .catch
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+
+      const errorCalls = (loggerErrorSpy.mock.calls as [unknown, ...unknown[]][])
+        .filter(args => typeof args[0] === 'string' && (args[0] as string).includes(testChannelId));
+
+      expect(errorCalls.length).toBeGreaterThan(0);
+      // The first (and only) argument must contain the error details so Winston's
+      // errors() format cannot swallow them by promoting a second Error argument.
+      expect(errorCalls[0][0]).toContain('Missing Access');
+
+      mockGuild.channels.cache.delete(testChannelId);
+      loggerErrorSpy.mockRestore();
     });
   });
 });
