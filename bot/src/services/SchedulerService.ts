@@ -554,7 +554,36 @@ export class SchedulerService {
     }
   }
 
+  /**
+   * Discord API error codes that will never succeed on retry:
+   * 10003 Unknown Channel, 50001 Missing Access, 50013 Missing Permissions.
+   * Hitting one of these disables the config instead of erroring every cycle.
+   */
+  private static readonly PERMANENT_AUTODELETE_ERRORS = new Set([10003, 50001, 50013]);
+
+  /**
+   * Duck-typed rather than `instanceof DiscordAPIError` — nested copies of
+   * @discordjs/rest in a Docker build make instanceof unreliable.
+   */
+  private static isPermanentAutoDeleteError(error: unknown): error is Error & { code: number | string } {
+    return error instanceof Error && 'code' in error &&
+      SchedulerService.PERMANENT_AUTODELETE_ERRORS.has(Number((error as { code: unknown }).code));
+  }
+
+  private async disableAutoDelete(configId: number, channelId: string, error: Error & { code: number | string }): Promise<void> {
+    await this.client.db.pool.query(
+      'UPDATE auto_delete_channels SET enabled = FALSE WHERE id = $1',
+      [configId],
+    ).catch(e => logger.error(`Failed to disable auto-delete config ${configId}:`, e));
+    logger.warn(
+      `Auto-delete disabled for channel ${channelId} (config ${configId}): ` +
+      `${error.message} (code ${error.code}). Fix the bot's channel permissions ` +
+      'and re-enable it from the dashboard.',
+    );
+  }
+
   private async runAutoDelete(config: {
+    id: number;
     guild_id: string;
     channel_id: string;
     max_age_hours: number | null;
@@ -570,13 +599,21 @@ export class SchedulerService {
 
     // Fetch all messages (paginated, up to 500 max to avoid abuse)
     const allMessages: Message[] = [];
-    let lastId: string | undefined;
-    for (let page = 0; page < 5; page++) {
-      const batch = await textChannel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
-      if (batch.size === 0) break;
-      allMessages.push(...batch.values());
-      lastId = batch.last()?.id;
-      if (batch.size < 100) break;
+    try {
+      let lastId: string | undefined;
+      for (let page = 0; page < 5; page++) {
+        const batch = await textChannel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
+        if (batch.size === 0) break;
+        allMessages.push(...batch.values());
+        lastId = batch.last()?.id;
+        if (batch.size < 100) break;
+      }
+    } catch (error) {
+      if (SchedulerService.isPermanentAutoDeleteError(error)) {
+        await this.disableAutoDelete(config.id, config.channel_id, error);
+        return;
+      }
+      throw error;
     }
 
     // Filter out pinned messages and messages from exempt roles
@@ -613,14 +650,18 @@ export class SchedulerService {
     // Bulk delete recent messages (batches of 100)
     for (let i = 0; i < bulk.length; i += 100) {
       const batch = bulk.slice(i, i + 100);
-      if (batch.length === 1) {
-        await batch[0].delete().catch(e =>
-          logger.error(`Single delete failed in ${config.channel_id}:`, e),
-        );
-      } else {
-        await textChannel.bulkDelete(batch, true).catch(e =>
-          logger.error(`Bulk delete failed in ${config.channel_id}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`),
-        );
+      try {
+        if (batch.length === 1) {
+          await batch[0].delete();
+        } else {
+          await textChannel.bulkDelete(batch, true);
+        }
+      } catch (e) {
+        if (SchedulerService.isPermanentAutoDeleteError(e)) {
+          await this.disableAutoDelete(config.id, config.channel_id, e);
+          return;
+        }
+        logger.error(`Delete failed in ${config.channel_id}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
       }
     }
 

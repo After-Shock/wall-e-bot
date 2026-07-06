@@ -253,29 +253,70 @@ describe('SchedulerService', () => {
     });
   });
 
-  describe('auto-delete error logging', () => {
-    it('includes channel_id and error message in a single log argument when messages.fetch fails', async () => {
-      const loggerErrorSpy = jest.spyOn(logger, 'error').mockImplementation((() => logger) as any);
+  describe('auto-delete error handling', () => {
+    const testChannelId = 'ad-test-channel';
 
-      const fetchError = Object.assign(new Error('Missing Access'), { code: 50001 });
-      const testChannelId = 'ad-test-channel';
+    function setupFailingChannel(fetchError: Error) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (mockGuild.channels.cache as Map<string, any>).set(testChannelId, {
         id: testChannelId,
         isTextBased: () => true,
         messages: { fetch: jest.fn<any>().mockRejectedValue(fetchError) },
       });
+    }
 
+    function setupAutoDeleteRows() {
       mockQuery.mockImplementation((sql: unknown) => {
-        if (typeof sql === 'string' && sql.includes('auto_delete_channels')) {
-          return Promise.resolve({ rows: [{ guild_id: 'guild-123', channel_id: testChannelId, max_age_hours: 24, max_messages: null, exempt_roles: [] }] });
+        if (typeof sql === 'string' && sql.includes('SELECT * FROM auto_delete_channels')) {
+          return Promise.resolve({ rows: [{ id: 42, guild_id: 'guild-123', channel_id: testChannelId, max_age_hours: 24, max_messages: null, exempt_roles: [] }] });
         }
         return Promise.resolve({ rows: [] });
       });
+    }
+
+    afterEach(() => {
+      mockGuild.channels.cache.delete(testChannelId);
+    });
+
+    it('disables the config and warns (no error spam) on a permanent Discord error', async () => {
+      const loggerWarnSpy = jest.spyOn(logger, 'warn').mockImplementation((() => logger) as any);
+      const loggerErrorSpy = jest.spyOn(logger, 'error').mockImplementation((() => logger) as any);
+
+      setupFailingChannel(Object.assign(new Error('Missing Access'), { code: 50001 }));
+      setupAutoDeleteRows();
 
       scheduler.start();
-      // Drain the microtask queue: checkAutoDelete → db.query → runAutoDelete → messages.fetch → .catch
-      for (let i = 0; i < 6; i++) await Promise.resolve();
+      // Drain the microtask queue: checkAutoDelete → db.query → runAutoDelete → fetch → disable
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+
+      // The config row must be disabled so it never retries
+      const disableCalls = (mockQuery.mock.calls as [unknown, unknown[]?][])
+        .filter(args => typeof args[0] === 'string' && (args[0] as string).includes('SET enabled = FALSE'));
+      expect(disableCalls.length).toBe(1);
+      expect(disableCalls[0][1]).toEqual([42]);
+
+      // A single warn explains what happened; nothing hits the error log
+      const warnCalls = (loggerWarnSpy.mock.calls as [unknown][])
+        .filter(args => typeof args[0] === 'string' && (args[0] as string).includes(testChannelId));
+      expect(warnCalls.length).toBe(1);
+      expect(warnCalls[0][0]).toContain('Missing Access');
+
+      const errorCalls = (loggerErrorSpy.mock.calls as [unknown][])
+        .filter(args => typeof args[0] === 'string' && (args[0] as string).includes(testChannelId));
+      expect(errorCalls.length).toBe(0);
+
+      loggerWarnSpy.mockRestore();
+      loggerErrorSpy.mockRestore();
+    });
+
+    it('logs channel_id and error message in a single argument for transient errors', async () => {
+      const loggerErrorSpy = jest.spyOn(logger, 'error').mockImplementation((() => logger) as any);
+
+      setupFailingChannel(Object.assign(new Error('Internal Server Error'), { code: 500 }));
+      setupAutoDeleteRows();
+
+      scheduler.start();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
 
       const errorCalls = (loggerErrorSpy.mock.calls as [unknown, ...unknown[]][])
         .filter(args => typeof args[0] === 'string' && (args[0] as string).includes(testChannelId));
@@ -283,9 +324,13 @@ describe('SchedulerService', () => {
       expect(errorCalls.length).toBeGreaterThan(0);
       // The first (and only) argument must contain the error details so Winston's
       // errors() format cannot swallow them by promoting a second Error argument.
-      expect(errorCalls[0][0]).toContain('Missing Access');
+      expect(errorCalls[0][0]).toContain('Internal Server Error');
 
-      mockGuild.channels.cache.delete(testChannelId);
+      // Transient errors must NOT disable the config
+      const disableCalls = (mockQuery.mock.calls as [unknown][])
+        .filter(args => typeof args[0] === 'string' && (args[0] as string).includes('SET enabled = FALSE'));
+      expect(disableCalls.length).toBe(0);
+
       loggerErrorSpy.mockRestore();
     });
   });
