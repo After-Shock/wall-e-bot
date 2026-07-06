@@ -46,14 +46,15 @@ services:
   # Redis Cache
   # ---------------------------------------------------------------------------
   # AOF persistence enabled: data survives container restarts.
-  # maxmemory-policy allkeys-lru: evict least-recently-used keys when full.
+  # maxmemory-policy noeviction: BullMQ job data must never be silently
+  # evicted; cache keys all carry TTLs so they expire on their own.
   redis:
     image: redis:7-alpine
     container_name: wall-e-redis
     restart: unless-stopped
     mem_limit: 256m
     memswap_limit: 256m
-    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 200mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 200mb --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     healthcheck:
