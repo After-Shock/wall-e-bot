@@ -2,6 +2,7 @@ import { Events, MessageReaction, User, PartialMessageReaction, PartialUser } fr
 import type { WallEClient } from '../structures/Client.js';
 import { sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
+import { isGuildAllowed } from '../utils/whitelist.js';
 
 export default {
   name: Events.MessageReactionRemove,
@@ -24,13 +25,8 @@ export default {
     // Reuse the same logic as reactionAdd but with type 'remove'
     const guild = reaction.message.guild!;
 
-    const wl = await client.db.pool.query(
-      'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-      [guild.id],
-    ).catch(() => null);
-    const wlRow = wl?.rows[0];
-    const expired = !wlRow?.permanent && wlRow?.expires_at && new Date(wlRow.expires_at) < new Date();
-    if (wlRow?.status !== 'approved' || expired) return;
+    // Whitelist check (Redis-cached)
+    if (!(await isGuildAllowed(client, guild.id))) return;
 
     const emojiIdentifier = reaction.emoji.id ?? reaction.emoji.name ?? '';
 
@@ -52,6 +48,7 @@ export default {
         if (!channel.isTextBased() || !('send' in channel)) continue;
 
         const responses = cmd.responses as string[];
+        if (!Array.isArray(responses) || responses.length === 0) continue;
         const raw = responses[Math.floor(Math.random() * responses.length)];
 
         const member = await guild.members.fetch((user as User).id).catch(() => null);

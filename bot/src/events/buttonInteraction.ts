@@ -16,15 +16,26 @@ import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
 import { buildTranscript } from '../utils/ticketUtils.js';
 import { createManagedTicket } from '../services/TicketService.js';
+import { isGuildAllowed } from '../utils/whitelist.js';
 
 export default {
   name: Events.InteractionCreate,
   once: false,
   async execute(client: WallEClient, interaction: ButtonInteraction | StringSelectMenuInteraction) {
+    if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+
+    // Whitelist check — buttons/select menus must not bypass guild approval
+    if (interaction.guildId && !(await isGuildAllowed(client, interaction.guildId, interaction.user.id))) {
+      await interaction.reply({
+        content: '⚠️ This server has not been approved to use this bot. Please contact the bot owner.',
+        ephemeral: true,
+      }).catch(() => {});
+      return;
+    }
+
     if (interaction.isButton()) {
       await handleButton(client, interaction);
-    }
-    if (interaction.isStringSelectMenu()) {
+    } else {
       await handleSelectMenu(client, interaction);
     }
   },

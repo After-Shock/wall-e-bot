@@ -98,12 +98,13 @@ export class WallEClient extends Client {
         GatewayIntentBits.GuildWebhooks,             // Webhook updates
         GatewayIntentBits.GuildInvites,              // Invite create/delete
         GatewayIntentBits.GuildVoiceStates,          // Voice channel events
-        GatewayIntentBits.GuildPresences,            // Presence updates (privileged)
-        
+        // NOTE: GuildPresences (privileged) intentionally omitted — setting the
+        // bot's own presence doesn't need it, and nothing consumes presence events.
+        // GuildMessageTyping likewise omitted: no feature uses typing indicators.
+
         // Message-related events
         GatewayIntentBits.GuildMessages,             // Messages in guilds
         GatewayIntentBits.GuildMessageReactions,     // Reactions in guilds
-        GatewayIntentBits.GuildMessageTyping,        // Typing indicators
         GatewayIntentBits.DirectMessages,            // DM messages
         GatewayIntentBits.DirectMessageReactions,    // DM reactions
         GatewayIntentBits.MessageContent,            // Message content (privileged)

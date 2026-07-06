@@ -2,6 +2,7 @@ import { Events } from 'discord.js';
 import { canExecuteCustomCommand } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
+import { isGuildAllowed } from '../utils/whitelist.js';
 
 export default {
   name: Events.MessageUpdate,
@@ -11,14 +12,8 @@ export default {
     // Ignore if content hasn't changed
     if (oldMessage.content === newMessage.content) return;
 
-    // Whitelist check (same as messageCreate)
-    const wl = await client.db.pool.query(
-      'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-      [newMessage.guild.id],
-    ).catch(() => null);
-    const wlRow = wl?.rows[0];
-    const expired = !wlRow?.permanent && wlRow?.expires_at && new Date(wlRow.expires_at) < new Date();
-    if ((wlRow?.status !== 'approved' || expired) && newMessage.author?.id !== process.env.BOT_OWNER_ID) return;
+    // Whitelist check (Redis-cached, same policy as messageCreate)
+    if (!(await isGuildAllowed(client, newMessage.guild.id, newMessage.author?.id))) return;
 
     if (!newMessage.channel?.isTextBased() || !('send' in newMessage.channel)) return;
 

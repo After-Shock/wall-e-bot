@@ -9,10 +9,11 @@
  * @module events/interactionCreate
  */
 
-import { Events, ChatInputCommandInteraction, Collection, PermissionsBitField } from 'discord.js';
+import { Events, Collection, PermissionsBitField, type Interaction } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { errorEmbed } from '../utils/embeds.js';
 import { logger } from '../utils/logger.js';
+import { getWhitelistStatus } from '../utils/whitelist.js';
 
 /** Default cooldown in seconds if not specified by command */
 const DEFAULT_COOLDOWN = 3;
@@ -38,7 +39,25 @@ const COOLDOWN_CATEGORIES: Record<string, number> = {
 export default {
   name: Events.InteractionCreate,
   once: false,
-  async execute(client: WallEClient, interaction: any) {
+  async execute(client: WallEClient, interaction: Interaction) {
+    // =========================================================================
+    // Whitelist Check — runs FIRST so no interaction type (modals, buttons,
+    // slash commands) can bypass it. Guilds must be approved and unexpired.
+    // =========================================================================
+
+    if (interaction.guildId && interaction.user.id !== process.env.BOT_OWNER_ID) {
+      const status = await getWhitelistStatus(client, interaction.guildId);
+      if (status !== 'approved') {
+        if (interaction.isRepliable()) {
+          const msg = status === 'expired'
+            ? '⚠️ This server\'s subscription has expired. Please contact the bot owner.'
+            : '⚠️ This server has not been approved to use this bot. Please contact the bot owner.';
+          await interaction.reply({ content: msg, ephemeral: true }).catch(() => {});
+        }
+        return;
+      }
+    }
+
     // =========================================================================
     // Handle Modal Submissions
     // =========================================================================
@@ -47,21 +66,28 @@ export default {
       const customId = interaction.customId;
 
       if (customId.startsWith('ticket_modal:')) {
-        const parts = customId.split(':');
-        const panelId = parseInt(parts[1]);
-        const categoryId = parseInt(parts[2]);
+        if (!interaction.guild) return;
 
-        // Collect form answers keyed by field label (resolved from DB)
+        const parts = customId.split(':');
+        const panelId = Number.parseInt(parts[1], 10);
+        const categoryId = Number.parseInt(parts[2], 10);
+        if (Number.isNaN(panelId) || Number.isNaN(categoryId)) {
+          await interaction.reply({ content: '❌ Invalid ticket form.', ephemeral: true }).catch(() => {});
+          return;
+        }
+
+        // Collect form answers keyed by field label (resolved from DB).
+        // interaction.fields flattens both row- and label-wrapped inputs.
         const rawAnswers: Record<string, string> = {};
-        for (const row of interaction.components) {
-          for (const component of row.components) {
-            rawAnswers[component.customId] = (component as any).value;
+        for (const [fieldId, field] of interaction.fields.fields) {
+          if ('value' in field && typeof field.value === 'string') {
+            rawAnswers[fieldId] = field.value;
           }
         }
 
         const panelResult = await client.db.pool.query(
           'SELECT * FROM ticket_panels WHERE id = $1 AND guild_id = $2',
-          [panelId, interaction.guild!.id],
+          [panelId, interaction.guild.id],
         );
         if (panelResult.rows.length === 0) {
           await interaction.reply({ content: '❌ Panel not found.', ephemeral: true });
@@ -75,7 +101,7 @@ export default {
 
         const configResult = await client.db.pool.query(
           'SELECT * FROM ticket_config WHERE guild_id = $1',
-          [interaction.guild!.id],
+          [interaction.guild.id],
         );
 
         // Resolve field_<id> keys back to human-readable labels
@@ -102,32 +128,6 @@ export default {
         );
       }
       return;
-    }
-
-    // Whitelist check — ignore guilds that aren't approved
-    if (interaction.guildId) {
-      const isOwner = interaction.user.id === process.env.BOT_OWNER_ID;
-      if (!isOwner) {
-        const wl = await client.db.pool.query(
-          'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-          [interaction.guildId],
-        ).catch(() => null);
-        const row = wl?.rows[0];
-        const status = row?.status;
-        const expired = !row?.permanent && row?.expires_at && new Date(row.expires_at) < new Date();
-        if (status !== 'approved' || expired) {
-          if (interaction.isChatInputCommand()) {
-            const msg = expired
-              ? '⚠️ This server\'s subscription has expired. Please contact the bot owner.'
-              : '⚠️ This server has not been approved to use this bot. Please contact the bot owner.';
-            await interaction.reply({
-              content: msg,
-              ephemeral: true,
-            }).catch(() => {});
-          }
-          return;
-        }
-      }
     }
 
     // =========================================================================
@@ -256,10 +256,16 @@ export default {
         ephemeral: true,
       };
 
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(errorResponse);
-      } else {
-        await interaction.reply(errorResponse);
+      // The interaction token may already be dead (e.g. command took >3s
+      // without deferring) — never let the error responder itself throw.
+      try {
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp(errorResponse);
+        } else {
+          await interaction.reply(errorResponse);
+        }
+      } catch (replyError) {
+        logger.warn(`Could not send error response for ${interaction.commandName}:`, replyError);
       }
     }
   },

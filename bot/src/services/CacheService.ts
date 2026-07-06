@@ -43,6 +43,16 @@ export class CacheService {
     return true;
   }
 
+  /** Generic JSON read-through cache helpers (used for per-guild custom command lists). */
+  async getJson<T>(key: string): Promise<T | null> {
+    const cached = await this.redis.get(key);
+    return cached ? JSON.parse(cached) as T : null;
+  }
+
+  async setJson(key: string, value: unknown, ttlSeconds: number = this.TTL): Promise<void> {
+    await this.redis.setex(key, ttlSeconds, JSON.stringify(value));
+  }
+
   async getRateLimit(key: string, limit: number, window: number): Promise<boolean> {
     const current = await this.redis.incr(key);
     

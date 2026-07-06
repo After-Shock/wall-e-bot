@@ -120,7 +120,9 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "3001:3001"
+      # Bound to localhost only — external traffic must come through the
+      # frontend nginx / Traefik path, not hit the API directly.
+      - "127.0.0.1:3001:3001"
     environment:
       DATABASE_URL: postgresql://${DB_USER:-wallE}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-wall_e_bot}
       REDIS_URL: redis://redis:6379

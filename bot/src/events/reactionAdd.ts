@@ -3,6 +3,7 @@ import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
 import { sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
+import { isGuildAllowed } from '../utils/whitelist.js';
 
 export default {
   name: Events.MessageReactionAdd,
@@ -35,14 +36,8 @@ async function handleReactionCommand(
 ) {
   const guild = reaction.message.guild!;
 
-  // Whitelist check
-  const wl = await client.db.pool.query(
-    'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-    [guild.id],
-  ).catch(() => null);
-  const wlRow = wl?.rows[0];
-  const expired = !wlRow?.permanent && wlRow?.expires_at && new Date(wlRow.expires_at) < new Date();
-  if (wlRow?.status !== 'approved' || expired) return;
+  // Whitelist check (Redis-cached)
+  if (!(await isGuildAllowed(client, guild.id))) return;
 
   const emojiIdentifier = reaction.emoji.id ?? reaction.emoji.name ?? '';
 
@@ -64,6 +59,7 @@ async function handleReactionCommand(
       if (!channel.isTextBased() || !('send' in channel)) continue;
 
       const responses = cmd.responses as string[];
+      if (!Array.isArray(responses) || responses.length === 0) continue;
       const raw = responses[Math.floor(Math.random() * responses.length)];
 
       const member = await guild.members.fetch(user.id).catch(() => null);

@@ -4,6 +4,49 @@ import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
 import { sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
+import { isGuildAllowed } from '../utils/whitelist.js';
+
+/** Seconds to cache a guild's custom command list (dashboard/bot edits apply within this window). */
+const CUSTOM_COMMANDS_CACHE_TTL = 60;
+
+interface MessageCustomCommand {
+  id: number;
+  name: string;
+  trigger_type: string;
+  responses: string[];
+  embed_response: boolean;
+  cembed_response: boolean;
+  embed_color: string | null;
+  delete_command: boolean;
+  case_sensitive: boolean;
+  allowed_roles: string[] | null;
+  allowed_channels: string[] | null;
+}
+
+/** Load message-triggered custom commands for a guild, cached in Redis. */
+async function getMessageCommands(client: WallEClient, guildId: string): Promise<MessageCustomCommand[]> {
+  const cacheKey = `guild:${guildId}:customcommands:message`;
+
+  try {
+    const cached = await client.cache.getJson<MessageCustomCommand[]>(cacheKey);
+    if (cached) return cached;
+  } catch {
+    // Redis unavailable — fall through to the database
+  }
+
+  const result = await client.db.pool.query(
+    `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
+            delete_command, case_sensitive, allowed_roles, allowed_channels
+     FROM custom_commands
+     WHERE guild_id = $1
+       AND enabled = TRUE
+       AND trigger_type IN ('command', 'starts_with', 'contains', 'exact_match', 'regex')`,
+    [guildId],
+  );
+
+  client.cache.setJson(cacheKey, result.rows, CUSTOM_COMMANDS_CACHE_TTL).catch(() => {});
+  return result.rows as MessageCustomCommand[];
+}
 
 async function handleCustomCommands(
   client: WallEClient,
@@ -13,25 +56,16 @@ async function handleCustomCommands(
   const content = message.content;
   const contentLower = content.toLowerCase();
 
-  // Load all active message-type commands for this guild
-  const result = await client.db.pool.query(
-    `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
-            delete_command, case_sensitive, allowed_roles, allowed_channels
-     FROM custom_commands
-     WHERE guild_id = $1
-       AND enabled = TRUE
-       AND trigger_type IN ('command', 'starts_with', 'contains', 'exact_match', 'regex')`,
-    [guild.id],
-  );
-
-  if (result.rows.length === 0) return;
+  // Load all active message-type commands for this guild (Redis-cached)
+  const commands = await getMessageCommands(client, guild.id);
+  if (commands.length === 0) return;
 
   const config = await client.db.getGuildConfig(guild.id);
   const prefix = config?.prefix ?? '!';
   const channel = message.channel as import('discord.js').TextChannel;
   const memberRoleIds = message.member?.roles.cache.map((role) => role.id) ?? [];
 
-  for (const cmd of result.rows) {
+  for (const cmd of commands) {
     if (!canExecuteCustomCommand({
       allowedChannels: cmd.allowed_channels,
       allowedRoles: cmd.allowed_roles,
@@ -92,6 +126,7 @@ async function handleCustomCommands(
     if (!matched) continue;
 
     const responses = cmd.responses as string[];
+    if (!Array.isArray(responses) || responses.length === 0) continue;
     const raw = responses[Math.floor(Math.random() * responses.length)];
 
     const rendered = client.template.render(raw, {
@@ -139,6 +174,10 @@ async function handleCustomCommands(
       'UPDATE custom_commands SET uses = uses + 1 WHERE id = $1',
       [cmd.id],
     ).catch(() => {});
+
+    // Only one custom command fires per message — otherwise a broad
+    // 'contains' trigger stacks with every other match and spams the channel.
+    break;
   }
 }
 
@@ -148,15 +187,9 @@ export default {
   async execute(client: WallEClient, message: Message) {
     if (message.author.bot) return;
 
-    // Whitelist check
-    if (message.guild) {
-      const wl = await client.db.pool.query(
-        'SELECT status, permanent, expires_at FROM guild_whitelist WHERE guild_id = $1',
-        [message.guild.id],
-      ).catch(() => null);
-      const wlRow = wl?.rows[0];
-      const expired = !wlRow?.permanent && wlRow?.expires_at && new Date(wlRow.expires_at) < new Date();
-      if ((wlRow?.status !== 'approved' || expired) && message.author.id !== process.env.BOT_OWNER_ID) return;
+    // Whitelist check (Redis-cached — no longer a DB query per message)
+    if (message.guild && !(await isGuildAllowed(client, message.guild.id, message.author.id))) {
+      return;
     }
 
     try {
