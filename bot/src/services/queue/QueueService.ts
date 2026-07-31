@@ -26,7 +26,9 @@ export class QueueService {
     await this.queue.upsertJobScheduler(
       TICK_JOB,
       { every: TICK_INTERVAL_MS },
-      { name: TICK_JOB, data: {} },
+      // BullMQ keeps completed/failed job hashes forever by default — at 1 tick/min
+      // that fills Redis and, under noeviction, starts rejecting session writes.
+      { name: TICK_JOB, data: {}, opts: { removeOnComplete: 100, removeOnFail: 500 } },
     );
 
     this.worker = new Worker(
