@@ -1,137 +1,193 @@
 import { useState } from 'react';
-import { Calendar, Plus, Trash2, Edit, Clock, Hash, Play, Pause } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Calendar, Plus, Trash2, Clock, Hash, Play, Pause } from 'lucide-react';
+import { api } from '../../services/api';
 
 interface ScheduledMessage {
-  id: string;
-  name: string;
-  channelId: string;
-  channelName: string;
+  id: number;
+  channel_id: string;
   message: string;
-  schedule: string;
-  nextRun: Date;
+  embed: boolean;
+  embed_color: string | null;
+  interval_minutes: number;
+  next_run: string;
+  last_run: string | null;
   enabled: boolean;
 }
 
+interface DiscordChannel {
+  id: string;
+  name: string;
+  parent_id: string | null;
+}
+
+const blankForm = { channel_id: '', message: '', embed: false, embed_color: '#5865F2', interval_minutes: 1440 };
+
+// Common intervals in minutes for the dropdown.
+const INTERVALS: [number, string][] = [
+  [60, 'Every hour'],
+  [360, 'Every 6 hours'],
+  [720, 'Every 12 hours'],
+  [1440, 'Every day'],
+  [10080, 'Every week'],
+];
+
+function formatWhen(iso: string) {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return 'due now';
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `in ${d}d ${h % 24}h`;
+  if (h > 0) return `in ${h}h`;
+  return `in ${Math.max(1, Math.floor(diff / 60000))}m`;
+}
+
 export default function ScheduledMessagesPage() {
-  const [messages, setMessages] = useState<ScheduledMessage[]>([
-    { id: '1', name: 'Daily Reminder', channelId: '1', channelName: 'announcements', message: '📢 Don\'t forget to check out our weekly events!', schedule: 'Every day at 9:00 AM', nextRun: new Date(Date.now() + 43200000), enabled: true },
-    { id: '2', name: 'Weekly Update', channelId: '2', channelName: 'general', message: '🎉 Weekly server stats are now available!', schedule: 'Every Sunday at 12:00 PM', nextRun: new Date(Date.now() + 259200000), enabled: true },
-    { id: '3', name: 'Monthly Giveaway', channelId: '3', channelName: 'giveaways', message: '🎁 Monthly giveaway starting now!', schedule: '1st of every month at 6:00 PM', nextRun: new Date(Date.now() + 604800000), enabled: false },
-  ]);
+  const { guildId } = useParams<{ guildId: string }>();
+  const queryClient = useQueryClient();
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState(blankForm);
+  const [error, setError] = useState<string | null>(null);
 
+  const { data: messages = [] } = useQuery<ScheduledMessage[]>({
+    queryKey: ['scheduled-messages', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/scheduled-messages`).then(r => r.data),
+  });
 
-  const toggleMessage = (id: string) => {
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m));
-  };
+  const { data: channels = [] } = useQuery<DiscordChannel[]>({
+    queryKey: ['channels', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/channels`).then(r => r.data),
+  });
 
-  const deleteMessage = (id: string) => {
-    setMessages(prev => prev.filter(m => m.id !== id));
-  };
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['scheduled-messages', guildId] });
+  const apiError = (e: unknown) =>
+    setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Request failed');
 
-  const formatNextRun = (date: Date) => {
-    const now = new Date();
-    const diff = date.getTime() - now.getTime();
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(hours / 24);
-    
-    if (days > 0) return `in ${days}d ${hours % 24}h`;
-    if (hours > 0) return `in ${hours}h`;
-    return 'soon';
-  };
+  const createMutation = useMutation({
+    mutationFn: () => api.post(`/api/guilds/${guildId}/scheduled-messages`, form),
+    onSuccess: () => { invalidate(); setShowAdd(false); setForm(blankForm); setError(null); },
+    onError: apiError,
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (m: ScheduledMessage) =>
+      api.patch(`/api/guilds/${guildId}/scheduled-messages/${m.id}`, { enabled: !m.enabled }),
+    onSuccess: () => { invalidate(); setError(null); },
+    onError: apiError,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/guilds/${guildId}/scheduled-messages/${id}`),
+    onSuccess: () => { invalidate(); setError(null); },
+    onError: apiError,
+  });
+
+  const channelName = (id: string) => channels.find(c => c.id === id)?.name ?? id;
 
   return (
     <div className="max-w-4xl space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Calendar className="w-8 h-8 text-blue-400" />
           <div>
             <h1 className="text-2xl font-bold">Scheduled Messages</h1>
-            <p className="text-discord-light">Automate recurring announcements and reminders</p>
+            <p className="text-discord-light">Automate recurring announcements on a fixed interval</p>
           </div>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          New Schedule
-        </button>
+        {!showAdd && (
+          <button onClick={() => { setShowAdd(true); setError(null); }} className="btn btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> New Schedule
+          </button>
+        )}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="card text-center">
-          <p className="text-3xl font-bold">{messages.length}</p>
-          <p className="text-sm text-discord-light">Total Schedules</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-green-400">{messages.filter(m => m.enabled).length}</p>
-          <p className="text-sm text-discord-light">Active</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-yellow-400">{messages.filter(m => !m.enabled).length}</p>
-          <p className="text-sm text-discord-light">Paused</p>
-        </div>
-      </div>
+      {error && <div className="card bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
 
-      {/* Messages List */}
+      {showAdd && (
+        <div className="card space-y-4">
+          <h3 className="font-semibold">New Scheduled Message</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Channel</label>
+              <select value={form.channel_id} onChange={e => setForm({ ...form, channel_id: e.target.value })} className="input w-full">
+                <option value="">Select channel...</option>
+                {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Frequency</label>
+              <select
+                value={form.interval_minutes}
+                onChange={e => setForm({ ...form, interval_minutes: parseInt(e.target.value) })}
+                className="input w-full"
+              >
+                {INTERVALS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Message</label>
+            <textarea
+              value={form.message}
+              onChange={e => setForm({ ...form, message: e.target.value })}
+              className="input w-full h-24 resize-none"
+              placeholder="Supports {server} and {memberCount}"
+              maxLength={2000}
+            />
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.embed} onChange={e => setForm({ ...form, embed: e.target.checked })} className="w-4 h-4" />
+              Send as embed
+            </label>
+            {form.embed && (
+              <input type="color" value={form.embed_color} onChange={e => setForm({ ...form, embed_color: e.target.value })} className="w-9 h-9 rounded cursor-pointer" />
+            )}
+          </div>
+          <p className="text-xs text-discord-light">First message posts one interval from now.</p>
+          <div className="flex gap-3">
+            <button onClick={() => { setShowAdd(false); setError(null); }} className="btn btn-secondary">Cancel</button>
+            <button
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending || !form.channel_id || !form.message.trim()}
+              className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {createMutation.isPending ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !showAdd ? (
           <div className="card text-center py-12 text-discord-light">
-            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No scheduled messages</p>
-            <p className="text-sm mt-1">Create a schedule to automatically post messages</p>
+            <Calendar className="w-16 h-16 mx-auto mb-4 opacity-50" />
+            <p>No scheduled messages yet.</p>
           </div>
         ) : (
-          messages.map(message => (
-            <div key={message.id} className={`card ${!message.enabled ? 'opacity-60' : ''}`}>
-              <div className="flex items-start gap-4">
-                <button
-                  onClick={() => toggleMessage(message.id)}
-                  className={`p-3 rounded-lg ${
-                    message.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
-                  }`}
-                >
-                  {message.enabled ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
-                </button>
-                
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold">{message.name}</h3>
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      message.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {message.enabled ? 'Active' : 'Paused'}
-                    </span>
+          messages.map(m => (
+            <div key={m.id} className={`card ${m.enabled ? '' : 'opacity-60'}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2 text-sm text-discord-light">
+                    <Hash className="w-4 h-4" /> {channelName(m.channel_id)}
+                    <Clock className="w-4 h-4 ml-2" /> every {Math.round(m.interval_minutes / 60) || m.interval_minutes / 60}h
+                    <span className="ml-2">next {formatWhen(m.next_run)}</span>
                   </div>
-                  
-                  <div className="flex items-center gap-4 text-sm text-discord-light mb-3">
-                    <span className="flex items-center gap-1">
-                      <Hash className="w-4 h-4" />
-                      {message.channelName}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" />
-                      {message.schedule}
-                    </span>
-                  </div>
-                  
-                  <div className="bg-discord-dark rounded-lg p-3 text-sm">
-                    {message.message}
-                  </div>
-                  
-                  {message.enabled && (
-                    <p className="text-xs text-discord-light mt-2">
-                      Next run: <span className="text-green-400">{formatNextRun(message.nextRun)}</span>
-                    </p>
-                  )}
+                  <p className="whitespace-pre-wrap break-words">{m.message}</p>
                 </div>
-
-                <div className="flex gap-2">
-                  <button className="p-2 text-discord-light hover:text-white transition-colors">
-                    <Edit className="w-4 h-4" />
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => toggleMutation.mutate(m)}
+                    className="btn btn-secondary"
+                    title={m.enabled ? 'Pause' : 'Resume'}
+                  >
+                    {m.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                   </button>
                   <button
-                    onClick={() => deleteMessage(message.id)}
-                    className="p-2 text-discord-light hover:text-red-400 transition-colors"
+                    onClick={() => deleteMutation.mutate(m.id)}
+                    className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

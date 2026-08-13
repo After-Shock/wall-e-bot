@@ -1,176 +1,102 @@
 import { useState } from 'react';
-import { Clock, Search, Plus, Ban, RefreshCw, User } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Ban, Clock, ShieldCheck } from 'lucide-react';
+import { api } from '../../services/api';
 
 interface TempBan {
-  id: string;
-  userId: string;
+  id: number;
+  user_id: string;
+  moderator_id: string;
+  reason: string | null;
+  unban_at: string;
+  created_at: string;
   username: string;
-  moderatorId: string;
-  moderatorName: string;
-  reason: string;
-  startedAt: Date;
-  expiresAt: Date;
+  user_avatar: string | null;
+  moderator_name: string;
+}
+
+function formatExpiry(iso: string) {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return 'expiring now';
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `in ${d}d ${h % 24}h`;
+  if (h > 0) return `in ${h}h`;
+  return `in ${Math.max(1, Math.floor(diff / 60000))}m`;
 }
 
 export default function TempBansPage() {
-  const [searchQuery, setSearchQuery] = useState('');
+  const { guildId } = useParams<{ guildId: string }>();
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
 
-  const tempBans: TempBan[] = [
-    { id: '1', userId: '1', username: 'Spammer123', moderatorId: 'm1', moderatorName: 'Admin', reason: 'Spam and advertising', startedAt: new Date(Date.now() - 86400000), expiresAt: new Date(Date.now() + 604800000) },
-    { id: '2', userId: '2', username: 'RuleBreaker', moderatorId: 'm1', moderatorName: 'Admin', reason: 'Repeated rule violations', startedAt: new Date(Date.now() - 172800000), expiresAt: new Date(Date.now() + 432000000) },
-    { id: '3', userId: '3', username: 'ToxicUser', moderatorId: 'm2', moderatorName: 'Moderator', reason: 'Toxic behavior', startedAt: new Date(Date.now() - 3600000), expiresAt: new Date(Date.now() + 82800000) },
-  ];
+  const { data: bans = [], isLoading } = useQuery<TempBan[]>({
+    queryKey: ['temp-bans', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/temp-bans`).then(r => r.data),
+  });
 
-  const getTimeRemaining = (expiresAt: Date) => {
-    const diff = expiresAt.getTime() - Date.now();
-    if (diff <= 0) return 'Expired';
-    
-    const days = Math.floor(diff / 86400000);
-    const hours = Math.floor((diff % 86400000) / 3600000);
-    const minutes = Math.floor((diff % 3600000) / 60000);
-    
-    if (days > 0) return `${days}d ${hours}h remaining`;
-    if (hours > 0) return `${hours}h ${minutes}m remaining`;
-    return `${minutes}m remaining`;
-  };
-
-  const getProgress = (startedAt: Date, expiresAt: Date) => {
-    const total = expiresAt.getTime() - startedAt.getTime();
-    const elapsed = Date.now() - startedAt.getTime();
-    return Math.min(100, Math.max(0, (elapsed / total) * 100));
-  };
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const filteredBans = tempBans.filter(ban =>
-    ban.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    ban.reason.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const liftMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/guilds/${guildId}/temp-bans/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['temp-bans', guildId] });
+      setError(null);
+    },
+    onError: (e: unknown) =>
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to lift ban'),
+  });
 
   return (
     <div className="max-w-4xl space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Clock className="w-8 h-8 text-orange-400" />
-          <div>
-            <h1 className="text-2xl font-bold">Temporary Bans</h1>
-            <p className="text-discord-light">Manage time-limited bans</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="btn btn-secondary flex items-center gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
-          <button className="btn btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            Add Temp Ban
-          </button>
+      <div className="flex items-center gap-3">
+        <Ban className="w-8 h-8 text-red-400" />
+        <div>
+          <h1 className="text-2xl font-bold">Temp Bans</h1>
+          <p className="text-discord-light">Active temporary bans — lifted automatically when they expire</p>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-orange-400">{tempBans.length}</p>
-          <p className="text-sm text-discord-light">Active Temp Bans</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-yellow-400">
-            {tempBans.filter(b => getProgress(b.startedAt, b.expiresAt) > 75).length}
-          </p>
-          <p className="text-sm text-discord-light">Expiring Soon</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold">156</p>
-          <p className="text-sm text-discord-light">Total This Month</p>
-        </div>
+      {error && <div className="card bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+
+      <div className="bg-discord-blurple/20 border border-discord-blurple/50 rounded-lg p-4 text-sm">
+        Create temp bans with <code>/tempban</code> in Discord. Wall-E lifts them automatically at
+        expiry; use “Lift now” to unban early.
       </div>
 
-      {/* Search */}
-      <div className="card">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by user or reason..."
-            className="input w-full pl-9"
-          />
+      {isLoading ? null : bans.length === 0 ? (
+        <div className="card text-center py-12 text-discord-light">
+          <ShieldCheck className="w-16 h-16 mx-auto mb-4 opacity-50" />
+          <p>No active temp bans.</p>
         </div>
-      </div>
-
-      {/* Temp Bans List */}
-      <div className="space-y-4">
-        {filteredBans.length === 0 ? (
-          <div className="card text-center py-12 text-discord-light">
-            <Ban className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No active temporary bans</p>
-          </div>
-        ) : (
-          filteredBans.map(ban => (
-            <div key={ban.id} className="card">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center text-red-400 shrink-0">
-                  <Ban className="w-6 h-6" />
+      ) : (
+        <div className="space-y-3">
+          {bans.map(ban => (
+            <div key={ban.id} className="card flex items-center gap-4">
+              {ban.user_avatar ? (
+                <img src={ban.user_avatar} alt="" className="w-10 h-10 rounded-full" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-discord-dark" />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold">{ban.username}</div>
+                <div className="text-sm text-discord-light truncate">
+                  {ban.reason || 'No reason provided'} · by {ban.moderator_name}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className="font-semibold text-lg">{ban.username}</span>
-                      <span className="text-discord-light text-sm ml-2">({ban.userId})</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <button className="btn btn-secondary btn-sm">Unban</button>
-                      <button className="btn btn-secondary btn-sm">Extend</button>
-                    </div>
-                  </div>
-                  
-                  <p className="text-discord-light mb-3">{ban.reason}</p>
-                  
-                  {/* Progress Bar */}
-                  <div className="mb-2">
-                    <div className="h-2 bg-discord-dark rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all"
-                        style={{ width: `${getProgress(ban.startedAt, ban.expiresAt)}%` }}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-discord-light">
-                      Started: {formatDate(ban.startedAt)}
-                    </span>
-                    <span className={`font-medium ${
-                      getProgress(ban.startedAt, ban.expiresAt) > 75 ? 'text-yellow-400' : 'text-green-400'
-                    }`}>
-                      {getTimeRemaining(ban.expiresAt)}
-                    </span>
-                    <span className="text-discord-light">
-                      Expires: {formatDate(ban.expiresAt)}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1 mt-2 text-xs text-discord-light">
-                    <User className="w-3 h-3" />
-                    Banned by {ban.moderatorName}
-                  </div>
+                <div className="flex items-center gap-1 text-xs text-discord-light mt-1">
+                  <Clock className="w-3 h-3" /> expires {formatExpiry(ban.unban_at)}
                 </div>
               </div>
+              <button
+                onClick={() => liftMutation.mutate(ban.id)}
+                disabled={liftMutation.isPending}
+                className="btn btn-secondary shrink-0 disabled:opacity-50"
+              >
+                Lift now
+              </button>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
