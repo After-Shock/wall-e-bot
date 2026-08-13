@@ -9,6 +9,7 @@ import { guildConfigService, validationService } from '../services/index.js';
 import * as analyticsService from '../services/analyticsService.js';
 import * as backupService from '../services/backupService.js';
 import { z } from 'zod';
+import { reactionRoleBody, buildReactionRoleMessage, type ReactionRoleEntry } from '../utils/reactionRoles.js';
 
 // Helper: check if user has manage access to a guild
 function userHasGuildAccess(user: AuthenticatedUser, guildId: string): boolean {
@@ -2051,3 +2052,206 @@ guildsRouter.get('/:guildId/channels', requireAuth, requireGuildAccess, asyncHan
     res.status(500).json({ error: 'Failed to fetch guild channels' });
   }
 }));
+
+// ---------------------------------------------------------------------------
+// Reaction roles
+// Mirrors what /reactionrole does in the bot: post an embed with components
+// whose custom_ids (rr_<roleId>, rr_select) the bot's buttonInteraction handler
+// already understands. Only buttons/dropdown are offered — the bot has no
+// reactionAdd handler for reaction_roles, so the 'reactions' type is dead.
+// ---------------------------------------------------------------------------
+
+const botAuth =() => ({ Authorization: `Bot ${process.env.DISCORD_TOKEN}` });
+
+async function channelInGuild(channelId: string, guildId: string): Promise<boolean> {
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}`, { headers: botAuth() });
+  if (!res.ok) return false;
+  return ((await res.json()) as { guild_id?: string }).guild_id === guildId;
+}
+
+// Returns an error message if the bot could not hand out one of these roles.
+// Without this the message posts fine and every button silently fails on click.
+async function unassignableRoleError(guildId: string, roleIds: string[]): Promise<string | null> {
+  const [rolesRes, meRes] = await Promise.all([
+    fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, { headers: botAuth() }),
+    fetch(`https://discord.com/api/v10/guilds/${guildId}/members/${process.env.DISCORD_CLIENT_ID}`, { headers: botAuth() }),
+  ]);
+  if (!rolesRes.ok || !meRes.ok) return 'Could not verify role permissions with Discord';
+
+  const all = await rolesRes.json() as { id: string; name: string; position: number; managed: boolean }[];
+  const me = await meRes.json() as { roles: string[] };
+  const byId = new Map(all.map(r => [r.id, r]));
+  const botHighest = Math.max(0, ...me.roles.map(id => byId.get(id)?.position ?? 0));
+
+  for (const id of roleIds) {
+    const role = byId.get(id);
+    if (!role) return 'One of the selected roles no longer exists';
+    if (role.managed) return `@${role.name} is managed by an integration and cannot be assigned`;
+    if (role.position >= botHighest) {
+      return `@${role.name} is above Wall-E's highest role. Drag Wall-E's role above it in Server Settings → Roles.`;
+    }
+  }
+  return null;
+}
+
+async function replaceRoleRows(
+  guildId: string,
+  channelId: string,
+  newMessageId: string,
+  oldMessageId: string | null,
+  roles: ReactionRoleEntry[],
+) {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    if (oldMessageId) await client.query('DELETE FROM reaction_roles WHERE message_id = $1', [oldMessageId]);
+    await client.query('DELETE FROM reaction_roles WHERE message_id = $1', [newMessageId]);
+    for (const r of roles) {
+      await client.query(
+        `INSERT INTO reaction_roles (guild_id, channel_id, message_id, emoji, role_id, label)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [guildId, channelId, newMessageId, r.emoji, r.role_id, r.label],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// GET /api/guilds/:guildId/reaction-roles
+guildsRouter.get('/:guildId/reaction-roles', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const result = await db.query(
+    `SELECT m.id, m.channel_id, m.message_id, m.title, m.description, m.color, m.type,
+            COALESCE(
+              json_agg(json_build_object('role_id', r.role_id, 'emoji', r.emoji, 'label', r.label) ORDER BY r.id)
+              FILTER (WHERE r.id IS NOT NULL), '[]'
+            ) AS roles
+     FROM reaction_role_messages m
+     LEFT JOIN reaction_roles r ON r.message_id = m.message_id
+     WHERE m.guild_id = $1
+     GROUP BY m.id
+     ORDER BY m.id`,
+    [req.params.guildId],
+  );
+  res.json(result.rows);
+}));
+
+// POST /api/guilds/:guildId/reaction-roles — post a new message and store it
+guildsRouter.post('/:guildId/reaction-roles', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const parsed = reactionRoleBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+    const body = parsed.data;
+
+    if (!await channelInGuild(body.channel_id, guildId)) {
+      res.status(400).json({ error: 'Invalid channel' }); return;
+    }
+    const roleError = await unassignableRoleError(guildId, body.roles.map(r => r.role_id));
+    if (roleError) { res.status(400).json({ error: roleError }); return; }
+
+    try {
+      const message = await discordSend(body.channel_id, null, buildReactionRoleMessage(body, body.roles));
+      const inserted = await db.query(
+        `INSERT INTO reaction_role_messages (guild_id, channel_id, message_id, title, description, color, type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [guildId, message.channel_id, message.id, body.title, body.description, body.color, body.type],
+      );
+      await replaceRoleRows(guildId, message.channel_id, message.id, null, body.roles);
+      res.json({ id: inserted.rows[0].id, message_id: message.id, channel_id: message.channel_id });
+    } catch (e) {
+      logger.error('Reaction role create failed:', e);
+      res.status(502).json({ error: (e as Error).message });
+    }
+  }),
+);
+
+// PATCH /api/guilds/:guildId/reaction-roles/:id — edit in place, or repost if the
+// channel changed or the message was deleted in Discord
+guildsRouter.patch('/:guildId/reaction-roles/:id', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, id } = req.params;
+    const parsed = reactionRoleBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+    const body = parsed.data;
+
+    const existing = await db.query(
+      'SELECT * FROM reaction_role_messages WHERE id = $1 AND guild_id = $2',
+      [id, guildId],
+    );
+    if (existing.rows.length === 0) { res.status(404).json({ error: 'Message not found' }); return; }
+    const row = existing.rows[0] as { channel_id: string; message_id: string };
+
+    if (!await channelInGuild(body.channel_id, guildId)) {
+      res.status(400).json({ error: 'Invalid channel' }); return;
+    }
+    const roleError = await unassignableRoleError(guildId, body.roles.map(r => r.role_id));
+    if (roleError) { res.status(400).json({ error: roleError }); return; }
+
+    const payload = buildReactionRoleMessage(body, body.roles);
+    const movedChannel = row.channel_id !== body.channel_id;
+
+    try {
+      let message: { id: string; channel_id: string };
+      if (movedChannel) {
+        message = await discordSend(body.channel_id, null, payload);
+        await deleteDiscordMessage(row.channel_id, row.message_id);
+      } else {
+        try {
+          message = await discordSend(row.channel_id, row.message_id, payload);
+        } catch (e) {
+          // Someone deleted the message in Discord — post a fresh one.
+          if (e instanceof DiscordAPIError && e.status === 404) {
+            message = await discordSend(body.channel_id, null, payload);
+          } else {
+            throw e;
+          }
+        }
+      }
+
+      await db.query(
+        `UPDATE reaction_role_messages
+         SET channel_id = $1, message_id = $2, title = $3, description = $4, color = $5, type = $6
+         WHERE id = $7`,
+        [message.channel_id, message.id, body.title, body.description, body.color, body.type, id],
+      );
+      await replaceRoleRows(guildId, message.channel_id, message.id, row.message_id, body.roles);
+      res.json({ id: Number(id), message_id: message.id, channel_id: message.channel_id });
+    } catch (e) {
+      logger.error('Reaction role update failed:', e);
+      res.status(502).json({ error: (e as Error).message });
+    }
+  }),
+);
+
+// DELETE /api/guilds/:guildId/reaction-roles/:id
+guildsRouter.delete('/:guildId/reaction-roles/:id', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId, id } = req.params;
+  const existing = await db.query(
+    'DELETE FROM reaction_role_messages WHERE id = $1 AND guild_id = $2 RETURNING channel_id, message_id',
+    [id, guildId],
+  );
+  if (existing.rows.length === 0) { res.status(404).json({ error: 'Message not found' }); return; }
+  const { channel_id, message_id } = existing.rows[0];
+  await db.query('DELETE FROM reaction_roles WHERE message_id = $1', [message_id]);
+  await deleteDiscordMessage(channel_id, message_id);
+  res.json({ success: true });
+}));
+
+// Best-effort: the message may already be gone.
+async function deleteDiscordMessage(channelId: string, messageId: string) {
+  try {
+    await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: botAuth(),
+    });
+  } catch (e) {
+    logger.warn('Could not delete Discord message:', e);
+  }
+}

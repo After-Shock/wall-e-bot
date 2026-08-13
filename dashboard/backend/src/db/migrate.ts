@@ -268,6 +268,10 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 -- Add label column to reaction_roles if not exists
 ALTER TABLE reaction_roles ADD COLUMN IF NOT EXISTS label VARCHAR(100);
 
+-- Dashboard reaction role editor stores the embed body, not just the title
+ALTER TABLE reaction_role_messages ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE reaction_role_messages ADD COLUMN IF NOT EXISTS color VARCHAR(7);
+
 -- Stack group: panels sharing a group name deploy together as one Discord message
 ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_group VARCHAR(50);
 ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_position INTEGER DEFAULT 0;
