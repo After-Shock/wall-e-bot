@@ -10,6 +10,7 @@ import * as analyticsService from '../services/analyticsService.js';
 import * as backupService from '../services/backupService.js';
 import { z } from 'zod';
 import { reactionRoleBody, buildReactionRoleMessage, type ReactionRoleEntry } from '../utils/reactionRoles.js';
+import { resolveUsers } from '../utils/discordUsers.js';
 
 // Helper: check if user has manage access to a guild
 function userHasGuildAccess(user: AuthenticatedUser, guildId: string): boolean {
@@ -269,8 +270,16 @@ guildsRouter.get('/:guildId/leaderboard', requireAuth, requireGuildAccess, async
       [guildId],
     );
 
+    const users = await resolveUsers(result.rows.map(r => r.user_id));
+    const data = result.rows.map((r, i) => ({
+      ...r,
+      rank: (page - 1) * limit + i + 1,
+      username: users[r.user_id]?.username ?? `Unknown (${r.user_id})`,
+      avatar: users[r.user_id]?.avatar ?? null,
+    }));
+
     res.json({
-      data: result.rows,
+      data,
       total: parseInt(countResult.rows[0].count),
       page,
       limit,
@@ -298,7 +307,16 @@ guildsRouter.get('/:guildId/warnings', requireAuth, requireGuildAccess, asyncHan
     query += ' ORDER BY created_at DESC LIMIT 100';
 
     const result = await db.query(query, params);
-    res.json(result.rows);
+    const users = await resolveUsers(
+      result.rows.flatMap(r => [r.user_id, r.moderator_id]),
+    );
+    const rows = result.rows.map(r => ({
+      ...r,
+      username: users[r.user_id]?.username ?? `Unknown (${r.user_id})`,
+      user_avatar: users[r.user_id]?.avatar ?? null,
+      moderator_name: users[r.moderator_id]?.username ?? `Unknown (${r.moderator_id})`,
+    }));
+    res.json(rows);
   } catch (error) {
     logger.error('Error fetching warnings:', error);
     res.status(500).json({ error: 'Failed to fetch warnings' });
@@ -2255,3 +2273,195 @@ async function deleteDiscordMessage(channelId: string, messageId: string) {
     logger.warn('Could not delete Discord message:', e);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Auto roles — table consumed by the bot's guildMemberAdd handler.
+// ---------------------------------------------------------------------------
+
+const SNOWFLAKE = /^\d{17,20}$/;
+
+const autoRolesBody = z.object({
+  roles: z.array(z.object({
+    role_id: z.string().regex(SNOWFLAKE),
+    delay_minutes: z.number().int().min(0).max(10080), // up to 7 days
+    include_bots: z.boolean(),
+  })).max(50),
+});
+
+guildsRouter.get('/:guildId/auto-roles', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const result = await db.query(
+    'SELECT role_id, delay_minutes, include_bots FROM auto_roles WHERE guild_id = $1 ORDER BY id',
+    [req.params.guildId],
+  );
+  res.json(result.rows);
+}));
+
+// Replace the whole set — simplest correct semantics for a small config list.
+guildsRouter.put('/:guildId/auto-roles', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const parsed = autoRolesBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+
+    const roles = parsed.data.roles;
+    if (new Set(roles.map(r => r.role_id)).size !== roles.length) {
+      res.status(400).json({ error: 'The same role is listed twice' }); return;
+    }
+
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM auto_roles WHERE guild_id = $1', [guildId]);
+      for (const r of roles) {
+        await client.query(
+          `INSERT INTO auto_roles (guild_id, role_id, delay_minutes, include_bots)
+           VALUES ($1, $2, $3, $4)`,
+          [guildId, r.role_id, r.delay_minutes, r.include_bots],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+    res.json({ success: true });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Scheduled messages — polled by the bot's SchedulerService (interval-based).
+// ---------------------------------------------------------------------------
+
+const scheduledMessageBody = z.object({
+  channel_id: z.string().regex(SNOWFLAKE),
+  message: z.string().trim().min(1).max(2000),
+  embed: z.boolean().default(false),
+  embed_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  interval_minutes: z.number().int().min(5).max(60 * 24 * 30), // 5 min .. 30 days
+  enabled: z.boolean().default(true),
+});
+
+guildsRouter.get('/:guildId/scheduled-messages', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const result = await db.query(
+    `SELECT id, channel_id, message, embed, embed_color, interval_minutes,
+            next_run, last_run, enabled
+     FROM scheduled_messages WHERE guild_id = $1 ORDER BY id`,
+    [req.params.guildId],
+  );
+  res.json(result.rows);
+}));
+
+guildsRouter.post('/:guildId/scheduled-messages', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const parsed = scheduledMessageBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+    const b = parsed.data;
+    if (!await channelInGuild(b.channel_id, guildId)) { res.status(400).json({ error: 'Invalid channel' }); return; }
+
+    // First send happens one interval from now.
+    const nextRun = new Date(Date.now() + b.interval_minutes * 60 * 1000);
+    const result = await db.query(
+      `INSERT INTO scheduled_messages
+         (guild_id, channel_id, message, embed, embed_color, interval_minutes, next_run, enabled, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [guildId, b.channel_id, b.message, b.embed, b.embed_color ?? null,
+        b.interval_minutes, nextRun, b.enabled, (req as AuthenticatedRequest).user!.id],
+    );
+    res.json({ id: result.rows[0].id });
+  }),
+);
+
+guildsRouter.patch('/:guildId/scheduled-messages/:id', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 30, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, id } = req.params;
+    const parsed = scheduledMessageBody.partial().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+    const b = parsed.data;
+    if (b.channel_id && !await channelInGuild(b.channel_id, guildId)) {
+      res.status(400).json({ error: 'Invalid channel' }); return;
+    }
+
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    for (const [k, v] of Object.entries(b)) {
+      sets.push(`${k} = $${sets.length + 1}`);
+      vals.push(v);
+    }
+    // Changing the interval reschedules the next run so it takes effect promptly.
+    if (b.interval_minutes != null) {
+      sets.push(`next_run = $${sets.length + 1}`);
+      vals.push(new Date(Date.now() + b.interval_minutes * 60 * 1000));
+    }
+    if (sets.length === 0) { res.status(400).json({ error: 'No fields to update' }); return; }
+
+    vals.push(id, guildId);
+    const result = await db.query(
+      `UPDATE scheduled_messages SET ${sets.join(', ')}
+       WHERE id = $${vals.length - 1} AND guild_id = $${vals.length} RETURNING id`,
+      vals,
+    );
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    res.json({ success: true });
+  }),
+);
+
+guildsRouter.delete('/:guildId/scheduled-messages/:id', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const result = await db.query(
+    'DELETE FROM scheduled_messages WHERE id = $1 AND guild_id = $2 RETURNING id',
+    [req.params.id, req.params.guildId],
+  );
+  if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ success: true });
+}));
+
+// ---------------------------------------------------------------------------
+// Temp bans — created by /tempban, expired by SchedulerService.checkTempBans.
+// This route lists active bans and lets a mod lift one early.
+// ---------------------------------------------------------------------------
+
+guildsRouter.get('/:guildId/temp-bans', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const result = await db.query(
+    `SELECT id, user_id, moderator_id, reason, unban_at, created_at
+     FROM temp_bans WHERE guild_id = $1 AND unbanned = false
+     ORDER BY unban_at`,
+    [req.params.guildId],
+  );
+  const users = await resolveUsers(result.rows.flatMap(r => [r.user_id, r.moderator_id]));
+  const rows = result.rows.map(r => ({
+    ...r,
+    username: users[r.user_id]?.username ?? `Unknown (${r.user_id})`,
+    user_avatar: users[r.user_id]?.avatar ?? null,
+    moderator_name: users[r.moderator_id]?.username ?? `Unknown (${r.moderator_id})`,
+  }));
+  res.json(rows);
+}));
+
+// Lift a temp ban early: unban in Discord, then mark resolved.
+guildsRouter.delete('/:guildId/temp-bans/:id', requireAuth, requireGuildAdmin,
+  rateLimitByGuild({ max: 20, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, id } = req.params;
+    const found = await db.query(
+      'SELECT user_id FROM temp_bans WHERE id = $1 AND guild_id = $2 AND unbanned = false',
+      [id, guildId],
+    );
+    if (found.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const del = await fetch(
+      `https://discord.com/api/v10/guilds/${guildId}/bans/${found.rows[0].user_id}`,
+      { method: 'DELETE', headers: { ...botAuth(), 'X-Audit-Log-Reason': 'Temp ban lifted from dashboard' } },
+    );
+    // 404 = already unbanned in Discord; treat as success and reconcile our row.
+    if (!del.ok && del.status !== 404) {
+      res.status(502).json({ error: `Discord unban failed (${del.status})` }); return;
+    }
+    await db.query('UPDATE temp_bans SET unbanned = true WHERE id = $1', [id]);
+    res.json({ success: true });
+  }),
+);
