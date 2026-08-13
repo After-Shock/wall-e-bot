@@ -71,6 +71,35 @@ export class SchedulerService {
     } catch (err) {
       logger.error('[Scheduler] checkIntervalCommands failed:', err);
     }
+    try {
+      await this.checkTempBans();
+    } catch (err) {
+      logger.error('[Scheduler] checkTempBans failed:', err);
+    }
+  }
+
+  /** Unban users whose temp ban has expired. */
+  private async checkTempBans() {
+    const { rows } = await this.client.db.pool.query(
+      `SELECT id, guild_id, user_id FROM temp_bans
+       WHERE unbanned = false AND unban_at <= NOW()`,
+    );
+    for (const ban of rows as { id: number; guild_id: string; user_id: string }[]) {
+      const guild = this.client.guilds.cache.get(ban.guild_id);
+      try {
+        // unban throws if the user is not banned (already manually unbanned) —
+        // treat that as success so we stop retrying every tick.
+        await guild?.members.unban(ban.user_id, 'Temp ban expired').catch((e: { code?: number }) => {
+          if (e?.code !== 10026 /* Unknown Ban */) throw e;
+        });
+        await this.client.db.pool.query(
+          'UPDATE temp_bans SET unbanned = true WHERE id = $1',
+          [ban.id],
+        );
+      } catch (err) {
+        logger.error(`Failed to lift temp ban ${ban.id} (${ban.user_id} in ${ban.guild_id}):`, err);
+      }
+    }
   }
 
   start() {
