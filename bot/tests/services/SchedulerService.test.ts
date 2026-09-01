@@ -21,6 +21,9 @@ const mockGuild = {
     cache: new Map([
       ['channel-1', {
         id: 'channel-1',
+        // Real discord.js channels expose isTextBased(); the scheduler checks it
+        // so a task pointed at a voice or category channel fails cleanly.
+        isTextBased: () => true,
         send: mockChannelSend.mockResolvedValue({ id: 'msg-1' }),
       }],
     ]),
@@ -56,12 +59,26 @@ const mockClient = {
 // Import SchedulerService
 const { SchedulerService } = await import('../../src/services/SchedulerService.js');
 
+/** A task claim that succeeded — the scheduler only sends when it wins the CAS. */
+const CLAIM_WON = { rows: [{ id: 1 }], rowCount: 1 };
+
+/**
+ * Find the query the scheduler issued that matches `fragment`.
+ *
+ * Tests used to index into mock.calls positionally, which broke as soon as the
+ * number of queries changed — and start() interleaves several independent
+ * checks, so position is not even stable between runs.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const queryMatching = (fragment: string): any[] | undefined =>
+  mockQuery.mock.calls.find((c: unknown[]) => String(c[0]).includes(fragment));
+
 describe('SchedulerService', () => {
   let scheduler: InstanceType<typeof SchedulerService>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockQuery.mockResolvedValue({ rows: [] });
+    mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
     
     // @ts-expect-error - Using mock client
     scheduler = new SchedulerService(mockClient);
@@ -112,10 +129,9 @@ describe('SchedulerService', () => {
       
       mockQuery
         .mockResolvedValueOnce({ rows: [mockTask] }) // SELECT due tasks
-        .mockResolvedValueOnce({ rows: [] }); // UPDATE last_run
+        .mockResolvedValueOnce(CLAIM_WON); // CAS claim on next_run
 
-      scheduler.start();
-      await Promise.resolve(); // Let promises resolve
+      await scheduler.runSchedulerTick();
 
       expect(mockChannelSend).toHaveBeenCalledWith('Hello Test Server!');
     });
@@ -131,10 +147,11 @@ describe('SchedulerService', () => {
         enabled: true,
       };
       
-      mockQuery.mockResolvedValueOnce({ rows: [mockTask] });
+      mockQuery
+        .mockResolvedValueOnce({ rows: [mockTask] })
+        .mockResolvedValueOnce(CLAIM_WON);
 
-      scheduler.start();
-      await Promise.resolve();
+      await scheduler.runSchedulerTick();
 
       expect(mockChannelSend).not.toHaveBeenCalled();
     });
@@ -150,12 +167,82 @@ describe('SchedulerService', () => {
         enabled: true,
       };
       
-      mockQuery.mockResolvedValueOnce({ rows: [mockTask] });
+      mockQuery
+        .mockResolvedValueOnce({ rows: [mockTask] })
+        .mockResolvedValueOnce(CLAIM_WON);
 
-      scheduler.start();
-      await Promise.resolve();
+      await scheduler.runSchedulerTick();
 
       expect(mockChannelSend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('claim protocol', () => {
+    const dueTask = (over: Record<string, unknown> = {}) => ({
+      id: 1,
+      guild_id: 'guild-123',
+      channel_id: 'channel-1',
+      message: 'Hi',
+      embed: false,
+      interval_minutes: 60,
+      next_run: new Date('2026-01-01T00:00:00Z'),
+      enabled: true,
+      failure_count: 0,
+      ...over,
+    });
+
+    it('does not send when another process already claimed the task', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [dueTask()] })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // lost the CAS
+
+      await scheduler.runSchedulerTick();
+
+      expect(mockChannelSend).not.toHaveBeenCalled();
+    });
+
+    it('advances next_run before sending, so a crash cannot re-send', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [dueTask()] })
+        .mockResolvedValueOnce(CLAIM_WON);
+
+      await scheduler.runSchedulerTick();
+
+      const claim = queryMatching('UPDATE scheduled_messages SET next_run');
+      expect(claim).toBeDefined();
+      expect(String(claim![0])).toContain('AND next_run = $3');
+      // The claim is issued before the message goes out, so a crash between the
+      // two loses the send rather than repeating it.
+      const claimOrder = mockQuery.mock.invocationCallOrder[
+        mockQuery.mock.calls.indexOf(claim!)
+      ];
+      expect(claimOrder).toBeLessThan(mockChannelSend.mock.invocationCallOrder[0]);
+    });
+
+    it('counts a failure and eventually disables a task with a dead channel', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [dueTask({ channel_id: 'gone', failure_count: 4 })] })
+        .mockResolvedValueOnce(CLAIM_WON);
+
+      await scheduler.runSchedulerTick();
+
+      const update = queryMatching('enabled = false');
+      expect(update).toBeDefined();
+      expect(String(update![0])).toContain('failure_count');
+    });
+
+    it('anchors the next run on the scheduled time, not on now, so it does not drift', async () => {
+      const due = new Date('2026-01-01T00:00:00Z');
+      mockQuery
+        .mockResolvedValueOnce({ rows: [dueTask({ next_run: due, interval_minutes: 60 })] })
+        .mockResolvedValueOnce(CLAIM_WON);
+
+      await scheduler.runSchedulerTick();
+
+      const claim = queryMatching('UPDATE scheduled_messages SET next_run');
+      const scheduled = new Date(claim![1][1] as Date).getTime();
+      // Exactly on the hour grid from the original due time, whenever it ran.
+      expect((scheduled - due.getTime()) % (60 * 60 * 1000)).toBe(0);
     });
   });
 
@@ -174,10 +261,9 @@ describe('SchedulerService', () => {
       
       mockQuery
         .mockResolvedValueOnce({ rows: [mockTask] })
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce(CLAIM_WON);
 
-      scheduler.start();
-      await Promise.resolve();
+      await scheduler.runSchedulerTick();
 
       expect(mockChannelSend).toHaveBeenCalledWith('Welcome to Test Server!');
     });
@@ -196,10 +282,9 @@ describe('SchedulerService', () => {
       
       mockQuery
         .mockResolvedValueOnce({ rows: [mockTask] })
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce(CLAIM_WON);
 
-      scheduler.start();
-      await Promise.resolve();
+      await scheduler.runSchedulerTick();
 
       expect(mockChannelSend).toHaveBeenCalledWith('We have 100 members!');
     });
@@ -213,13 +298,13 @@ describe('SchedulerService', () => {
         'guild-123',
         'channel-1',
         'Test message',
-        { intervalMinutes: 60, createdBy: 'user-1' }
+        { intervalMinutes: 60, createdBy: 'user-1' },
       );
 
       expect(id).toBe(1);
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO scheduled_messages'),
-        expect.arrayContaining(['guild-123', 'channel-1', 'Test message'])
+        expect.arrayContaining(['guild-123', 'channel-1', 'Test message']),
       );
     });
 
@@ -229,8 +314,8 @@ describe('SchedulerService', () => {
           'guild-123',
           'channel-1',
           'Test',
-          { createdBy: 'user-1' }
-        )
+          { createdBy: 'user-1' },
+        ),
       ).rejects.toThrow('Must specify runAt, intervalMinutes, or cronExpression');
     });
   });

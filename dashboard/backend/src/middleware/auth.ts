@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { db } from '../db/index.js';
+import { isBotOwner } from '@wall-e/shared';
+import { getUserGuilds, isGuildAdmin, GuildResolutionError } from '../utils/userGuilds.js';
 
 export interface AuthenticatedUser {
   id: string;
@@ -9,13 +11,6 @@ export interface AuthenticatedUser {
   email: string | null;
   accessToken: string;
   refreshToken: string;
-  guilds?: Array<{
-    id: string;
-    name: string;
-    icon: string | null;
-    owner: boolean;
-    permissions: string;
-  }>;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -30,30 +25,42 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   next();
 };
 
+/**
+ * Map a failed guild resolution to a response. Never falls through to "allowed":
+ * a dead token means log in again, an unreachable Discord means try later.
+ */
+function respondToGuildResolutionError(res: Response, error: unknown): void {
+  if (error instanceof GuildResolutionError && error.kind === 'reauth') {
+    res.status(401).json({ error: 'Session expired, please log in again' });
+    return;
+  }
+  res.status(503).json({ error: 'Could not verify permissions, please try again' });
+}
+
 export const requireGuildAccess: RequestHandler = async (req, res, next) => {
   try {
     const guildId = req.params.guildId;
     const user = (req as AuthenticatedRequest).user;
 
-    if (!user || !user.guilds) {
+    if (!user) {
       res.status(401).json({ error: 'Not authenticated' });
       return;
     }
 
-    // Fast path: user has MANAGE_GUILD / ADMINISTRATOR / is owner
-    const guild = user.guilds.find(g => g.id === guildId);
-    if (guild) {
-      const permissions = BigInt(guild.permissions);
-      const MANAGE_GUILD = BigInt(0x20);
-      const ADMINISTRATOR = BigInt(0x8);
-      if (
-        guild.owner ||
-        (permissions & MANAGE_GUILD) === MANAGE_GUILD ||
-        (permissions & ADMINISTRATOR) === ADMINISTRATOR
-      ) {
-        next();
-        return;
-      }
+    // Fast path: user has MANAGE_GUILD / ADMINISTRATOR / is owner.
+    // Resolved live (Redis-cached, 5 min) rather than from the session, so a
+    // demotion in Discord takes effect in minutes instead of at next login.
+    let guilds;
+    try {
+      guilds = await getUserGuilds(user);
+    } catch (error) {
+      respondToGuildResolutionError(res, error);
+      return;
+    }
+
+    if (isGuildAdmin(guilds, guildId)) {
+      next();
+      return;
     }
 
     // Slow path: check if guild has configured dashboard roles
@@ -101,30 +108,24 @@ export const requireGuildAccess: RequestHandler = async (req, res, next) => {
 
 // Like requireGuildAccess but only allows MANAGE_GUILD/ADMINISTRATOR/owner — no role fallback.
 // Used for routes that edit the dashboard access list itself.
-export const requireGuildAdmin: RequestHandler = (req, res, next) => {
+export const requireGuildAdmin: RequestHandler = async (req, res, next) => {
   const guildId = req.params.guildId;
   const user = (req as AuthenticatedRequest).user;
 
-  if (!user || !user.guilds) {
+  if (!user) {
     res.status(401).json({ error: 'Not authenticated' });
     return;
   }
 
-  const guild = user.guilds.find(g => g.id === guildId);
-  if (!guild) {
-    res.status(403).json({ error: 'No access to this guild' });
+  let guilds;
+  try {
+    guilds = await getUserGuilds(user);
+  } catch (error) {
+    respondToGuildResolutionError(res, error);
     return;
   }
 
-  const permissions = BigInt(guild.permissions);
-  const MANAGE_GUILD = BigInt(0x20);
-  const ADMINISTRATOR = BigInt(0x8);
-
-  if (
-    !guild.owner &&
-    (permissions & MANAGE_GUILD) !== MANAGE_GUILD &&
-    (permissions & ADMINISTRATOR) !== ADMINISTRATOR
-  ) {
+  if (!isGuildAdmin(guilds, guildId)) {
     res.status(403).json({ error: 'Insufficient permissions' });
     return;
   }
@@ -138,8 +139,7 @@ export const requireBotOwner: RequestHandler = (req, res, next) => {
     res.status(401).json({ error: 'Not authenticated' });
     return;
   }
-  const ownerIds = (process.env.BOT_OWNER_ID || '').split(',').map(s => s.trim());
-  if (!ownerIds.includes(user.id)) {
+  if (!isBotOwner(user.id, process.env.BOT_OWNER_ID)) {
     res.status(403).json({ error: 'Bot owner only' });
     return;
   }

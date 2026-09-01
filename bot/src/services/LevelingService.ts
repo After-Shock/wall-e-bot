@@ -134,12 +134,14 @@ export class LevelingService {
   }
 
   private async getGuildConfig(guildId: string) {
-    let config = await this.client.cache.getGuildConfig(guildId);
-    
+    // The cache is an optimization: a Redis outage should degrade to a DB read,
+    // not switch leveling off for the duration.
+    let config = await this.client.cache.getGuildConfig(guildId).catch(() => null);
+
     if (!config) {
       config = await this.client.db.getGuildConfig(guildId);
       if (config) {
-        await this.client.cache.setGuildConfig(guildId, config);
+        await this.client.cache.setGuildConfig(guildId, config).catch(() => {});
       }
     }
 

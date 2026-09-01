@@ -11,18 +11,14 @@ import * as backupService from '../services/backupService.js';
 import { z } from 'zod';
 import { reactionRoleBody, buildReactionRoleMessage, type ReactionRoleEntry } from '../utils/reactionRoles.js';
 import { resolveUsers } from '../utils/discordUsers.js';
+import { findCategoryInGuild } from '../utils/ticketScope.js';
+import { getUserGuilds, isGuildAdmin, GuildResolutionError } from '../utils/userGuilds.js';
 
-// Helper: check if user has manage access to a guild
-function userHasGuildAccess(user: AuthenticatedUser, guildId: string): boolean {
-  if (!user.guilds) return false;
-  const guild = user.guilds.find(g => g.id === guildId);
-  if (!guild) return false;
-  const permissions = BigInt(guild.permissions);
-  const MANAGE_GUILD = BigInt(0x20);
-  const ADMINISTRATOR = BigInt(0x8);
-  return guild.owner ||
-    (permissions & MANAGE_GUILD) === MANAGE_GUILD ||
-    (permissions & ADMINISTRATOR) === ADMINISTRATOR;
+// Helper: check if user has manage access to a guild.
+// Resolves the guild list live (Redis-cached) rather than reading a session
+// snapshot taken at login — see utils/userGuilds.ts.
+async function userHasGuildAccess(user: AuthenticatedUser, guildId: string): Promise<boolean> {
+  return isGuildAdmin(await getUserGuilds(user), guildId);
 }
 
 export const guildsRouter = Router();
@@ -39,22 +35,20 @@ interface DiscordGuild {
 guildsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
   const authReq = req as AuthenticatedRequest;
   try {
-    // Fetch user's guilds from Discord API
-    const response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
-      headers: {
-        Authorization: `Bearer ${authReq.user!.accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      res.status(response.status).json({ error: 'Failed to fetch guilds' });
+    // Shared resolver: Redis-cached, and the same list the authz middleware
+    // sees. Previously this route fetched its own copy and wrote it into the
+    // session, which is what made permissions stale for 7 days.
+    let guilds: DiscordGuild[];
+    try {
+      guilds = await getUserGuilds(authReq.user!);
+    } catch (error) {
+      if (error instanceof GuildResolutionError && error.kind === 'reauth') {
+        res.status(401).json({ error: 'Session expired, please log in again' });
+      } else {
+        res.status(503).json({ error: 'Could not reach Discord, please try again' });
+      }
       return;
     }
-
-    const guilds = await response.json() as DiscordGuild[];
-    
-    // Store guilds in session for permission checking (all guilds, needed by requireGuildAccess)
-    (authReq.user as any).guilds = guilds;
 
     const MANAGE_GUILD = BigInt(0x20);
     const ADMINISTRATOR = BigInt(0x8);
@@ -1554,6 +1548,13 @@ guildsRouter.post('/:guildId/ticket-categories/:categoryId/form-fields', require
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
     try {
+      // The category id is global; prove it belongs to this guild before any
+      // read or write touches it.
+      if (!(await findCategoryInGuild(categoryId, guildId))) {
+        res.status(404).json({ error: 'Category not found' });
+        return;
+      }
+
       // Check count limit
       const countResult = await db.query('SELECT COUNT(*) FROM ticket_form_fields WHERE category_id=$1', [categoryId]);
       if (parseInt(countResult.rows[0].count) >= 5) {
@@ -1690,11 +1691,11 @@ guildsRouter.post(
       res.status(400).json({ error: 'Cannot copy settings to the same server' });
       return;
     }
-    if (!authReq.user?.guilds) {
+    if (!authReq.user) {
       res.status(401).json({ error: 'Not authenticated' });
       return;
     }
-    if (!userHasGuildAccess(authReq.user, sourceGuildId)) {
+    if (!(await userHasGuildAccess(authReq.user, sourceGuildId))) {
       res.status(403).json({ error: "You don't have permission to access the source server" });
       return;
     }

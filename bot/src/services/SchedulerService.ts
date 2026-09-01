@@ -36,7 +36,11 @@ interface ScheduledTask {
   last_run?: Date;               // When task last executed
   enabled: boolean;              // Whether task is active
   created_by: string;            // User ID who created the task
+  failure_count: number;         // Consecutive delivery failures
 }
+
+/** Consecutive delivery failures before a scheduled message is disabled. */
+const MAX_TASK_FAILURES = 5;
 
 /**
  * Background scheduler for timed tasks.
@@ -85,11 +89,18 @@ export class SchedulerService {
        WHERE unbanned = false AND unban_at <= NOW()`,
     );
     for (const ban of rows as { id: number; guild_id: string; user_id: string }[]) {
+      // If the guild isn't on this process (not ready yet, another shard, bot
+      // removed) `guild?.members.unban(...)` used to evaluate to undefined, the
+      // await resolved, and the row was flipped to unbanned = true — leaving the
+      // user banned forever with nothing left to retry. Skip instead: the row
+      // stays due and the next tick, or the shard that owns the guild, gets it.
       const guild = this.client.guilds.cache.get(ban.guild_id);
+      if (!guild) continue;
+
       try {
         // unban throws if the user is not banned (already manually unbanned) —
         // treat that as success so we stop retrying every tick.
-        await guild?.members.unban(ban.user_id, 'Temp ban expired').catch((e: { code?: number }) => {
+        await guild.members.unban(ban.user_id, 'Temp ban expired').catch((e: { code?: number }) => {
           if (e?.code !== 10026 /* Unknown Ban */) throw e;
         });
         await this.client.db.pool.query(
@@ -193,7 +204,7 @@ export class SchedulerService {
   private async checkScheduledTasks() {
     try {
       const now = new Date();
-      
+
       const result = await this.client.db.pool.query(
         `SELECT * FROM scheduled_messages 
          WHERE enabled = true AND next_run <= $1`,
@@ -208,18 +219,71 @@ export class SchedulerService {
     }
   }
 
+  /**
+   * Work out when a repeating task should next fire.
+   *
+   * Anchored on the run it was *due* for, not on "now", so execution latency
+   * doesn't accumulate into drift. If the bot was down long enough that the
+   * anchored time is still in the past, skip forward rather than replaying
+   * every missed run.
+   */
+  private computeNextRun(task: ScheduledTask): Date | null {
+    const now = Date.now();
+
+    if (task.interval_minutes) {
+      const step = task.interval_minutes * 60 * 1000;
+      const due = new Date(task.next_run).getTime();
+      const missed = Math.max(1, Math.ceil((now - due) / step));
+      return new Date(due + missed * step);
+    }
+
+    if (task.cron_expression) {
+      return this.getNextCronRun(task.cron_expression);
+    }
+
+    return null; // one-time task
+  }
+
+  /**
+   * Claim a task by advancing its cursor, and only send if the claim succeeded.
+   *
+   * The previous order was send-then-update, which re-sent the message whenever
+   * the process died or Discord errored between the two. Worse, an uncached
+   * guild or a deleted channel returned early without ever advancing next_run,
+   * so the task stayed due and was retried every 60 seconds forever, silently.
+   *
+   * The compare-and-set on next_run also gives cross-process mutual exclusion
+   * for free: with several shards polling, exactly one wins the claim.
+   */
   private async executeTask(task: ScheduledTask) {
+    const nextRun = this.computeNextRun(task);
+
+    const claim = nextRun
+      ? await this.client.db.pool.query(
+          `UPDATE scheduled_messages SET next_run = $2, last_run = NOW()
+           WHERE id = $1 AND next_run = $3 AND enabled = true
+           RETURNING id`,
+          [task.id, nextRun, task.next_run],
+        )
+      : await this.client.db.pool.query(
+          `UPDATE scheduled_messages SET enabled = false, last_run = NOW()
+           WHERE id = $1 AND next_run = $2 AND enabled = true
+           RETURNING id`,
+          [task.id, task.next_run],
+        );
+
+    if (claim.rowCount === 0) return; // another process (or shard) took it
+
     try {
       const guild = this.client.guilds.cache.get(task.guild_id);
-      if (!guild) return;
+      if (!guild) throw new Error(`Guild ${task.guild_id} not available on this process`);
 
-      const channel = guild.channels.cache.get(task.channel_id) as TextChannel;
-      if (!channel) return;
+      const channel = guild.channels.cache.get(task.channel_id) as TextChannel | undefined;
+      if (!channel?.isTextBased()) throw new Error(`Channel ${task.channel_id} not found or not text`);
 
-      // Send the message
       if (task.embed) {
         const embed = new EmbedBuilder()
-          .setColor(task.embed_color ? parseInt(task.embed_color.replace('#', ''), 16) : COLORS.PRIMARY)
+          .setColor(this.parseEmbedColor(task.embed_color))
           .setDescription(this.parseVariables(task.message, guild))
           .setTimestamp();
 
@@ -228,31 +292,48 @@ export class SchedulerService {
         await channel.send(this.parseVariables(task.message, guild));
       }
 
-      // Calculate next run
-      let nextRun: Date;
-      if (task.interval_minutes) {
-        nextRun = new Date(Date.now() + task.interval_minutes * 60 * 1000);
-      } else if (task.cron_expression) {
-        nextRun = this.getNextCronRun(task.cron_expression);
-      } else {
-        // One-time task, disable it
-        await this.client.db.pool.query(
-          'UPDATE scheduled_messages SET enabled = false, last_run = NOW() WHERE id = $1',
-          [task.id],
-        );
-        return;
-      }
-
-      // Update last_run and next_run
       await this.client.db.pool.query(
-        'UPDATE scheduled_messages SET last_run = NOW(), next_run = $2 WHERE id = $1',
-        [task.id, nextRun],
+        'UPDATE scheduled_messages SET failure_count = 0, last_error = NULL WHERE id = $1',
+        [task.id],
       );
 
       logger.info(`Executed scheduled task ${task.id} in guild ${task.guild_id}`);
     } catch (error) {
-      logger.error(`Error executing scheduled task ${task.id}:`, error);
+      await this.recordTaskFailure(task, error);
     }
+  }
+
+  /** Count a failed delivery, and disable the task once it is clearly broken. */
+  private async recordTaskFailure(task: ScheduledTask, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failures = (task.failure_count ?? 0) + 1;
+
+    try {
+      if (failures >= MAX_TASK_FAILURES) {
+        await this.client.db.pool.query(
+          'UPDATE scheduled_messages SET enabled = false, failure_count = $2, last_error = $3 WHERE id = $1',
+          [task.id, failures, message],
+        );
+        logger.error(
+          `Disabled scheduled task ${task.id} (guild ${task.guild_id}) after ${failures} consecutive failures: ${message}`,
+        );
+      } else {
+        await this.client.db.pool.query(
+          'UPDATE scheduled_messages SET failure_count = $2, last_error = $3 WHERE id = $1',
+          [task.id, failures, message],
+        );
+        logger.warn(`Scheduled task ${task.id} failed (${failures}/${MAX_TASK_FAILURES}): ${message}`);
+      }
+    } catch (dbError) {
+      logger.error(`Could not record failure for scheduled task ${task.id}:`, dbError);
+    }
+  }
+
+  /** Hex string to an embed colour, falling back rather than throwing on junk. */
+  private parseEmbedColor(raw: string | undefined): number {
+    if (!raw) return COLORS.PRIMARY;
+    const parsed = parseInt(raw.replace('#', ''), 16);
+    return Number.isNaN(parsed) ? COLORS.PRIMARY : parsed;
   }
 
   private async checkAutoClose() {
@@ -539,7 +620,7 @@ export class SchedulerService {
   private async checkAutoDelete() {
     try {
       const result = await this.client.db.pool.query(
-        `SELECT * FROM auto_delete_channels WHERE enabled = TRUE`,
+        'SELECT * FROM auto_delete_channels WHERE enabled = TRUE',
       );
       for (const config of result.rows) {
         await this.runAutoDelete(config).catch(e =>
@@ -554,7 +635,7 @@ export class SchedulerService {
   private async checkAutoDeleteForGuild(guildId: string) {
     try {
       const result = await this.client.db.pool.query(
-        `SELECT * FROM auto_delete_channels WHERE enabled = TRUE AND guild_id = $1`,
+        'SELECT * FROM auto_delete_channels WHERE enabled = TRUE AND guild_id = $1',
         [guildId],
       );
       for (const config of result.rows) {
@@ -570,7 +651,7 @@ export class SchedulerService {
   private async runAutoDeleteById(configId: number, guildId: string) {
     try {
       const result = await this.client.db.pool.query(
-        `SELECT * FROM auto_delete_channels WHERE id = $1 AND guild_id = $2`,
+        'SELECT * FROM auto_delete_channels WHERE id = $1 AND guild_id = $2',
         [configId, guildId],
       );
       if (result.rows.length === 0) {

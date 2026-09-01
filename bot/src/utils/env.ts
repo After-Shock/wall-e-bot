@@ -76,9 +76,9 @@ const envSchema = z.object({
   // Bot Configuration
   BOT_OWNER_ID: z
     .string()
-    .regex(/^\d{17,20}$/, 'BOT_OWNER_ID must be a valid Discord user ID')
+    .regex(/^\d{17,20}(,\s*\d{17,20})*$/, 'BOT_OWNER_ID must be a Discord user ID, or a comma-separated list of them')
     .optional()
-    .describe('Discord user ID of the bot owner'),
+    .describe('Discord user ID of the bot owner (comma-separated for several)'),
   
   BOT_PREFIX: z
     .string()

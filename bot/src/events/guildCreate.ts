@@ -1,6 +1,7 @@
 import { Events, Guild } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
+import { parseOwnerIds } from '@wall-e/shared';
 
 export default {
   name: Events.GuildCreate,
@@ -28,8 +29,7 @@ export default {
     ).catch(e => logger.error('Failed to add guild to whitelist:', e));
 
     // DM the bot owner about the new pending guild
-    const ownerId = process.env.BOT_OWNER_ID;
-    if (ownerId) {
+    for (const ownerId of parseOwnerIds(process.env.BOT_OWNER_ID)) {
       try {
         const owner = await client.users.fetch(ownerId);
         await owner.send(

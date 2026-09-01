@@ -86,8 +86,20 @@ passport.use(new DiscordStrategy({
   }
 }));
 
+// Store identity only. The full Discord profile used to go into the session,
+// guilds included — a ~100 KB payload rewritten on every request, and an authz
+// snapshot frozen for the 7-day session lifetime. Guilds are now resolved live
+// via utils/userGuilds.ts with a 5-minute cache.
 passport.serializeUser((user: any, done) => {
-  done(null, user);
+  done(null, {
+    id: user.id,
+    username: user.username,
+    discriminator: user.discriminator,
+    avatar: user.avatar,
+    email: user.email,
+    accessToken: user.accessToken,
+    refreshToken: user.refreshToken,
+  });
 });
 
 passport.deserializeUser((user: any, done) => {

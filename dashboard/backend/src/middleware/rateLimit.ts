@@ -2,13 +2,49 @@
  * Rate Limiting Middleware
  * 
  * Redis-backed rate limiting for API endpoints.
- * Uses sliding window algorithm for accurate rate limiting.
+ *
+ * Fixed window, not sliding: a caller can send up to `max` at the end of one
+ * window and `max` again at the start of the next, so the real worst case is
+ * 2x over a window boundary. That is fine for what these limits are for; if a
+ * hard bound is ever needed, switch to a sorted-set sliding log.
  * 
  * @module middleware/rateLimit
  */
 
 import { Request, Response, NextFunction } from 'express';
 import { redis } from '../redis.js';
+import { logger } from '../utils/logger.js';
+
+/**
+ * INCR then EXPIRE is not atomic: if the process dies between them the key has
+ * no TTL and never expires, permanently rate-limiting that caller. One script
+ * does both under Redis' single-threaded execution.
+ */
+const INCR_WITH_TTL = `
+  local n = redis.call('INCR', KEYS[1])
+  if n == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+  end
+  return {n, redis.call('TTL', KEYS[1])}
+`;
+
+interface RedisWithScripts {
+  incrWithTtl(key: string, ttlSeconds: number): Promise<[number, number]>;
+}
+
+redis.defineCommand('incrWithTtl', { numberOfKeys: 1, lua: INCR_WITH_TTL });
+const scripted = redis as unknown as RedisWithScripts;
+
+/**
+ * Bucket requests by route *pattern*, not resolved path.
+ *
+ * `req.path` embeds every path parameter, so `/guilds/<snowflake>/...` minted a
+ * fresh Redis key per guild per route — unbounded key cardinality, and a limit
+ * that never actually bound anything shared. `req.route.path` is the pattern.
+ */
+function routeKey(req: Request): string {
+  return `${req.baseUrl}${req.route?.path ?? req.path}`;
+}
 
 /**
  * Rate limit configuration options.
@@ -24,6 +60,12 @@ interface RateLimitOptions {
   skip?: (req: Request) => boolean;
   /** Custom handler when rate limited */
   handler?: (req: Request, res: Response) => void;
+  /**
+   * What to do when Redis is unreachable. Default false (allow the request, so
+   * a cache outage doesn't take the whole API down). Set true on anything
+   * security-relevant, where losing the limit is worse than losing the endpoint.
+   */
+  failClosed?: boolean;
 }
 
 /**
@@ -33,11 +75,15 @@ export const RateLimitPresets = {
   /** Standard API endpoints: 100 requests per minute */
   standard: { max: 100, windowSeconds: 60 },
   
-  /** Authentication endpoints: 10 requests per minute */
-  auth: { max: 10, windowSeconds: 60 },
+  /**
+   * Authentication endpoints: 10 requests per minute.
+   * failClosed: an attacker who can knock Redis over must not thereby remove
+   * the limit that protects the login path.
+   */
+  auth: { max: 10, windowSeconds: 60, failClosed: true },
   
-  /** Sensitive operations: 5 requests per minute */
-  sensitive: { max: 5, windowSeconds: 60 },
+  /** Sensitive operations: 5 requests per minute. Fails closed, as above. */
+  sensitive: { max: 5, windowSeconds: 60, failClosed: true },
   
   /** Public endpoints: 200 requests per minute */
   public: { max: 200, windowSeconds: 60 },
@@ -60,8 +106,9 @@ export function rateLimit(options: RateLimitOptions) {
   const {
     max,
     windowSeconds,
-    keyGenerator = (req) => req.ip || req.connection.remoteAddress || 'unknown',
+    keyGenerator = (req) => req.ip || req.socket.remoteAddress || 'unknown',
     skip = () => false,
+    failClosed = false,
     handler = (req, res) => {
       res.status(429).json({
         error: 'Too Many Requests',
@@ -77,46 +124,36 @@ export function rateLimit(options: RateLimitOptions) {
       return next();
     }
 
-    const key = `ratelimit:${req.path}:${keyGenerator(req)}`;
-    
+    const key = `ratelimit:${routeKey(req)}:${keyGenerator(req)}`;
+
+    let count: number;
+    let ttl: number;
     try {
-      // Use Redis MULTI for atomic increment and expire
-      const results = await redis
-        .multi()
-        .incr(key)
-        .ttl(key)
-        .exec();
-
-      if (!results) {
-        // Redis error, allow request but log
-        console.warn('Rate limit check failed, allowing request');
-        return next();
-      }
-
-      const [[, count], [, ttl]] = results as [[null, number], [null, number]];
-      
-      // Set expiry on first request
-      if (ttl === -1) {
-        await redis.expire(key, windowSeconds);
-      }
-
-      // Set rate limit headers
-      res.setHeader('X-RateLimit-Limit', max);
-      res.setHeader('X-RateLimit-Remaining', Math.max(0, max - count));
-      res.setHeader('X-RateLimit-Reset', Date.now() + (ttl > 0 ? ttl * 1000 : windowSeconds * 1000));
-
-      // Check if rate limited
-      if (count > max) {
-        res.setHeader('Retry-After', ttl > 0 ? ttl : windowSeconds);
-        return handler(req, res);
-      }
-
-      next();
+      [count, ttl] = await scripted.incrWithTtl(key, windowSeconds);
     } catch (error) {
-      // Redis error, allow request but log
-      console.error('Rate limit error:', error);
-      next();
+      logger.error(`Rate limit check failed for ${key}:`, error);
+      if (failClosed) {
+        res.status(503).json({
+          error: 'Service Unavailable',
+          message: 'Rate limiting is temporarily unavailable. Please try again.',
+        });
+        return;
+      }
+      return next();
     }
+
+    // Set rate limit headers
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - count));
+    res.setHeader('X-RateLimit-Reset', Date.now() + (ttl > 0 ? ttl * 1000 : windowSeconds * 1000));
+
+    // Check if rate limited
+    if (count > max) {
+      res.setHeader('Retry-After', ttl > 0 ? ttl : windowSeconds);
+      return handler(req, res);
+    }
+
+    next();
   };
 }
 
@@ -133,7 +170,7 @@ export function rateLimitByUser(options: Omit<RateLimitOptions, 'keyGenerator'>)
       if (user?.id) {
         return `user:${user.id}`;
       }
-      return req.ip || req.connection.remoteAddress || 'unknown';
+      return req.ip || req.socket.remoteAddress || 'unknown';
     },
   });
 }
@@ -149,7 +186,7 @@ export function rateLimitByGuild(options: Omit<RateLimitOptions, 'keyGenerator'>
       if (guildId) {
         return `guild:${guildId}`;
       }
-      return req.ip || req.connection.remoteAddress || 'unknown';
+      return req.ip || req.socket.remoteAddress || 'unknown';
     },
   });
 }

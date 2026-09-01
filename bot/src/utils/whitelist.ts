@@ -11,6 +11,7 @@
 
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from './logger.js';
+import { isBotOwner } from '@wall-e/shared';
 
 export type WhitelistStatus = 'approved' | 'expired' | 'not_approved';
 
@@ -61,6 +62,6 @@ export async function getWhitelistStatus(client: WallEClient, guildId: string): 
 
 /** True if the guild may use the bot, with a bot-owner bypass. */
 export async function isGuildAllowed(client: WallEClient, guildId: string, userId?: string): Promise<boolean> {
-  if (userId && userId === process.env.BOT_OWNER_ID) return true;
+  if (isBotOwner(userId, process.env.BOT_OWNER_ID)) return true;
   return (await getWhitelistStatus(client, guildId)) === 'approved';
 }

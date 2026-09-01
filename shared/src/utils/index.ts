@@ -89,7 +89,7 @@ export function formatNumber(num: number): string {
 export function stripServerIds<T extends object>(obj: T): T {
   if (Array.isArray(obj)) {
     return obj.map((item) =>
-      item && typeof item === 'object' ? stripServerIds(item) : item
+      item && typeof item === 'object' ? stripServerIds(item) : item,
     ) as unknown as T;
   }
 
@@ -112,3 +112,21 @@ export function stripServerIds<T extends object>(obj: T): T {
 }
 
 export * from './customCommandSecurity.js';
+
+/**
+ * Parse a BOT_OWNER_ID env value into a list of Discord user IDs.
+ *
+ * The value is comma-separated so a bot can have more than one owner. This is
+ * the single source of truth: bot, backend and frontend all parse it the same
+ * way, because they previously did not — the backend split on commas while the
+ * bot compared the raw string, so a second owner silently got dashboard access
+ * and no bot access.
+ */
+export function parseOwnerIds(raw: string | undefined | null): string[] {
+  return (raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** True if `userId` is listed in a BOT_OWNER_ID value. */
+export function isBotOwner(userId: string | undefined | null, raw: string | undefined | null): boolean {
+  return !!userId && parseOwnerIds(raw).includes(userId);
+}

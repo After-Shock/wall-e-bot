@@ -302,6 +302,11 @@ CREATE TABLE IF NOT EXISTS message_logs (
 );
 
 -- Add join/leave tracking to guild_members
+-- Scheduled messages: track consecutive delivery failures so a task pointed at a
+-- deleted channel gets disabled instead of being retried every 60s forever.
+ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS failure_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS last_error TEXT;
+
 ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS joined_at TIMESTAMP;
 ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS left_at TIMESTAMP;
 
@@ -481,7 +486,7 @@ CREATE INDEX IF NOT EXISTS idx_failed_jobs_queue ON failed_jobs(queue_name, fail
 async function encryptExistingTokens(client: any): Promise<void> {
   console.log('Encrypting existing plaintext OAuth tokens...');
   const { rows } = await client.query(
-    `SELECT discord_id, access_token, refresh_token FROM users WHERE access_token IS NOT NULL`
+    'SELECT discord_id, access_token, refresh_token FROM users WHERE access_token IS NOT NULL',
   );
 
   let count = 0;
@@ -493,8 +498,8 @@ async function encryptExistingTokens(client: any): Promise<void> {
 
     if (newAccess !== row.access_token || newRefresh !== row.refresh_token) {
       await client.query(
-        `UPDATE users SET access_token = $1, refresh_token = $2 WHERE discord_id = $3`,
-        [newAccess, newRefresh, row.discord_id]
+        'UPDATE users SET access_token = $1, refresh_token = $2 WHERE discord_id = $3',
+        [newAccess, newRefresh, row.discord_id],
       );
       count++;
     }

@@ -9,7 +9,8 @@
  * @module events/interactionCreate
  */
 
-import { Events, Collection, PermissionsBitField, type Interaction } from 'discord.js';
+import { Events, Collection, type Interaction } from 'discord.js';
+import { isBotOwner } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
 import { errorEmbed } from '../utils/embeds.js';
 import { logger } from '../utils/logger.js';
@@ -45,8 +46,18 @@ export default {
     // slash commands) can bypass it. Guilds must be approved and unexpired.
     // =========================================================================
 
-    if (interaction.guildId && interaction.user.id !== process.env.BOT_OWNER_ID) {
-      const status = await getWhitelistStatus(client, interaction.guildId);
+    if (interaction.guildId && !isBotOwner(interaction.user.id, process.env.BOT_OWNER_ID)) {
+      // getWhitelistStatus is defensive internally, but this is a trust boundary:
+      // if it ever throws, the rejection escapes to the process-level handler and
+      // the bot silently stops responding to every interaction in every guild.
+      // Deny explicitly instead, so the user sees something and we log it.
+      let status: Awaited<ReturnType<typeof getWhitelistStatus>>;
+      try {
+        status = await getWhitelistStatus(client, interaction.guildId);
+      } catch (error) {
+        logger.error(`Whitelist check threw for guild ${interaction.guildId}:`, error);
+        status = 'not_approved';
+      }
       if (status !== 'approved') {
         if (interaction.isRepliable()) {
           const msg = status === 'expired'
@@ -94,10 +105,17 @@ export default {
           return;
         }
 
+        // customId is attacker-controllable: the panel is scoped to this guild
+        // above, so scope the category to that panel too. Without this a crafted
+        // customId pairs a local panel with another guild's category.
         const catResult = await client.db.pool.query(
-          'SELECT * FROM ticket_categories WHERE id = $1',
-          [categoryId],
+          'SELECT * FROM ticket_categories WHERE id = $1 AND panel_id = $2',
+          [categoryId, panelId],
         );
+        if (catResult.rows.length === 0) {
+          await interaction.reply({ content: '❌ Ticket category not found.', ephemeral: true }).catch(() => {});
+          return;
+        }
 
         const configResult = await client.db.pool.query(
           'SELECT * FROM ticket_config WHERE guild_id = $1',
@@ -122,7 +140,7 @@ export default {
           client,
           interaction as any,
           panelResult.rows[0],
-          catResult.rows[0] || null,
+          catResult.rows[0],
           configResult.rows[0] || { max_tickets_per_user: 1, welcome_message: '' },
           labeledAnswers,
         );
@@ -153,7 +171,7 @@ export default {
     }
 
     // Check if command is owner-only
-    if (command.ownerOnly && interaction.user.id !== process.env.BOT_OWNER_ID) {
+    if (command.ownerOnly && !isBotOwner(interaction.user.id, process.env.BOT_OWNER_ID)) {
       await interaction.reply({
         embeds: [errorEmbed('Error', 'This command is owner-only.')],
         ephemeral: true,
@@ -161,22 +179,36 @@ export default {
       return;
     }
 
-    // Check permissions
+    // Check permissions.
+    //
+    // This MUST fail closed. The previous version gated the whole check on
+    // `member.permissions instanceof PermissionsBitField`, so an uncached or
+    // partial member — or two copies of discord.js in node_modules, which makes
+    // `instanceof` false across realms — skipped the check entirely and ran the
+    // command unguarded. `interaction.memberPermissions` is resolved by
+    // discord.js from the interaction payload itself and needs no cache.
     if (command.permissions && interaction.guild) {
-      const member = interaction.member;
-      if (member && 'permissions' in member && member.permissions instanceof PermissionsBitField) {
-        const permissions = member.permissions as PermissionsBitField;
-        const missingPerms = command.permissions.filter(
-          perm => !permissions.has(perm),
-        );
+      const permissions = interaction.memberPermissions;
 
-        if (missingPerms.length > 0) {
-          await interaction.reply({
-            embeds: [errorEmbed('Missing Permissions', `You need the following permissions: ${missingPerms.join(', ')}`)],
-            ephemeral: true,
-          });
-          return;
-        }
+      if (!permissions) {
+        logger.warn(
+          `Could not resolve permissions for ${interaction.user.id} in ${interaction.guildId}; denying ${interaction.commandName}`,
+        );
+        await interaction.reply({
+          embeds: [errorEmbed('Error', 'Could not verify your permissions. Please try again.')],
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const missingPerms = command.permissions.filter(perm => !permissions.has(perm));
+
+      if (missingPerms.length > 0) {
+        await interaction.reply({
+          embeds: [errorEmbed('Missing Permissions', `You need the following permissions: ${missingPerms.join(', ')}`)],
+          ephemeral: true,
+        });
+        return;
       }
     }
 
