@@ -1,528 +1,167 @@
+/**
+ * Migration runner.
+ *
+ * Replaces a single 523-line idempotent script that had no version table, no
+ * ordering, and no way to express anything but "add this if absent" — so
+ * renaming a column, changing a type, or backfilling data had nowhere to live.
+ *
+ * How it works:
+ *   - migrations/NNNN_name.sql are applied in filename order, one transaction
+ *     each, and recorded in schema_migrations.
+ *   - Data migrations that need application code live in dataMigrations.ts and
+ *     are interleaved by the same NNNN prefix.
+ *   - A session-level advisory lock serialises concurrent deploys, so two
+ *     containers starting at once cannot both apply the same migration.
+ *   - Applied .sql files are checksummed. Editing one after it has run is a
+ *     hard error: the database no longer matches what the file says, and
+ *     silently continuing is how schemas drift apart between environments.
+ *
+ * Forward-only by design. There are no down migrations: rollback here is
+ * "revert the code and leave the additive column in place", which is what the
+ * deploy process actually does. If a migration ever needs undoing, write a new
+ * one that undoes it.
+ *
+ * @module db/migrate
+ */
+
 import 'dotenv/config';
 import pg from 'pg';
-import { encryptToken, isEncrypted } from '../utils/crypto.js';
+import { readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dataMigrations } from './dataMigrations.js';
 
 const { Pool } = pg;
 
-const schema = `
--- Users table
-CREATE TABLE IF NOT EXISTS users (
-  id SERIAL PRIMARY KEY,
-  discord_id VARCHAR(20) UNIQUE NOT NULL,
-  username VARCHAR(100) NOT NULL,
-  discriminator VARCHAR(4),
-  avatar VARCHAR(100),
-  email VARCHAR(255),
-  access_token TEXT,
-  refresh_token TEXT,
-  token_expires TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'migrations');
 
--- Guild configs table
-CREATE TABLE IF NOT EXISTS guild_configs (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) UNIQUE NOT NULL,
-  config JSONB NOT NULL DEFAULT '{}',
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+/** Arbitrary but fixed: every deployer must pick the same number to serialise. */
+const ADVISORY_LOCK_KEY = 8410231;
 
--- Guild members table (for leveling)
-CREATE TABLE IF NOT EXISTS guild_members (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  user_id VARCHAR(20) NOT NULL,
-  xp INTEGER DEFAULT 0,
-  level INTEGER DEFAULT 0,
-  total_xp BIGINT DEFAULT 0,
-  message_count INTEGER DEFAULT 0,
-  voice_minutes INTEGER DEFAULT 0,
-  last_xp_gain TIMESTAMP DEFAULT NOW(),
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(guild_id, user_id)
-);
+export interface Step {
+  version: string;
+  /** null for data migrations — their checksum would change with every rebuild. */
+  checksum: string | null;
+  apply(client: pg.PoolClient): Promise<void>;
+}
 
--- Warnings table
-CREATE TABLE IF NOT EXISTS warnings (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  user_id VARCHAR(20) NOT NULL,
-  moderator_id VARCHAR(20) NOT NULL,
-  reason TEXT NOT NULL,
-  active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Mod actions log table
-CREATE TABLE IF NOT EXISTS mod_actions (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  target_id VARCHAR(20) NOT NULL,
-  moderator_id VARCHAR(20) NOT NULL,
-  action VARCHAR(50) NOT NULL,
-  reason TEXT,
-  duration BIGINT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Reaction roles table
-CREATE TABLE IF NOT EXISTS reaction_roles (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  channel_id VARCHAR(20) NOT NULL,
-  message_id VARCHAR(20) NOT NULL,
-  emoji VARCHAR(100) NOT NULL,
-  role_id VARCHAR(20) NOT NULL,
-  mode VARCHAR(20) DEFAULT 'toggle',
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(message_id, emoji)
-);
-
--- Custom commands table
-CREATE TABLE IF NOT EXISTS custom_commands (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  name VARCHAR(100) NOT NULL,
-  response TEXT NOT NULL,
-  embed_response BOOLEAN DEFAULT FALSE,
-  embed_color VARCHAR(7),
-  allowed_roles TEXT[] DEFAULT '{}',
-  allowed_channels TEXT[] DEFAULT '{}',
-  cooldown INTEGER DEFAULT 0,
-  delete_command BOOLEAN DEFAULT FALSE,
-  created_by VARCHAR(20) NOT NULL,
-  uses INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(guild_id, name)
-);
-
--- Reminders table
-CREATE TABLE IF NOT EXISTS reminders (
-  id SERIAL PRIMARY KEY,
-  user_id VARCHAR(20) NOT NULL,
-  channel_id VARCHAR(20) NOT NULL,
-  guild_id VARCHAR(20),
-  message TEXT NOT NULL,
-  remind_at TIMESTAMP NOT NULL,
-  completed BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Starboard messages table
-CREATE TABLE IF NOT EXISTS starboard_messages (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  original_message_id VARCHAR(20) NOT NULL,
-  original_channel_id VARCHAR(20) NOT NULL,
-  starboard_message_id VARCHAR(20),
-  star_count INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(guild_id, original_message_id)
-);
-
--- Scheduled messages table
-CREATE TABLE IF NOT EXISTS scheduled_messages (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  channel_id VARCHAR(20) NOT NULL,
-  message TEXT NOT NULL,
-  embed BOOLEAN DEFAULT FALSE,
-  embed_color VARCHAR(7),
-  cron_expression VARCHAR(100),
-  interval_minutes INTEGER,
-  next_run TIMESTAMP NOT NULL,
-  last_run TIMESTAMP,
-  enabled BOOLEAN DEFAULT TRUE,
-  created_by VARCHAR(20) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Reaction role messages table
-CREATE TABLE IF NOT EXISTS reaction_role_messages (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  channel_id VARCHAR(20) NOT NULL,
-  message_id VARCHAR(20) UNIQUE NOT NULL,
-  title VARCHAR(200),
-  type VARCHAR(20) DEFAULT 'buttons',
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Auto roles table
-CREATE TABLE IF NOT EXISTS auto_roles (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  role_id VARCHAR(20) NOT NULL,
-  delay_minutes INTEGER DEFAULT 0,
-  include_bots BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(guild_id, role_id)
-);
-
--- Ticket config table (global server settings)
-CREATE TABLE IF NOT EXISTS ticket_config (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) UNIQUE NOT NULL,
-  transcript_channel_id VARCHAR(20),
-  max_tickets_per_user INTEGER DEFAULT 1,
-  auto_close_hours INTEGER DEFAULT 0,
-  welcome_message TEXT DEFAULT 'Welcome! Please describe your issue and a staff member will assist you shortly.',
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS ticket_counters (
-  guild_id VARCHAR(20) PRIMARY KEY,
-  next_ticket_number INTEGER NOT NULL DEFAULT 1,
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Ticket panels (one per panel message; a guild can have many)
-CREATE TABLE IF NOT EXISTS ticket_panels (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  name VARCHAR(100) NOT NULL,
-  style VARCHAR(20) DEFAULT 'channel',
-  panel_type VARCHAR(20) DEFAULT 'buttons',
-  panel_channel_id VARCHAR(20),
-  panel_message_id VARCHAR(20),
-  category_open_id VARCHAR(20),
-  category_closed_id VARCHAR(20),
-  overflow_category_id VARCHAR(20),
-  channel_name_template VARCHAR(100) DEFAULT '{type}-{number}',
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Ticket categories (buttons or dropdown options within a panel)
-CREATE TABLE IF NOT EXISTS ticket_categories (
-  id SERIAL PRIMARY KEY,
-  panel_id INTEGER REFERENCES ticket_panels(id) ON DELETE CASCADE,
-  guild_id VARCHAR(20) NOT NULL,
-  name VARCHAR(100) NOT NULL,
-  emoji VARCHAR(10),
-  description VARCHAR(200),
-  support_role_ids TEXT[] DEFAULT '{}',
-  observer_role_ids TEXT[] DEFAULT '{}',
-  position INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Form fields per category (up to 5 — Discord modal limit)
-CREATE TABLE IF NOT EXISTS ticket_form_fields (
-  id SERIAL PRIMARY KEY,
-  category_id INTEGER NOT NULL REFERENCES ticket_categories(id) ON DELETE CASCADE,
-  label VARCHAR(45) NOT NULL,
-  placeholder VARCHAR(100),
-  min_length INTEGER DEFAULT 0,
-  max_length INTEGER DEFAULT 1024,
-  style VARCHAR(10) DEFAULT 'short',
-  required BOOLEAN DEFAULT TRUE,
-  position INTEGER DEFAULT 0
-);
-
--- Tickets table
-CREATE TABLE IF NOT EXISTS tickets (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  panel_id INTEGER REFERENCES ticket_panels(id) ON DELETE SET NULL,
-  category_id INTEGER REFERENCES ticket_categories(id) ON DELETE SET NULL,
-  channel_id VARCHAR(20) NOT NULL,
-  thread_id VARCHAR(20),
-  user_id VARCHAR(20) NOT NULL,
-  ticket_number INTEGER NOT NULL,
-  topic TEXT,
-  status VARCHAR(20) DEFAULT 'open',
-  claimed_by VARCHAR(20),
-  closed_by VARCHAR(20),
-  closed_at TIMESTAMP,
-  close_reason TEXT,
-  transcript_message_id VARCHAR(20),
-  last_activity TIMESTAMP DEFAULT NOW(),
-  warned_inactive BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Temp bans table
-CREATE TABLE IF NOT EXISTS temp_bans (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  user_id VARCHAR(20) NOT NULL,
-  moderator_id VARCHAR(20) NOT NULL,
-  reason TEXT,
-  duration BIGINT NOT NULL,
-  unban_at TIMESTAMP NOT NULL,
-  unbanned BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Bot global settings (key-value store)
-CREATE TABLE IF NOT EXISTS bot_settings (
-  key VARCHAR(100) PRIMARY KEY,
-  value JSONB NOT NULL DEFAULT '{}'
-);
-
--- Add label column to reaction_roles if not exists
-ALTER TABLE reaction_roles ADD COLUMN IF NOT EXISTS label VARCHAR(100);
-
--- Dashboard reaction role editor stores the embed body, not just the title
-ALTER TABLE reaction_role_messages ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE reaction_role_messages ADD COLUMN IF NOT EXISTS color VARCHAR(7);
-
--- Stack group: panels sharing a group name deploy together as one Discord message
-ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_group VARCHAR(50);
-ALTER TABLE ticket_panels ADD COLUMN IF NOT EXISTS stack_position INTEGER DEFAULT 0;
-
--- Guild backups table
-CREATE TABLE IF NOT EXISTS guild_backups (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  guild_id VARCHAR(20) NOT NULL,
-  name VARCHAR(100) NOT NULL,
-  type VARCHAR(20) NOT NULL DEFAULT 'manual',
-  size INTEGER DEFAULT 0,
-  created_by VARCHAR(20),
-  data JSONB NOT NULL DEFAULT '{}',
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_guild_backups_guild ON guild_backups(guild_id, created_at DESC);
-
--- Message logs table (for analytics)
-CREATE TABLE IF NOT EXISTS message_logs (
-  id BIGSERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  channel_id VARCHAR(20) NOT NULL,
-  channel_name VARCHAR(100),
-  user_id VARCHAR(20) NOT NULL,
-  username VARCHAR(100),
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Add join/leave tracking to guild_members
--- Scheduled messages: track consecutive delivery failures so a task pointed at a
--- deleted channel gets disabled instead of being retried every 60s forever.
-ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS failure_count INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS last_error TEXT;
-
-ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS joined_at TIMESTAMP;
-ALTER TABLE guild_members ADD COLUMN IF NOT EXISTS left_at TIMESTAMP;
-
--- Guild whitelist table (controls which servers can use the bot)
-CREATE TABLE IF NOT EXISTS guild_whitelist (
-  guild_id VARCHAR(20) PRIMARY KEY,
-  guild_name VARCHAR(100) NOT NULL,
-  guild_icon VARCHAR(100),
-  member_count INTEGER DEFAULT 0,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  added_at TIMESTAMP DEFAULT NOW(),
-  approved_at TIMESTAMP,
-  left_at TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_guild_whitelist_status ON guild_whitelist(status);
-
--- Subscription & added-by tracking
-ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS added_by VARCHAR(20);
-ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS added_by_username VARCHAR(100);
-ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
-ALTER TABLE guild_whitelist ADD COLUMN IF NOT EXISTS permanent BOOLEAN DEFAULT FALSE;
-
--- Backfill existing approved rows with 1-year expiry
-UPDATE guild_whitelist SET expires_at = NOW() + INTERVAL '1 year' WHERE expires_at IS NULL AND status != 'blacklisted';
-
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
-CREATE INDEX IF NOT EXISTS idx_guild_members_xp ON guild_members(guild_id, total_xp DESC);
-CREATE INDEX IF NOT EXISTS idx_warnings_guild_user ON warnings(guild_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_mod_actions_guild ON mod_actions(guild_id);
-CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders(remind_at) WHERE completed = FALSE;
-CREATE INDEX IF NOT EXISTS idx_scheduled_messages_next ON scheduled_messages(next_run) WHERE enabled = TRUE;
-CREATE INDEX IF NOT EXISTS idx_temp_bans_unban ON temp_bans(unban_at) WHERE unbanned = FALSE;
-CREATE INDEX IF NOT EXISTS idx_tickets_guild_user ON tickets(guild_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_ticket_panels_guild ON ticket_panels(guild_id);
-CREATE INDEX IF NOT EXISTS idx_ticket_categories_panel ON ticket_categories(panel_id);
-CREATE INDEX IF NOT EXISTS idx_ticket_form_fields_category ON ticket_form_fields(category_id);
-CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(guild_id, status);
-CREATE INDEX IF NOT EXISTS idx_tickets_last_activity ON tickets(last_activity) WHERE status = 'open';
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_guild_channel_unique ON tickets(guild_id, channel_id);
-CREATE INDEX IF NOT EXISTS idx_message_logs_guild ON message_logs(guild_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_message_logs_channel ON message_logs(guild_id, channel_id, created_at DESC);
-
-INSERT INTO ticket_counters (guild_id, next_ticket_number)
-SELECT guild_id, COALESCE(MAX(ticket_number), 0) + 1
-FROM tickets
-GROUP BY guild_id
-ON CONFLICT (guild_id) DO UPDATE SET
-  next_ticket_number = GREATEST(ticket_counters.next_ticket_number, EXCLUDED.next_ticket_number),
-  updated_at = NOW();
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_indexes
-    WHERE schemaname = 'public' AND indexname = 'idx_tickets_guild_ticket_number_unique'
-  ) THEN
-    IF NOT EXISTS (
-      SELECT 1
-      FROM tickets
-      GROUP BY guild_id, ticket_number
-      HAVING COUNT(*) > 1
-    ) THEN
-      CREATE UNIQUE INDEX idx_tickets_guild_ticket_number_unique ON tickets(guild_id, ticket_number);
-    END IF;
-  END IF;
-END $$;
-
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN DEFAULT FALSE;
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS trigger_on_edit BOOLEAN DEFAULT FALSE;
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;
-
--- Command groups for organizing custom commands
-CREATE TABLE IF NOT EXISTS command_groups (
-  id               SERIAL PRIMARY KEY,
-  guild_id         VARCHAR(20) NOT NULL,
-  name             VARCHAR(100) NOT NULL,
-  description      TEXT,
-  allowed_roles    TEXT[] DEFAULT '{}',
-  allowed_channels TEXT[] DEFAULT '{}',
-  ignore_roles     TEXT[] DEFAULT '{}',
-  ignore_channels  TEXT[] DEFAULT '{}',
-  position         INTEGER DEFAULT 0,
-  created_at       TIMESTAMP DEFAULT NOW(),
-  UNIQUE(guild_id, name)
-);
-
--- Custom commands overhaul: trigger types, multiple responses, groups
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(20) DEFAULT 'command';
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS group_id INTEGER REFERENCES command_groups(id) ON DELETE SET NULL;
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS responses JSONB;
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS interval_cron VARCHAR(100);
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS interval_channel_id VARCHAR(20);
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS interval_next_run TIMESTAMP;
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_message_id VARCHAR(20);
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_channel_id VARCHAR(20);
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_emoji VARCHAR(100);
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS reaction_type VARCHAR(10) DEFAULT 'add';
-
--- Backfill responses array from existing response column
-UPDATE custom_commands SET responses = jsonb_build_array(response) WHERE responses IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_custom_commands_guild_trigger ON custom_commands(guild_id, trigger_type) WHERE enabled = TRUE;
-CREATE INDEX IF NOT EXISTS idx_custom_commands_reaction ON custom_commands(guild_id, reaction_message_id) WHERE trigger_type = 'reaction';
-CREATE INDEX IF NOT EXISTS idx_custom_commands_interval ON custom_commands(interval_next_run) WHERE trigger_type = 'interval' AND enabled = TRUE;
-CREATE INDEX IF NOT EXISTS idx_command_groups_guild ON command_groups(guild_id);
-
--- Custom commands: allowed_roles and allowed_channels (already exist in CREATE TABLE, but guard with IF NOT EXISTS)
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_roles TEXT[] DEFAULT '{}';
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS allowed_channels TEXT[] DEFAULT '{}';
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS cembed_response BOOLEAN DEFAULT FALSE;
-ALTER TABLE custom_commands ADD COLUMN IF NOT EXISTS description TEXT;
-
--- Auto-delete channel configuration
-CREATE TABLE IF NOT EXISTS auto_delete_channels (
-  id             SERIAL PRIMARY KEY,
-  guild_id       VARCHAR(20) NOT NULL,
-  channel_id     VARCHAR(20) NOT NULL,
-  max_age_hours  INTEGER,
-  max_messages   INTEGER,
-  exempt_roles   TEXT[] DEFAULT '{}',
-  enabled        BOOLEAN DEFAULT TRUE,
-  created_at     TIMESTAMP DEFAULT NOW(),
-  UNIQUE (guild_id, channel_id)
-);
-CREATE INDEX IF NOT EXISTS idx_auto_delete_guild ON auto_delete_channels(guild_id) WHERE enabled = TRUE;
-
--- Dashboard access roles (non-admin users who can access the dashboard)
-CREATE TABLE IF NOT EXISTS dashboard_roles (
-  guild_id VARCHAR(20) NOT NULL,
-  role_id  VARCHAR(20) NOT NULL,
-  PRIMARY KEY (guild_id, role_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_dashboard_roles_guild ON dashboard_roles(guild_id);
-
--- Ticket panel groups: replace string-based stack_group with a first-class table
-CREATE TABLE IF NOT EXISTS ticket_panel_groups (
-  id SERIAL PRIMARY KEY,
-  guild_id VARCHAR(20) NOT NULL,
-  name VARCHAR(100) NOT NULL,
-  last_channel_id VARCHAR(20),
-  last_message_id VARCHAR(20),
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_ticket_panel_groups_guild
-  ON ticket_panel_groups(guild_id);
-
-ALTER TABLE ticket_panels
-  ADD COLUMN IF NOT EXISTS group_id INTEGER
-    REFERENCES ticket_panel_groups(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS idx_ticket_panels_group_id ON ticket_panels(group_id);
-
-ALTER TABLE ticket_panels
-  DROP COLUMN IF EXISTS stack_group;
-
--- User preferences (hidden nav items, etc.)
-ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
-
--- Failed jobs dead-letter queue (BullMQ DLQ)
-CREATE TABLE IF NOT EXISTS failed_jobs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  queue_name VARCHAR(100) NOT NULL,
-  job_name VARCHAR(200) NOT NULL,
-  job_data JSONB,
-  error_message TEXT,
-  attempt_count INTEGER DEFAULT 1,
-  failed_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_failed_jobs_queue ON failed_jobs(queue_name, failed_at DESC);
-`;
-
-async function encryptExistingTokens(client: any): Promise<void> {
-  console.log('Encrypting existing plaintext OAuth tokens...');
-  const { rows } = await client.query(
-    'SELECT discord_id, access_token, refresh_token FROM users WHERE access_token IS NOT NULL',
-  );
-
-  let count = 0;
-  for (const row of rows) {
-    const newAccess = isEncrypted(row.access_token) ? row.access_token : encryptToken(row.access_token);
-    const newRefresh = row.refresh_token && !isEncrypted(row.refresh_token)
-      ? encryptToken(row.refresh_token)
-      : row.refresh_token;
-
-    if (newAccess !== row.access_token || newRefresh !== row.refresh_token) {
-      await client.query(
-        'UPDATE users SET access_token = $1, refresh_token = $2 WHERE discord_id = $3',
-        [newAccess, newRefresh, row.discord_id],
-      );
-      count++;
-    }
+export function sqlSteps(): Step[] {
+  let files: string[];
+  try {
+    files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
+  } catch (err) {
+    throw new Error(`Cannot read migrations directory ${MIGRATIONS_DIR}: ${(err as Error).message}`);
   }
-  console.log(`Encrypted ${count} user token(s).`);
+
+  return files.sort().map((file) => {
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    return {
+      version: file.replace(/\.sql$/, ''),
+      checksum: createHash('sha256').update(sql).digest('hex'),
+      async apply(client: pg.PoolClient) {
+        await client.query(sql);
+      },
+    };
+  });
+}
+
+export function allSteps(): Step[] {
+  const steps = [
+    ...sqlSteps(),
+    ...dataMigrations.map((m) => ({
+      version: m.version,
+      checksum: null,
+      apply: (client: pg.PoolClient) => m.run(client),
+    })),
+  ];
+
+  const seen = new Set<string>();
+  for (const s of steps) {
+    if (seen.has(s.version)) throw new Error(`Duplicate migration version: ${s.version}`);
+    seen.add(s.version);
+  }
+
+  return steps.sort((a, b) => a.version.localeCompare(b.version));
 }
 
 async function migrate() {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-  });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const client = await pool.connect();
+  let locked = false;
 
   try {
-    console.log('Running migrations...');
-    await pool.query(schema);
-    console.log('Migrations completed successfully!');
-    await encryptExistingTokens(pool);
+    // Lock FIRST, before any DDL — including creating the bookkeeping table.
+    // Two deploys starting together would otherwise both run
+    // CREATE TABLE IF NOT EXISTS schema_migrations and collide in the Postgres
+    // catalog ("duplicate key value violates unique constraint
+    // pg_type_typname_nsp_index"), which IF NOT EXISTS does not protect against
+    // concurrently. The advisory lock needs no table to exist.
+    await client.query('SELECT pg_advisory_lock($1)', [ADVISORY_LOCK_KEY]);
+    locked = true;
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version    TEXT PRIMARY KEY,
+        checksum   TEXT,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    const { rows } = await client.query('SELECT version, checksum FROM schema_migrations');
+    const applied = new Map<string, string | null>(rows.map((r) => [r.version, r.checksum]));
+
+    const steps = allSteps();
+    let ran = 0;
+
+    for (const step of steps) {
+      if (applied.has(step.version)) {
+        const recorded = applied.get(step.version);
+        if (step.checksum && recorded && recorded !== step.checksum) {
+          throw new Error(
+            `Migration ${step.version} has changed since it was applied.\n` +
+            `  recorded: ${recorded}\n  current:  ${step.checksum}\n` +
+            'The database no longer matches this file. Add a new migration instead of editing it.',
+          );
+        }
+        continue;
+      }
+
+      console.log(`applying ${step.version}`);
+      try {
+        await client.query('BEGIN');
+        await step.apply(client);
+        await client.query(
+          'INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)',
+          [step.version, step.checksum],
+        );
+        await client.query('COMMIT');
+        ran++;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw new Error(`Migration ${step.version} failed: ${(err as Error).message}`);
+      }
+    }
+
+    console.log(
+      ran === 0
+        ? `Schema up to date (${steps.length} migration(s) already applied).`
+        : `Applied ${ran} migration(s); ${steps.length} total.`,
+    );
   } catch (error) {
-    console.error('Migration failed:', error);
-    process.exit(1);
+    console.error('Migration failed:', error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   } finally {
+    if (locked) {
+      await client.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]).catch(() => {});
+    }
+    client.release();
     await pool.end();
   }
 }
 
-migrate();
+// Only run when executed directly. Importing this module (tests) must not
+// start a migration against whatever DATABASE_URL happens to be set.
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  migrate();
+}
