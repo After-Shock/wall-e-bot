@@ -19,6 +19,7 @@ import { customCommandsRouter } from './routes/customCommands.js';
 import { commandGroupsRouter } from './routes/commandGroups.js';
 import { dashboardRolesRouter } from './routes/dashboardRoles.js';
 import { autoDeleteRouter } from './routes/autoDelete.js';
+import healthRouter, { initHealthCheck } from './routes/health.js';
 import { db } from './db/index.js';
 import { assertValidSessionSecret } from './utils/security.js';
 import { encryptToken } from './utils/crypto.js';
@@ -127,10 +128,15 @@ app.use('/api/guilds/:guildId/command-groups', commandGroupsRouter);
 app.use('/api/guilds/:guildId/dashboard-roles', dashboardRolesRouter);
 app.use('/api/guilds/:guildId/auto-delete', autoDeleteRouter);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// Health checks.
+//
+// The inline handler here returned {status:'ok'} unconditionally — Postgres and
+// Redis could both be down and it stayed green. routes/health.ts implemented
+// real probes all along and was imported by nothing.
+//   /health        liveness — the process is up
+//   /health/ready  readiness — Postgres and Redis actually answer (503 if not)
+initHealthCheck(db, redis);
+app.use('/health', healthRouter);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -139,6 +145,39 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info(`Dashboard API running on port ${PORT}`);
 });
+
+// Graceful shutdown. Without this every deploy killed in-flight requests and
+// abandoned pool connections; the bot had a clean shutdown path, the API had
+// none.
+let shuttingDown = false;
+
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`Received ${signal}, shutting down...`);
+
+  const force = setTimeout(() => {
+    logger.error('Shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 15_000);
+  force.unref();
+
+  try {
+    // Stop accepting connections, then let in-flight requests finish.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await db.end();
+    await redis.quit();
+    clearTimeout(force);
+    logger.info('Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.on('SIGINT', () => { void shutdown('SIGINT'); });

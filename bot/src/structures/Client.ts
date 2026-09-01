@@ -10,6 +10,7 @@
 import {
   Client,
   GatewayIntentBits,
+  Options,
   Partials,
   Collection,
   REST,
@@ -89,18 +90,13 @@ export class WallEClient extends Client {
   constructor() {
     super({
       intents: [
-        // Server-related events
+        // Only intents something actually handles. Dropped: GuildVoiceStates,
+        // GuildInvites, GuildWebhooks, GuildIntegrations,
+        // GuildEmojisAndStickers and GuildModeration — no handler exists for
+        // any of their events, and each one costs gateway traffic and cache.
+        // (Banning still works: that is an API call, not an event.)
         GatewayIntentBits.Guilds,                    // Guild create/update/delete
-        GatewayIntentBits.GuildMembers,              // Member join/leave/update (privileged)
-        GatewayIntentBits.GuildModeration,           // Ban/unban events
-        GatewayIntentBits.GuildEmojisAndStickers,    // Emoji updates
-        GatewayIntentBits.GuildIntegrations,         // Integration updates
-        GatewayIntentBits.GuildWebhooks,             // Webhook updates
-        GatewayIntentBits.GuildInvites,              // Invite create/delete
-        GatewayIntentBits.GuildVoiceStates,          // Voice channel events
-        // NOTE: GuildPresences (privileged) intentionally omitted — setting the
-        // bot's own presence doesn't need it, and nothing consumes presence events.
-        // GuildMessageTyping likewise omitted: no feature uses typing indicators.
+        GatewayIntentBits.GuildMembers,              // Member join/leave (privileged)
 
         // Message-related events
         GatewayIntentBits.GuildMessages,             // Messages in guilds
@@ -117,6 +113,40 @@ export class WallEClient extends Client {
         Partials.GuildMember,  // Uncached members
         Partials.Reaction,     // Reactions on old messages
       ],
+
+      // Bound the caches. With GuildMembers + MessageContent and no limits, the
+      // member and message caches grow with the guild for the life of the
+      // process — inside a 512MB container running --max-old-space-size=400,
+      // that ends in an OOM as guild count grows.
+      //
+      // Only caches nothing reads are zeroed. Members, users and reaction users
+      // keep their defaults because event payloads populate them and features
+      // (role checks, reaction roles) read them; they are swept by age instead.
+      makeCache: Options.cacheWithLimits({
+        ...Options.DefaultMakeCacheSettings,
+        MessageManager: 200,             // per channel; Partials.Message covers older
+        PresenceManager: 0,              // no presence intent
+        VoiceStateManager: 0,            // no voice features
+        GuildInviteManager: 0,
+        GuildScheduledEventManager: 0,
+        StageInstanceManager: 0,
+        AutoModerationRuleManager: 0,    // automod here is our own, not Discord's
+      }),
+
+      sweepers: {
+        ...Options.DefaultSweeperSettings,
+        // Sweeping by age is safer than a hard cap: a hard cap evicts by
+        // insertion order regardless of whether something is still in use.
+        messages: { interval: 1800, lifetime: 3600 },
+        users: {
+          interval: 3600,
+          filter: () => (user) => user.id !== user.client.user?.id,
+        },
+        guildMembers: {
+          interval: 3600,
+          filter: () => (member) => member.id !== member.client.user?.id,
+        },
+      },
     });
   }
 

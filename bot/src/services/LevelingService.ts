@@ -50,22 +50,28 @@ export class LevelingService {
     }
 
     // Add XP
+    const previousLevel = (await this.client.db.getMember(message.guild.id, message.author.id))?.level ?? 0;
     const result = await this.client.db.addXp(message.guild.id, message.author.id, xp);
 
     if (result.leveledUp) {
-      await this.handleLevelUp(message, member, result.newLevel, levelingConfig);
+      await this.handleLevelUp(message, member, previousLevel, result.newLevel, levelingConfig);
     }
   }
 
   private async handleLevelUp(
     message: Message, 
     member: GuildMember, 
+    previousLevel: number,
     newLevel: number, 
     config: { levelUpChannel?: string; levelUpMessage?: string; roleRewards?: Array<{ level: number; roleId: string; removeOnHigherLevel: boolean }> },
   ): Promise<void> {
-    // Handle role rewards
+    // Handle role rewards.
+    //
+    // Award every reward the member crossed, not just one matching newLevel
+    // exactly: with XP multipliers a single message can span two levels, and
+    // the skipped reward was never granted by anything afterwards.
     for (const reward of config.roleRewards || []) {
-      if (reward.level === newLevel) {
+      if (reward.level > previousLevel && reward.level <= newLevel) {
         try {
           await member.roles.add(reward.roleId);
         } catch (error) {
@@ -122,13 +128,10 @@ export class LevelingService {
     const member = await this.client.db.getMember(guildId, odiscordId);
     if (!member) return null;
 
-    const leaderboard = await this.client.db.getLeaderboard(guildId, 1000);
-    const rank = leaderboard.findIndex(m => m.odiscordId === odiscordId) + 1;
-
     return {
       xp: member.xp,
       level: member.level,
-      rank: rank || leaderboard.length + 1,
+      rank: await this.client.db.getRankPosition(guildId, odiscordId),
       xpForNext: calculateXpForNextLevel(member.level),
     };
   }

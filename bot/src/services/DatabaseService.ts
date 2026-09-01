@@ -167,6 +167,13 @@ export class DatabaseService {
     );
   }
 
+  /**
+   * NOTE: returns the raw row, whose keys are snake_case (total_xp, user_id,
+   * last_xp_gain), but the declared GuildMember type is camelCase and also
+   * lists fields this table does not have (warnings, muted). Reading anything
+   * beyond xp/level off this result yields undefined at runtime. Only .xp and
+   * .level are safe until the type is reconciled with the schema.
+   */
   async getMember(guildId: string, odiscordId: string): Promise<GuildMember | null> {
     const result = await this.pool.query(
       'SELECT * FROM guild_members WHERE guild_id = $1 AND user_id = $2',
@@ -237,6 +244,28 @@ export class DatabaseService {
 
       return { newXp, newLevel, leveledUp };
     });
+  }
+
+  /**
+   * A member's 1-based rank by total_xp.
+   *
+   * Replaces pulling the top 1000 rows and calling findIndex, which shipped a
+   * full result set over the wire per /rank and told everyone outside the top
+   * 1000 they were rank 1001.
+   */
+  async getRankPosition(guildId: string, odiscordId: string): Promise<number> {
+    // Compare inside SQL rather than passing a value read off a getMember()
+    // result: that row is raw snake_case from SELECT *, while the GuildMember
+    // type it is cast to declares camelCase, so member.totalXp is undefined at
+    // runtime. See the note on getMember.
+    const result = await this.pool.query(
+      `SELECT count(*)::int + 1 AS rank
+         FROM guild_members
+        WHERE guild_id = $1
+          AND total_xp > (SELECT total_xp FROM guild_members WHERE guild_id = $1 AND user_id = $2)`,
+      [guildId, odiscordId],
+    );
+    return result.rows[0].rank;
   }
 
   async getLeaderboard(guildId: string, limit = 10): Promise<Array<{ odiscordId: string; xp: number; level: number }>> {

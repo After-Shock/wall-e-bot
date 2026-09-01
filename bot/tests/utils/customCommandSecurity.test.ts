@@ -59,3 +59,29 @@ describe('isSafeCustomCommandRegex', () => {
     expect(isSafeCustomCommandRegex('a'.repeat(300))).toBe(false);
   });
 });
+
+describe('isSafeCustomCommandRegex — catastrophic backtracking', () => {
+  it('rejects quantified alternation, the shape the original check missed', () => {
+    // Each of these is exponential on a non-matching tail and would stall the
+    // event loop for every guild this process serves.
+    expect(isSafeCustomCommandRegex('(a|a)*$')).toBe(false);
+    expect(isSafeCustomCommandRegex('(a|ab)*c')).toBe(false);
+    expect(isSafeCustomCommandRegex('^(\\s|\\s\\s)+$')).toBe(false);
+  });
+
+  it('still rejects nested quantifiers and backreferences', () => {
+    expect(isSafeCustomCommandRegex('(a+)+$')).toBe(false);
+    expect(isSafeCustomCommandRegex('(\\w+)\\1')).toBe(false);
+  });
+
+  it('still accepts ordinary patterns', () => {
+    expect(isSafeCustomCommandRegex('^hello\\s+world$')).toBe(true);
+    expect(isSafeCustomCommandRegex('\\d{3}-\\d{4}')).toBe(true);
+    expect(isSafeCustomCommandRegex('(cat|dog)')).toBe(true);
+  });
+
+  it('rejects patterns over the length cap and invalid syntax', () => {
+    expect(isSafeCustomCommandRegex('a'.repeat(201))).toBe(false);
+    expect(isSafeCustomCommandRegex('([unclosed')).toBe(false);
+  });
+});

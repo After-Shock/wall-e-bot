@@ -15,6 +15,7 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { Redis } from 'ioredis';
+import { requireAuth, requireBotOwner } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -120,9 +121,12 @@ router.get('/ready', async (req: Request, res: Response) => {
  * GET /health/detailed
  * 
  * Detailed health information for debugging.
- * Should be protected in production.
+ *
+ * Owner-only: it reports pid, Node version, platform and memory, which is
+ * reconnaissance for anyone else. The file always said "should be protected in
+ * production" — this is that.
  */
-router.get('/detailed', async (req: Request, res: Response) => {
+router.get('/detailed', requireAuth, requireBotOwner, async (req: Request, res: Response) => {
   const memUsage = process.memoryUsage();
   
   res.status(200).json({

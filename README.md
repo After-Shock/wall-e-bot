@@ -124,20 +124,39 @@ Optimized for production deployment with security and reliability.
 # Start production stack
 docker compose -f docker/docker-compose.yml up -d
 
-# Scale bot instances (if needed)
-docker compose -f docker/docker-compose.yml up -d --scale bot=2
-
 # View resource usage
 docker stats
-
-# Update and restart
-docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml up -d --build
 ```
+
+**Deploying an update — migrate BEFORE swapping containers:**
+
+```bash
+cd /opt/wall-e-bot && git pull
+docker compose -f docker/docker-compose.yml build --no-cache
+
+# Run migrations from the NEW image while the OLD containers keep serving.
+# `run --rm` does not replace the running services.
+docker compose -f docker/docker-compose.yml run --rm --no-deps backend node dist/db/migrate.js
+
+docker compose -f docker/docker-compose.yml up -d
+```
+
+Running `up -d` first and migrating afterwards — the order this project used
+previously — starts new code against the old schema, so every deploy has a
+window where the API 500s on columns it was built for. Migrations here are
+additive (`ADD COLUMN IF NOT EXISTS`), which is what makes migrating ahead of
+the swap safe.
+
+> **Do not scale the bot with `--scale bot=2`.** Scheduled messages claim their
+> work atomically and are safe, but the auto-close, auto-delete and presence
+> timers in `SchedulerService.start()` run on plain intervals in every process,
+> so a second instance duplicates them — double ticket-close messages and double
+> auto-delete sweeps. Sharding needs those moved onto the job queue first.
 
 **Features:**
 - Multi-stage builds for smaller images
-- Health checks on all services
+- Health checks on Postgres and Redis (the API exposes `/health` for liveness
+  and `/health/ready`, which verifies both, for readiness)
 - Automatic restart policies (`unless-stopped`)
 - No exposed database ports (internal network only)
 - Nginx reverse proxy for frontend
