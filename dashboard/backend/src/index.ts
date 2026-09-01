@@ -27,8 +27,18 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const sessionSecret = assertValidSessionSecret(process.env.SESSION_SECRET);
 
-// Trust the first proxy (Traefik) so secure cookies work behind HTTPS termination
-app.set('trust proxy', 1);
+// Two proxies sit in front of this app, not one: Traefik terminates TLS and
+// appends the client to X-Forwarded-For, then the frontend nginx appends
+// Traefik. Measured from nginx's access log — $remote_addr is Traefik's
+// container IP while XFF already carries the real client — so the backend
+// receives `<client>, <traefik>` over a socket from nginx.
+//
+// With `1`, Express trusted only nginx and resolved req.ip to Traefik's IP for
+// every request. That is invisible until something keys on req.ip, at which
+// point every user shares one bucket. Counting hops from the right is also what
+// makes this spoof-resistant: a client-supplied XFF entry lands to the left of
+// the addresses the proxies append, so it can never become req.ip.
+app.set('trust proxy', 2);
 
 // Redis session store
 const RedisStore = connectRedis(session);

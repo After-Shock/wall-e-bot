@@ -31,6 +31,7 @@ function buildApp() {
     dashboardUrl: 'https://dashboard.example.com',
     generateState: () => 'fixed-state',
     authRateLimit: (_req, _res, next) => next(),
+    readRateLimit: (_req, _res, next) => next(),
     passportInstance: {
       authenticate(strategy: string, options?: Record<string, unknown>) {
         authenticateCalls.push({ strategy, options });
@@ -62,7 +63,7 @@ test('GET /auth/login stores oauth state in the session and delegates to passpor
 
   assert.equal(response.status, 404);
   assert.ok(authenticateCalls.some((call) =>
-    call.strategy === 'discord' && call.options?.state === 'fixed-state'
+    call.strategy === 'discord' && call.options?.state === 'fixed-state',
   ));
   assert.match(getSetCookieHeader(response.headers['set-cookie']), /connect\.sid=/);
 });

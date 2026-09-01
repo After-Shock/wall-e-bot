@@ -14,12 +14,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { redis } from '../redis.js';
 import { logger } from '../utils/logger.js';
+import { withTimeout } from '../utils/withTimeout.js';
 
 /**
  * INCR then EXPIRE is not atomic: if the process dies between them the key has
  * no TTL and never expires, permanently rate-limiting that caller. One script
  * does both under Redis' single-threaded execution.
  */
+/** A rate-limit check must never outlive this; see utils/withTimeout.ts. */
+const REDIS_TIMEOUT_MS = 500;
+
 const INCR_WITH_TTL = `
   local n = redis.call('INCR', KEYS[1])
   if n == 1 then
@@ -129,7 +133,7 @@ export function rateLimit(options: RateLimitOptions) {
     let count: number;
     let ttl: number;
     try {
-      [count, ttl] = await scripted.incrWithTtl(key, windowSeconds);
+      [count, ttl] = await withTimeout(scripted.incrWithTtl(key, windowSeconds), REDIS_TIMEOUT_MS);
     } catch (error) {
       logger.error(`Rate limit check failed for ${key}:`, error);
       if (failClosed) {

@@ -15,26 +15,17 @@
 
 import { redis } from '../redis.js';
 import { logger } from './logger.js';
+import { withTimeout } from './withTimeout.js';
 
 /** Seconds a user's guild list is cached. Permission changes apply within this window. */
 const CACHE_TTL = 300;
 
 /**
  * Milliseconds to wait on the cache before giving up and asking Discord.
- *
- * ioredis queues commands while it is disconnected rather than rejecting them,
- * so a Redis outage would otherwise hang every request here instead of taking
- * the fallback path. The cache is an optimization; it is never worth blocking
- * an authorization decision on.
+ * The cache is an optimization; it is never worth blocking an authorization
+ * decision on. See utils/withTimeout.ts for why this is needed at all.
  */
 const CACHE_TIMEOUT_MS = 500;
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('cache timeout')), ms).unref()),
-  ]);
-}
 
 const MANAGE_GUILD = BigInt(0x20);
 const ADMINISTRATOR = BigInt(0x8);
