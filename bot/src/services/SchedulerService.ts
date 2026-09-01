@@ -127,8 +127,18 @@ export class SchedulerService {
     this.autoDeleteInterval = setInterval(() => { this.checkAutoDelete(); }, 60 * 60 * 1000);
     this.checkAutoDelete(); // run on start too
 
-    // Subscribe to Redis pub/sub for on-demand auto-delete triggers
-    this.autoDeleteSubscriber = this.client.cache.redisClient.duplicate();
+    // Subscribe to Redis pub/sub for on-demand auto-delete triggers.
+    //
+    // duplicate() inherits the cache client's options, and those are tuned for
+    // cache reads: lazyConnect (so nothing races startup) and no offline queue
+    // (so a read fails fast instead of hanging). Both are wrong for a
+    // subscriber — it would never connect, and subscribe() would throw. Give it
+    // an eagerly-connected client with the offline queue on, so the
+    // subscription survives a reconnect.
+    this.autoDeleteSubscriber = this.client.cache.redisClient.duplicate({
+      lazyConnect: false,
+      enableOfflineQueue: true,
+    });
     this.autoDeleteSubscriber.on('error', (err) =>
       logger.error('autoDeleteSubscriber Redis error:', err),
     );
