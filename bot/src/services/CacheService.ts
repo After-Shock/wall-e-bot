@@ -35,6 +35,10 @@ export class CacheService {
       // and taking the fallback path is always the better trade.
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
+      // Connect explicitly below. With enableOfflineQueue: false, any command
+      // issued before the socket is writeable throws outright, so the client
+      // must not start connecting in the background while startup races it.
+      lazyConnect: true,
     }) as RedisWithScripts;
     this.redis.defineCommand('incrWithTtl', { numberOfKeys: 1, lua: INCR_WITH_TTL });
 
@@ -46,9 +50,15 @@ export class CacheService {
       logger.error('Redis error:', err);
     });
 
-    // enableOfflineQueue: false rejects commands issued before the socket is
-    // ready, so wait for it here rather than letting startup traffic fail.
-    await this.redis.ping();
+    // connect() resolves once the socket is ready, so nothing races startup.
+    // A failure here is not fatal: ioredis keeps retrying in the background and
+    // every cache read has a database fallback, so the bot runs degraded rather
+    // than crash-looping when Redis is briefly unavailable.
+    try {
+      await this.redis.connect();
+    } catch (err) {
+      logger.error('Redis unavailable at startup, continuing without cache:', err);
+    }
   }
 
   async getGuildConfig(guildId: string): Promise<GuildConfig | null> {
