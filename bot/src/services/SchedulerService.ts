@@ -117,6 +117,12 @@ export class SchedulerService {
   }
 
   start() {
+    // Publish a heartbeat straight away. The BullMQ tick is the thing that
+    // normally refreshes it, but the first one is up to 60s out — without this
+    // the status endpoint reports "down" for a minute after every restart, and
+    // an alert that cries wolf on every deploy is worse than no alert.
+    void recordSchedulerTick(this.client);
+
     // Critical 60s tick is now driven by BullMQ (QueueService).
     // Run immediately on start to catch any missed tasks.
     this.checkScheduledTasks();
