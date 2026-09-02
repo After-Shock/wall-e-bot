@@ -1,6 +1,7 @@
 import { Events, ActivityType } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
+import { recordReady, trackRateLimits } from '../utils/heartbeat.js';
 
 const ACTIVITY_TYPE_MAP: Record<string, ActivityType> = {
   PLAYING: ActivityType.Playing,
@@ -36,6 +37,9 @@ export default {
   async execute(client: WallEClient) {
     logger.info(`Ready! Logged in as ${client.user?.tag}`);
     logger.info(`Serving ${client.guilds.cache.size} guilds`);
+
+    await recordReady(client);
+    trackRateLimits(client);
 
     await applyActivity(client);
 

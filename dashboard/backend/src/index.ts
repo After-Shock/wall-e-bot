@@ -20,6 +20,7 @@ import { commandGroupsRouter } from './routes/commandGroups.js';
 import { dashboardRolesRouter } from './routes/dashboardRoles.js';
 import { autoDeleteRouter } from './routes/autoDelete.js';
 import healthRouter, { initHealthCheck } from './routes/health.js';
+import statusRouter, { initStatus } from './routes/status.js';
 import { db } from './db/index.js';
 import { assertValidSessionSecret } from './utils/security.js';
 import { encryptToken } from './utils/crypto.js';
@@ -136,7 +137,10 @@ app.use('/api/guilds/:guildId/auto-delete', autoDeleteRouter);
 //   /health        liveness — the process is up
 //   /health/ready  readiness — Postgres and Redis actually answer (503 if not)
 initHealthCheck(db, redis);
+initStatus(db, redis);
 app.use('/health', healthRouter);
+// /health/status — operational judgement for uptime-kuma; see routes/status.ts
+app.use('/health', statusRouter);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

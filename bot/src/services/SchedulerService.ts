@@ -19,6 +19,7 @@ import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
 import { sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
+import { recordSchedulerTick } from '../utils/heartbeat.js';
 
 /**
  * Database row structure for scheduled messages.
@@ -80,6 +81,8 @@ export class SchedulerService {
     } catch (err) {
       logger.error('[Scheduler] checkTempBans failed:', err);
     }
+    // Last: a heartbeat only means something if the work above actually ran.
+    await recordSchedulerTick(this.client);
   }
 
   /** Unban users whose temp ban has expired. */
