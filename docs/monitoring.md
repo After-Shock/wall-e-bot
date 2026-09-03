@@ -27,7 +27,8 @@ Returns `status: ok | degraded | down`.
 
 ## Recommended uptime-kuma monitors
 
-Two, because they answer different questions:
+Three, because they answer different questions. The third is not optional —
+see the warning below it.
 
 1. **Outage** — HTTP(s), `http://wall-e-backend:3001/health/status`.
    Default "accepted status codes" of `200-299` already fails on the 503.
@@ -37,8 +38,32 @@ Two, because they answer different questions:
    This one fails on `degraded` too. Give it a longer retry interval so a
    single late task does not page anyone.
 
+3. **The user's actual path** — HTTP(s), `https://wall-e.sullyflix.com/api/guilds`,
+   with accepted status codes set to **`401`**. An unauthenticated 401 proves the
+   whole chain works: Traefik → nginx → backend. A 502 here means the proxy path
+   is broken.
+
+> **Monitors 1 and 2 talk to the backend directly and therefore cannot see a
+> broken proxy.** This is not hypothetical: on 2026-09-01 nginx cached the
+> backend's container IP at startup, the backend was later recreated on a new
+> IP, and every `/api` and `/auth` request 502'd for 37 hours — while
+> `/health/status` reported `ok` the entire time, because it was being polled on
+> the backend itself. Monitoring a component tells you the component is fine. It
+> does not tell you anyone can reach it. Monitor 3 is the one that would have
+> caught it.
+>
+> The underlying cause is fixed (`docker/nginx.conf` now re-resolves via
+> Docker's DNS per request), but the monitoring lesson stands for every future
+> failure between the user and the app.
+
 uptime-kuma shares the `wall-e-network` bridge, so it can reach the backend by
-container name without the endpoint being public.
+container name without the endpoint being public. Note that image has `curl`
+but **no `wget`**, if you ever test from inside it.
+
+`/health/*` is deliberately NOT proxied by nginx — only `/api` and `/auth` are.
+A public request to `/health/status` returns the SPA's `index.html` with a 200,
+which would make a public monitor on that path permanently and misleadingly
+green. Use monitor 3's `/api/guilds` for the external check instead.
 
 ## What is deliberately not measured
 
@@ -50,6 +75,8 @@ actually happened and was silent at the time:
 - temp bans marked lifted without being lifted
 - a Redis pub/sub subscriber that never connected
 - the scheduler tick throwing and only landing in `failed_jobs`
+- nginx holding a stale backend IP, 502ing every API and auth request for 37
+  hours while the backend itself reported healthy
 
 ## Sentry
 
