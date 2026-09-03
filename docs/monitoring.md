@@ -34,9 +34,16 @@ see the warning below it.
    Default "accepted status codes" of `200-299` already fails on the 503.
    Notify immediately.
 
-2. **Needs attention** — HTTP(s) Keyword, same URL, keyword `"status":"ok"`.
-   This one fails on `degraded` too. Give it a longer retry interval so a
-   single late task does not page anyone.
+2. **Needs attention** — HTTP(s) **Json Query**, same URL, json path `status`,
+   expected value `ok`. Fails on `degraded` too. Longer interval so a single
+   late task does not page anyone.
+
+   > Not a Keyword monitor. `"status":"ok"` appears **seven** times in a healthy
+   > body — once at the top level and once per nested check — so a keyword match
+   > still succeeds when the top-level status is `degraded`, and the monitor
+   > would never fire. Verified: injecting a degraded state produced
+   > `200 - OK, but value is not equal to expected value, value was: [degraded]`
+   > from the json-query monitor.
 
 3. **The user's actual path** — HTTP(s), `https://wall-e.sullyflix.com/api/guilds`,
    with accepted status codes set to **`401`**. An unauthenticated 401 proves the
@@ -64,6 +71,23 @@ but **no `wget`**, if you ever test from inside it.
 A public request to `/health/status` returns the SPA's `index.html` with a 200,
 which would make a public monitor on that path permanently and misleadingly
 green. Use monitor 3's `/api/guilds` for the external check instead.
+
+## Current state
+
+Configured in uptime-kuma on 2026-09-03 as monitors 5, 6 and 7, alongside the
+four pre-existing Jellyfin monitors. All three verified beating.
+
+**They have no notification attached.** The four notification channels on this
+instance are all Jellyfin-specific Discord webhooks; sending Wall-E alerts to a
+channel named for a media server would be worse than useless. Create a Wall-E
+notification in the UI (Settings → Notifications) and attach it to monitors 5-7,
+otherwise these report in the dashboard but page nobody.
+
+Detection was verified end to end rather than assumed, by setting the
+`health:bot:rate_limited` Redis key to force a `degraded` response and watching
+monitor 6 go down, then removing it and watching it recover. That key is the
+least invasive lever: no Discord side effects, no database rows, one `DEL` to
+undo.
 
 ## What is deliberately not measured
 
