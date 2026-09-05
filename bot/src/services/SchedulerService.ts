@@ -574,68 +574,6 @@ export class SchedulerService {
     }
   }
 
-  async createScheduledMessage(
-    guildId: string,
-    channelId: string,
-    message: string,
-    options: {
-      embed?: boolean;
-      embedColor?: string;
-      intervalMinutes?: number;
-      cronExpression?: string;
-      runAt?: Date;
-      createdBy: string;
-    },
-  ): Promise<number> {
-    let nextRun: Date;
-    
-    if (options.runAt) {
-      nextRun = options.runAt;
-    } else if (options.intervalMinutes) {
-      nextRun = new Date(Date.now() + options.intervalMinutes * 60 * 1000);
-    } else if (options.cronExpression) {
-      nextRun = this.getNextCronRun(options.cronExpression);
-    } else {
-      throw new Error('Must specify runAt, intervalMinutes, or cronExpression');
-    }
-
-    const result = await this.client.db.pool.query(
-      `INSERT INTO scheduled_messages 
-       (guild_id, channel_id, message, embed, embed_color, interval_minutes, cron_expression, next_run, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id`,
-      [
-        guildId,
-        channelId,
-        message,
-        options.embed ?? false,
-        options.embedColor,
-        options.intervalMinutes,
-        options.cronExpression,
-        nextRun,
-        options.createdBy,
-      ],
-    );
-
-    return result.rows[0].id;
-  }
-
-  async deleteScheduledMessage(guildId: string, taskId: number): Promise<boolean> {
-    const result = await this.client.db.pool.query(
-      'DELETE FROM scheduled_messages WHERE id = $1 AND guild_id = $2 RETURNING id',
-      [taskId, guildId],
-    );
-    return result.rowCount! > 0;
-  }
-
-  async listScheduledMessages(guildId: string): Promise<ScheduledTask[]> {
-    const result = await this.client.db.pool.query(
-      'SELECT * FROM scheduled_messages WHERE guild_id = $1 ORDER BY next_run',
-      [guildId],
-    );
-    return result.rows;
-  }
-
   private async checkAutoDelete() {
     try {
       const result = await this.client.db.pool.query(

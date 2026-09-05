@@ -46,12 +46,6 @@ const envSchema = z.object({
     .describe('Redis connection string'),
   
   // Security
-  JWT_SECRET: z
-    .string()
-    .min(32, 'JWT_SECRET must be at least 32 characters for security')
-    .optional()
-    .describe('Secret for JWT token signing'),
-  
   SESSION_SECRET: z
     .string()
     .min(32, 'SESSION_SECRET must be at least 32 characters for security')

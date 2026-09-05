@@ -290,54 +290,6 @@ describe('SchedulerService', () => {
     });
   });
 
-  describe('createScheduledMessage', () => {
-    it('should create a scheduled message with interval', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1 }] });
-
-      const id = await scheduler.createScheduledMessage(
-        'guild-123',
-        'channel-1',
-        'Test message',
-        { intervalMinutes: 60, createdBy: 'user-1' },
-      );
-
-      expect(id).toBe(1);
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO scheduled_messages'),
-        expect.arrayContaining(['guild-123', 'channel-1', 'Test message']),
-      );
-    });
-
-    it('should throw without scheduling options', async () => {
-      await expect(
-        scheduler.createScheduledMessage(
-          'guild-123',
-          'channel-1',
-          'Test',
-          { createdBy: 'user-1' },
-        ),
-      ).rejects.toThrow('Must specify runAt, intervalMinutes, or cronExpression');
-    });
-  });
-
-  describe('deleteScheduledMessage', () => {
-    it('should delete and return true when found', async () => {
-      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 1 }] });
-
-      const result = await scheduler.deleteScheduledMessage('guild-123', 1);
-
-      expect(result).toBe(true);
-    });
-
-    it('should return false when not found', async () => {
-      mockQuery.mockResolvedValueOnce({ rowCount: 0, rows: [] });
-
-      const result = await scheduler.deleteScheduledMessage('guild-123', 999);
-
-      expect(result).toBe(false);
-    });
-  });
-
   describe('auto-delete error handling', () => {
     const testChannelId = 'ad-test-channel';
 
