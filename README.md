@@ -64,7 +64,7 @@ Useful non-destructive commands:
 ```bash
 docker compose -f docker/docker-compose.yml logs -f
 docker compose -f docker/docker-compose.saltbox.yml logs -f wall-e-backend
-docker exec -it wall-e-postgres psql -U wall_e -d wall_e_bot
+docker exec -it wall-e-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
 Manual configuration snapshots cover the guild JSON configuration only. They are not backups of PostgreSQL, Discord roles/channels/members/messages, custom-command rows, or schedules; maintain separate database and host backups.
