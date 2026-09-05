@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeHostname } from '@wall-e/shared';
 
 /**
  * Validation schemas for guild configuration sections
@@ -14,6 +15,33 @@ const optionalDiscordId = discordId.nullish();
 // Hex color regex (#RRGGBB)
 const hexColorRegex = /^#[0-9A-F]{6}$/i;
 const hexColor = z.string().regex(hexColorRegex, 'Invalid hex color (must be #RRGGBB)');
+
+const allowedHostname = z.string().max(255).transform((value, context) => {
+  const normalized = normalizeHostname(value);
+  if (!normalized) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Must be a hostname only (for example, example.com)',
+    });
+    return z.NEVER;
+  }
+  return normalized;
+});
+
+const positiveMuteDuration = z.number().int().min(1).max(10080).optional();
+
+const requireMuteDuration = (
+  value: { action: string; muteDuration?: number },
+  context: z.RefinementCtx,
+) => {
+  if (value.action === 'mute' && value.muteDuration === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['muteDuration'],
+      message: 'Mute duration is required when action is mute',
+    });
+  }
+};
 
 /**
  * Welcome & Leave Messages Configuration
@@ -90,23 +118,23 @@ export const AutoModConfigSchema = z.object({
     enabled: z.boolean(),
     maxMessages: z.number().int().min(1).max(50),
     interval: z.number().int().min(1).max(60), // seconds
-    action: z.enum(['warn', 'mute', 'kick', 'ban']),
-    muteDuration: z.number().int().min(1).max(10080).optional(), // minutes, max 1 week
-  }),
+    action: z.enum(['warn', 'mute']),
+    muteDuration: positiveMuteDuration, // minutes, max 1 week
+  }).superRefine(requireMuteDuration),
 
   // Word filter
   wordFilter: z.object({
     enabled: z.boolean(),
     words: z.array(z.string().min(1).max(100)).max(1000), // Max 1000 filtered words
     action: z.enum(['delete', 'warn', 'mute']),
-    muteDuration: z.number().int().min(1).max(10080).optional(),
-  }),
+    muteDuration: positiveMuteDuration,
+  }).superRefine(requireMuteDuration),
 
   // Link filter
   linkFilter: z.object({
     enabled: z.boolean(),
-    allowedDomains: z.array(z.string().max(255)).max(1000),
-    action: z.enum(['delete', 'warn', 'mute']),
+    allowedDomains: z.array(allowedHostname).max(1000),
+    action: z.enum(['delete', 'warn']),
   }),
 
   // Caps detection

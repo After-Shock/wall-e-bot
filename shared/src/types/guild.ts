@@ -53,7 +53,7 @@ export interface AutoModConfig {
     enabled: boolean;
     maxMessages: number;
     interval: number; // seconds
-    action: 'warn' | 'mute' | 'kick' | 'ban';
+    action: 'warn' | 'mute';
     muteDuration?: number; // minutes
   };
 
@@ -69,7 +69,7 @@ export interface AutoModConfig {
   linkFilter: {
     enabled: boolean;
     allowedDomains: string[];
-    action: 'delete' | 'warn' | 'mute';
+    action: 'delete' | 'warn';
   };
 
   // Caps detection

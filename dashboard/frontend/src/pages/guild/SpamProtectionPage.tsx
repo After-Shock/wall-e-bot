@@ -49,6 +49,19 @@ export default function SpamProtectionPage() {
     return <LoadingSpinner fullScreen />;
   }
 
+  const antiSpamAction = String(localConfig.antiSpam.action);
+  const unsupportedAction = !['warn', 'mute'].includes(antiSpamAction)
+    ? antiSpamAction
+    : null;
+  const invalidMuteDuration = antiSpamAction === 'mute'
+    && (!Number.isFinite(localConfig.antiSpam.muteDuration)
+      || (localConfig.antiSpam.muteDuration ?? 0) <= 0);
+  const localConfigIssue = unsupportedAction
+    ? `This server has the legacy “${unsupportedAction}” action selected. It is unsupported and will not run. Choose Warn or Mute before saving.`
+    : invalidMuteDuration
+      ? 'Mute requires a positive duration before this configuration can be saved.'
+      : null;
+
   const updateAntiSpam = (updates: Partial<AutoModConfig['antiSpam']>) => {
     setLocalConfig(prev => prev ? {
       ...prev,
@@ -57,7 +70,7 @@ export default function SpamProtectionPage() {
   };
 
   const handleSave = async () => {
-    if (!localConfig) return;
+    if (!localConfig || localConfigIssue) return;
     try {
       await update({
         enabled: localConfig.enabled,
@@ -88,7 +101,7 @@ export default function SpamProtectionPage() {
         </div>
         <button
           onClick={handleSave}
-          disabled={isUpdating}
+          disabled={isUpdating || !!localConfigIssue}
           className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
@@ -121,6 +134,10 @@ export default function SpamProtectionPage() {
       )}
 
       {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
+
+      {localConfigIssue && (
+        <ErrorAlert message="Unsupported spam protection configuration" details={localConfigIssue} variant="error" />
+      )}
 
       {/* Success Message */}
       {showSuccess && (
@@ -209,14 +226,23 @@ export default function SpamProtectionPage() {
               <div>
                 <label className="block text-sm font-medium mb-2">Action to Take</label>
                 <select
-                  value={localConfig.antiSpam.action}
-                  onChange={e => updateAntiSpam({ action: e.target.value as any })}
+                  value={antiSpamAction}
+                  onChange={e => {
+                    const action = e.target.value as AutoModConfig['antiSpam']['action'];
+                    updateAntiSpam({
+                      action,
+                      ...(action === 'mute' && !localConfig.antiSpam.muteDuration
+                        ? { muteDuration: 10 }
+                        : {}),
+                    });
+                  }}
                   className="input w-full"
                 >
+                  {unsupportedAction && (
+                    <option value={unsupportedAction}>Unsupported legacy action: {unsupportedAction}</option>
+                  )}
                   <option value="warn">Warn user</option>
                   <option value="mute">Mute user</option>
-                  <option value="kick">Kick from server</option>
-                  <option value="ban">Ban from server</option>
                 </select>
               </div>
               {localConfig.antiSpam.action === 'mute' && (
@@ -224,8 +250,11 @@ export default function SpamProtectionPage() {
                   <label className="block text-sm font-medium mb-2">Mute Duration (minutes)</label>
                   <input
                     type="number"
-                    value={localConfig.antiSpam.muteDuration || 10}
-                    onChange={e => updateAntiSpam({ muteDuration: parseInt(e.target.value) || 10 })}
+                    value={localConfig.antiSpam.muteDuration ?? ''}
+                    onChange={e => {
+                      const duration = Number.parseInt(e.target.value, 10);
+                      updateAntiSpam({ muteDuration: Number.isFinite(duration) ? duration : undefined });
+                    }}
                     className="input w-full"
                     min="1"
                     max="10080"

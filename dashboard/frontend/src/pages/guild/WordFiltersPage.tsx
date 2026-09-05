@@ -55,6 +55,10 @@ export default function WordFiltersPage() {
     return <LoadingSpinner fullScreen />;
   }
 
+  const invalidMuteDuration = localConfig.wordFilter.action === 'mute'
+    && (!Number.isFinite(localConfig.wordFilter.muteDuration)
+      || (localConfig.wordFilter.muteDuration ?? 0) <= 0);
+
   const updateWordFilter = (updates: Partial<AutoModConfig['wordFilter']>) => {
     setLocalConfig(prev => prev ? {
       ...prev,
@@ -80,7 +84,7 @@ export default function WordFiltersPage() {
   };
 
   const handleSave = async () => {
-    if (!localConfig) return;
+    if (!localConfig || invalidMuteDuration) return;
 
     try {
       await update({
@@ -114,7 +118,7 @@ export default function WordFiltersPage() {
         </div>
         <button
           onClick={handleSave}
-          disabled={isUpdating}
+          disabled={isUpdating || invalidMuteDuration}
           className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
@@ -147,6 +151,14 @@ export default function WordFiltersPage() {
       )}
 
       {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
+
+      {invalidMuteDuration && (
+        <ErrorAlert
+          message="Invalid word filter configuration"
+          details="Mute requires a positive duration before this configuration can be saved."
+          variant="error"
+        />
+      )}
 
       {/* Success Message */}
       {showSuccess && (
@@ -193,7 +205,15 @@ export default function WordFiltersPage() {
               <label className="block text-sm font-medium mb-2">Action</label>
               <select
                 value={localConfig.wordFilter.action}
-                onChange={e => updateWordFilter({ action: e.target.value as any })}
+                onChange={e => {
+                  const action = e.target.value as AutoModConfig['wordFilter']['action'];
+                  updateWordFilter({
+                    action,
+                    ...(action === 'mute' && !localConfig.wordFilter.muteDuration
+                      ? { muteDuration: 10 }
+                      : {}),
+                  });
+                }}
                 className="input w-full"
               >
                 <option value="delete">Delete message only</option>
@@ -210,8 +230,11 @@ export default function WordFiltersPage() {
                 </label>
                 <input
                   type="number"
-                  value={localConfig.wordFilter.muteDuration || 10}
-                  onChange={e => updateWordFilter({ muteDuration: parseInt(e.target.value) || 10 })}
+                  value={localConfig.wordFilter.muteDuration ?? ''}
+                  onChange={e => {
+                    const duration = Number.parseInt(e.target.value, 10);
+                    updateWordFilter({ muteDuration: Number.isFinite(duration) ? duration : undefined });
+                  }}
                   className="input w-full"
                   min="1"
                   max="10080"

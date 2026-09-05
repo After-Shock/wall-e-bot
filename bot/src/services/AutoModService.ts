@@ -1,6 +1,6 @@
 import { Message, GuildMember, TextChannel, EmbedBuilder } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
-import { COLORS, type AutoModConfig } from '@wall-e/shared';
+import { COLORS, normalizeHostname, type AutoModConfig } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
 
 export class AutoModService {
@@ -21,16 +21,11 @@ export class AutoModService {
     );
     if (hasIgnoredRole) return false;
 
-    // Run all checks
-    const checks = [
-      this.checkSpam(message, config),
-      this.checkWordFilter(message, config),
-      this.checkLinkFilter(message, config),
-      this.checkCapsFilter(message, config),
-    ];
-
-    const results = await Promise.all(checks);
-    return results.some(r => r);
+    // A message receives at most one action. Order is spam, words, links, caps.
+    if (await this.checkSpam(message, config)) return true;
+    if (await this.checkWordFilter(message, config)) return true;
+    if (await this.checkLinkFilter(message, config)) return true;
+    return this.checkCapsFilter(message, config);
   }
 
   private async checkSpam(message: Message, config: AutoModConfig): Promise<boolean> {
@@ -82,10 +77,13 @@ export class AutoModService {
 
     const hasBlockedLink = urls.some(url => {
       try {
-        const domain = new URL(url).hostname;
-        return !config.linkFilter!.allowedDomains.some(allowed => 
-          domain.endsWith(allowed),
-        );
+        const host = normalizeHostname(new URL(url).hostname);
+        if (!host) return true;
+
+        return !config.linkFilter!.allowedDomains.some(value => {
+          const allowed = normalizeHostname(value);
+          return allowed !== null && (host === allowed || host.endsWith(`.${allowed}`));
+        });
       } catch {
         return true;
       }
@@ -126,6 +124,15 @@ export class AutoModService {
     reason: string,
     muteDuration?: number,
   ): Promise<void> {
+    if (action !== 'delete' && action !== 'warn' && action !== 'mute') {
+      logger.warn(`[AutoMod] Skipping unsupported action "${action}" for guild ${message.guild?.id ?? 'unknown'}`);
+      return;
+    }
+    if (action === 'mute' && (!Number.isFinite(muteDuration) || (muteDuration ?? 0) <= 0)) {
+      logger.warn(`[AutoMod] Skipping mute without a positive mute duration for guild ${message.guild?.id ?? 'unknown'}`);
+      return;
+    }
+
     try {
       // Always try to delete the message first
       if (action === 'delete' || action === 'warn' || action === 'mute') {
@@ -139,12 +146,12 @@ export class AutoModService {
           message.guild!.members.me!,
           `[AutoMod] ${reason}`,
         );
-      } else if (action === 'mute' && muteDuration) {
+      } else if (action === 'mute') {
         await this.client.moderation.timeout(
           message.guild!,
           message.member!,
           message.guild!.members.me!,
-          muteDuration * 60 * 1000, // Convert minutes to ms
+          muteDuration! * 60 * 1000, // Convert minutes to ms
           `[AutoMod] ${reason}`,
         );
       }

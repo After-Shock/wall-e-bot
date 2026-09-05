@@ -50,6 +50,12 @@ export default function LinkProtectionPage() {
     return <LoadingSpinner fullScreen />;
   }
 
+  const linkAction = String(localConfig.linkFilter.action);
+  const unsupportedAction = !['delete', 'warn'].includes(linkAction) ? linkAction : null;
+  const localConfigIssue = unsupportedAction
+    ? `This server has the legacy “${unsupportedAction}” link action selected. It is unsupported and will not run. Choose Delete or Warn before saving.`
+    : null;
+
   const updateLinkFilter = (updates: Partial<AutoModConfig['linkFilter']>) => {
     setLocalConfig(prev => prev ? {
       ...prev,
@@ -75,7 +81,7 @@ export default function LinkProtectionPage() {
   };
 
   const handleSave = async () => {
-    if (!localConfig) return;
+    if (!localConfig || localConfigIssue) return;
     try {
       await update({
         enabled: localConfig.enabled,
@@ -108,7 +114,7 @@ export default function LinkProtectionPage() {
         </div>
         <button
           onClick={handleSave}
-          disabled={isUpdating}
+          disabled={isUpdating || !!localConfigIssue}
           className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
@@ -141,6 +147,10 @@ export default function LinkProtectionPage() {
       )}
 
       {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
+
+      {localConfigIssue && (
+        <ErrorAlert message="Unsupported link protection configuration" details={localConfigIssue} variant="error" />
+      )}
 
       {/* Success Message */}
       {showSuccess && (
@@ -186,13 +196,15 @@ export default function LinkProtectionPage() {
             <div>
               <label className="block text-sm font-medium mb-2">Action</label>
               <select
-                value={localConfig.linkFilter.action}
-                onChange={e => updateLinkFilter({ action: e.target.value as any })}
+                value={linkAction}
+                onChange={e => updateLinkFilter({ action: e.target.value as AutoModConfig['linkFilter']['action'] })}
                 className="input w-full"
               >
+                {unsupportedAction && (
+                  <option value={unsupportedAction}>Unsupported legacy action: {unsupportedAction}</option>
+                )}
                 <option value="delete">Delete message only</option>
                 <option value="warn">Delete and warn user</option>
-                <option value="mute">Delete and mute user</option>
               </select>
             </div>
           </div>
