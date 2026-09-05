@@ -90,7 +90,7 @@ export const AutoModConfigSchema = z.object({
     interval: z.number().int().min(1).max(60), // seconds
     action: z.enum(['warn', 'mute', 'kick', 'ban']),
     muteDuration: z.number().int().min(1).max(10080).optional(), // minutes, max 1 week
-  }).partial(),
+  }),
 
   // Word filter
   wordFilter: z.object({
@@ -98,14 +98,14 @@ export const AutoModConfigSchema = z.object({
     words: z.array(z.string().min(1).max(100)).max(1000), // Max 1000 filtered words
     action: z.enum(['delete', 'warn', 'mute']),
     muteDuration: z.number().int().min(1).max(10080).optional(),
-  }).partial(),
+  }),
 
   // Link filter
   linkFilter: z.object({
     enabled: z.boolean(),
     allowedDomains: z.array(z.string().max(255)).max(1000),
     action: z.enum(['delete', 'warn', 'mute']),
-  }).partial(),
+  }),
 
   // Caps detection
   capsFilter: z.object({
@@ -113,7 +113,7 @@ export const AutoModConfigSchema = z.object({
     threshold: z.number().int().min(0).max(100), // percentage
     minLength: z.number().int().min(1).max(2000),
     action: z.enum(['delete', 'warn']),
-  }).partial(),
+  }),
 
   // Advanced: Image scanning (Premium)
   imageScanning: z.object({
@@ -123,7 +123,7 @@ export const AutoModConfigSchema = z.object({
     scanForGore: z.boolean(),
     action: z.enum(['delete', 'warn', 'mute']),
     threshold: z.number().int().min(0).max(100), // confidence threshold
-  }).partial().optional(),
+  }).optional(),
 
   // Advanced: Link safety (Premium)
   linkSafety: z.object({
@@ -132,7 +132,7 @@ export const AutoModConfigSchema = z.object({
     checkMalware: z.boolean(),
     checkIpLoggers: z.boolean(),
     action: z.enum(['delete', 'warn', 'mute']),
-  }).partial().optional(),
+  }).optional(),
 
   // Advanced: Raid protection (Premium)
   raidProtection: z.object({
@@ -142,7 +142,7 @@ export const AutoModConfigSchema = z.object({
     verificationLevel: z.enum(['low', 'medium', 'high']),
     action: z.enum(['kick', 'ban']),
     alertChannel: discordId.optional(),
-  }).partial().optional(),
+  }).optional(),
 
   // Ignored channels/roles
   ignoredChannels: z.array(discordId).max(100),
@@ -170,7 +170,7 @@ export const LoggingConfigSchema = z.object({
     voiceStateUpdate: z.boolean(),
     nicknameChange: z.boolean(),
     usernameChange: z.boolean(),
-  }).partial(),
+  }),
 
   ignoredChannels: z.array(discordId).max(100),
 }).partial();

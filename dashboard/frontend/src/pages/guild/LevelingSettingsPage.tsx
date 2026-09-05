@@ -19,6 +19,7 @@ export default function LevelingSettingsPage() {
     update,
     isUpdating,
     updateError,
+    updateWarning,
     refetch
   } = useGuildConfig<LevelingConfig>(guildId, 'leveling');
 
@@ -113,6 +114,8 @@ export default function LevelingSettingsPage() {
           variant="error"
         />
       )}
+
+      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {/* Success Message */}
       {showSuccess && (

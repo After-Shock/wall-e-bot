@@ -13,6 +13,7 @@ import { reactionRoleBody, buildReactionRoleMessage, type ReactionRoleEntry } fr
 import { resolveUsers } from '../utils/discordUsers.js';
 import { findCategoryInGuild } from '../utils/ticketScope.js';
 import { getUserGuilds, isGuildAdmin, GuildResolutionError } from '../utils/userGuilds.js';
+import { invalidateGuildConfigCache, withCacheWarning } from '../utils/guildConfigCache.js';
 
 // Helper: check if user has manage access to a guild.
 // Resolves the guild list live (Redis-cached) rather than reading a session
@@ -175,14 +176,27 @@ guildsRouter.patch(
         return;
       }
 
-      await db.query(
+      const result = await db.query<{ config: Record<string, unknown> }>(
         `INSERT INTO guild_configs (guild_id, config)
-         VALUES ($1, $2)
-         ON CONFLICT (guild_id) DO UPDATE SET config = $2, updated_at = NOW()`,
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (guild_id) DO UPDATE SET
+           config = CASE
+             WHEN $2::jsonb ? 'modules' THEN
+               (COALESCE(guild_configs.config, '{}'::jsonb) || ($2::jsonb - 'modules'))
+               || jsonb_build_object(
+                 'modules',
+                 COALESCE(guild_configs.config -> 'modules', '{}'::jsonb)
+                 || COALESCE($2::jsonb -> 'modules', '{}'::jsonb)
+               )
+             ELSE COALESCE(guild_configs.config, '{}'::jsonb) || $2::jsonb
+           END,
+           updated_at = NOW()
+         RETURNING config`,
         [guildId, JSON.stringify(validationResult.data)],
       );
 
-      res.json({ success: true, data: validationResult.data });
+      const cacheInvalidated = await invalidateGuildConfigCache(guildId);
+      res.json(withCacheWarning({ success: true, data: result.rows[0].config }, cacheInvalidated));
     } catch (error) {
       logger.error('Error updating guild config:', error);
       res.status(500).json({ error: 'Failed to update guild config' });
@@ -380,10 +394,11 @@ async function handlePatchConfigSection(
       validationResult.data,
     );
 
-    res.json({
+    const cacheInvalidated = await invalidateGuildConfigCache(guildId);
+    res.json(withCacheWarning({
       success: true,
       data: updated,
-    });
+    }, cacheInvalidated));
   } catch (error) {
     logger.error(`Error updating ${section} config:`, { guildId, error });
     res.status(500).json({ error: `Failed to update ${section} configuration` });
@@ -427,7 +442,8 @@ guildsRouter.patch(
              updated_at = NOW()`,
       [guildId, parsed.data],
     );
-    res.json({ prefix: parsed.data });
+    const cacheInvalidated = await invalidateGuildConfigCache(guildId);
+    res.json(withCacheWarning({ prefix: parsed.data }, cacheInvalidated));
   }),
 );
 
@@ -911,8 +927,11 @@ guildsRouter.post(
     const { guildId, backupId } = req.params;
 
     try {
-      await backupService.restoreBackup(backupId, guildId);
-      res.json({ success: true, message: 'Backup restored successfully' });
+      const cacheInvalidated = await backupService.restoreBackup(backupId, guildId);
+      res.json(withCacheWarning(
+        { success: true, message: 'Backup restored successfully' },
+        cacheInvalidated,
+      ));
     } catch (error) {
       logger.error('Error restoring backup:', { guildId, backupId, error });
       res.status(500).json({ error: 'Failed to restore backup' });
@@ -1716,11 +1735,53 @@ guildsRouter.post(
           res.status(404).json({ error: 'Source server has no configuration' });
           return;
         }
-        const cleaned = stripServerIds(srcCfg.rows[0].config);
+        const sourceConfig = srcCfg.rows[0].config as Record<string, any>;
+        const selectedConfig: Record<string, any> = {};
+        const selectedModules: Record<string, boolean> = {};
+
+        if (selected.includes('general')) {
+          for (const key of ['prefix', 'language', 'timezone', 'welcome', 'leveling']) {
+            if (Object.prototype.hasOwnProperty.call(sourceConfig, key)) selectedConfig[key] = sourceConfig[key];
+          }
+          for (const key of ['welcome', 'leveling']) {
+            if (typeof sourceConfig.modules?.[key] === 'boolean') selectedModules[key] = sourceConfig.modules[key];
+          }
+        }
+        if (selected.includes('moderation')) {
+          for (const key of ['moderation', 'automod']) {
+            if (Object.prototype.hasOwnProperty.call(sourceConfig, key)) selectedConfig[key] = sourceConfig[key];
+          }
+          for (const key of ['moderation', 'automod']) {
+            if (typeof sourceConfig.modules?.[key] === 'boolean') selectedModules[key] = sourceConfig.modules[key];
+          }
+        }
+        if (Object.keys(selectedModules).length > 0) selectedConfig.modules = selectedModules;
+
+        const cleaned = stripServerIds(selectedConfig);
+        if (cleaned.welcome) cleaned.welcome.autoRole = [];
+        if (cleaned.leveling) {
+          if (!['current', 'dm'].includes(cleaned.leveling.levelUpChannel)) cleaned.leveling.levelUpChannel = null;
+          cleaned.leveling.ignoredChannels = [];
+          cleaned.leveling.ignoredRoles = [];
+          cleaned.leveling.xpMultipliers = [];
+          cleaned.leveling.roleRewards = [];
+        }
+        if (cleaned.automod) {
+          cleaned.automod.ignoredChannels = [];
+          cleaned.automod.ignoredRoles = [];
+          if (cleaned.automod.raidProtection) cleaned.automod.raidProtection.alertChannel = null;
+        }
         await client.query(
           `INSERT INTO guild_configs (guild_id, config, updated_at)
            VALUES ($1, $2, NOW())
-           ON CONFLICT (guild_id) DO UPDATE SET config = $2, updated_at = NOW()`,
+           ON CONFLICT (guild_id) DO UPDATE SET
+             config = (COALESCE(guild_configs.config, '{}'::jsonb) || ($2::jsonb - 'modules'))
+               || jsonb_build_object(
+                 'modules',
+                 COALESCE(guild_configs.config -> 'modules', '{}'::jsonb)
+                 || COALESCE($2::jsonb -> 'modules', '{}'::jsonb)
+               ),
+             updated_at = NOW()`,
           [targetGuildId, JSON.stringify(cleaned)],
         );
         syncedCount++;
@@ -1995,10 +2056,11 @@ guildsRouter.post(
       }
 
       await client.query('COMMIT');
+      const cacheInvalidated = await invalidateGuildConfigCache(targetGuildId);
       logger.info('Guild config copied', {
         sourceGuildId, targetGuildId, userId: authReq.user!.id, selected, syncedCount,
       });
-      res.json({ syncedCount });
+      res.json(withCacheWarning({ syncedCount }, cacheInvalidated));
     } catch (error) {
       await client.query('ROLLBACK');
       const msg = error instanceof Error ? error.message : String(error);

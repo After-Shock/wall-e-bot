@@ -24,7 +24,7 @@ export default function RoleRewardsPage() {
   const [rewards, setRewards] = useState<RoleReward[] | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const { data, isLoading, error, update, isUpdating, updateError, refetch } =
+  const { data, isLoading, error, update, isUpdating, updateError, updateWarning, refetch } =
     useGuildConfig<LevelingConfig>(guildId, 'leveling');
 
   const { data: guildRoles = [] } = useQuery<GuildRole[]>({
@@ -80,8 +80,8 @@ export default function RoleRewardsPage() {
     if (!rewards) return;
     const sorted = [...rewards].sort((a, b) => a.level - b.level);
     try {
-      // Only roleRewards is sent; the backend deep-merges into the leveling
-      // section, so xp settings and level-up message are left untouched.
+      // roleRewards is a top-level leveling field, so omitted leveling fields
+      // remain untouched by the section PATCH contract.
       await update({ roleRewards: sorted } as Partial<LevelingConfig>);
       setRewards(sorted);
       setShowSuccess(true);
@@ -138,6 +138,8 @@ export default function RoleRewardsPage() {
           variant="error"
         />
       )}
+
+      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {/* Info */}
       <div className="bg-discord-blurple/20 border border-discord-blurple/50 rounded-lg p-4">

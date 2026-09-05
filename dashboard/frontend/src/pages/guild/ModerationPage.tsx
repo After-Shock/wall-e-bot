@@ -19,6 +19,7 @@ export default function ModerationPage() {
     update,
     isUpdating,
     updateError,
+    updateWarning,
     refetch
   } = useGuildConfig<ModerationConfig>(guildId, 'moderation');
 
@@ -113,6 +114,8 @@ export default function ModerationPage() {
           variant="error"
         />
       )}
+
+      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {/* Success Message */}
       {showSuccess && (

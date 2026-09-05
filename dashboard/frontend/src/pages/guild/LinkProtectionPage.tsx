@@ -19,6 +19,7 @@ export default function LinkProtectionPage() {
     update,
     isUpdating,
     updateError,
+    updateWarning,
     refetch
   } = useGuildConfig<AutoModConfig>(guildId, 'automod');
 
@@ -130,6 +131,8 @@ export default function LinkProtectionPage() {
           variant="error"
         />
       )}
+
+      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {/* Success Message */}
       {showSuccess && (

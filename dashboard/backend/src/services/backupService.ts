@@ -1,5 +1,6 @@
 import { db } from '../db/index.js';
 import { logger } from '../utils/logger.js';
+import { invalidateGuildConfigCache } from '../utils/guildConfigCache.js';
 import { guildConfigService } from './index.js';
 import type { Backup, BackupListItem, BackupConfig } from '@wall-e/shared';
 
@@ -148,7 +149,7 @@ export async function getBackup(backupId: string, guildId: string): Promise<Back
 export async function restoreBackup(
   backupId: string,
   guildId: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const backup = await getBackup(backupId, guildId);
 
@@ -165,6 +166,7 @@ export async function restoreBackup(
     );
 
     logger.info(`Restored backup ${backupId} for guild ${guildId}`);
+    return invalidateGuildConfigCache(guildId);
   } catch (error) {
     logger.error('Failed to restore backup:', error);
     throw error;

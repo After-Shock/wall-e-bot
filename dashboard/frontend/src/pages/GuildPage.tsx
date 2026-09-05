@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import { ArrowLeft, Save, Shield, Star, MessageSquare, Bot, Settings, Loader2, Image, Activity } from 'lucide-react';
+import { ArrowLeft, Save, Shield, Bot, Settings, Loader2, Image, Activity } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 interface ModulesConfig {
@@ -34,8 +34,6 @@ interface GuildConfig {
 interface ConfigUpdate {
   prefix?: string;
   modules?: Partial<ModulesConfig>;
-  welcome?: Partial<GuildConfig['config']['welcome']>;
-  leveling?: Partial<GuildConfig['config']['leveling']>;
 }
 
 export default function GuildPage() {
@@ -53,7 +51,10 @@ export default function GuildPage() {
 
 const updateMutation = useMutation({
     mutationFn: async (updates: ConfigUpdate) => {
-      await api.patch(`/api/guilds/${guildId}`, updates);
+      return api.patch<{ success: true; data: GuildConfig['config']; warning?: string }>(
+        `/api/guilds/${guildId}`,
+        updates,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guild', guildId] });
@@ -70,9 +71,6 @@ const updateMutation = useMutation({
 
   const tabs = [
     { id: 'general', label: 'General', icon: Settings },
-    { id: 'moderation', label: 'Moderation', icon: Shield },
-    { id: 'leveling', label: 'Leveling', icon: Star },
-    { id: 'welcome', label: 'Welcome', icon: MessageSquare },
     { id: 'customization', label: 'Customization', icon: Bot },
     { id: 'access', label: 'Access', icon: Shield },
   ];
@@ -117,19 +115,6 @@ const updateMutation = useMutation({
 
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Bot Prefix</label>
-                    <input
-                      type="text"
-                      className="input max-w-xs"
-                      defaultValue={config?.config?.prefix || '!'}
-                      placeholder="!"
-                    />
-                    <p className="text-sm text-discord-light mt-1">
-                      Prefix for text commands (slash commands are always available)
-                    </p>
-                  </div>
-
-                  <div>
                     <h3 className="font-medium mb-4">Enabled Modules</h3>
                     <div className="space-y-3">
                       {Object.entries(config?.config?.modules || {}).map(([key, enabled]) => (
@@ -151,38 +136,11 @@ const updateMutation = useMutation({
                         </label>
                       ))}
                     </div>
+                    {updateMutation.data?.data?.warning && (
+                      <p className="mt-3 text-sm text-yellow-400">{updateMutation.data.data.warning}</p>
+                    )}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'moderation' && (
-              <div>
-                <h2 className="text-xl font-semibold mb-6">Moderation Settings</h2>
-                <p className="text-discord-light">
-                  Configure auto-moderation, warning thresholds, and mod log channels.
-                </p>
-                {/* Add moderation settings here */}
-              </div>
-            )}
-
-            {activeTab === 'leveling' && (
-              <div>
-                <h2 className="text-xl font-semibold mb-6">Leveling Settings</h2>
-                <p className="text-discord-light">
-                  Configure XP rates, level-up messages, and role rewards.
-                </p>
-                {/* Add leveling settings here */}
-              </div>
-            )}
-
-            {activeTab === 'welcome' && (
-              <div>
-                <h2 className="text-xl font-semibold mb-6">Welcome Messages</h2>
-                <p className="text-discord-light">
-                  Configure welcome and leave messages for your server.
-                </p>
-                {/* Add welcome settings here */}
               </div>
             )}
 
@@ -194,19 +152,6 @@ const updateMutation = useMutation({
               <DashboardAccessTab guildId={guildId!} />
             )}
 
-            {activeTab !== 'access' && (
-              <div className="mt-8 pt-6 border-t border-discord-darker flex justify-end">
-                <button
-                  className="btn btn-primary flex items-center gap-2"
-                  onClick={() => {
-                    // Save changes
-                  }}
-                >
-                  <Save className="w-4 h-4" />
-                  Save Changes
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@ import { logger } from '../utils/logger.js';
 
 /**
  * Service for managing guild configurations stored in JSONB
- * Provides CRUD operations with proper deep merging for partial updates
+ * Provides CRUD operations with top-level merging for partial updates
  */
 
 interface GuildConfigRow {
@@ -65,21 +65,20 @@ export async function getConfigSection(guildId: string, section: string): Promis
 
 /**
  * Update a specific section of the guild configuration
- * Uses JSONB deep merge to preserve other sections and nested fields
+ * Merges top-level keys in a section; submitted nested objects replace that key
  * @param guildId - Discord guild ID
  * @param section - Config section name
  * @param data - Partial config data to merge
  * @returns Updated section config
  */
-export async function updateConfigSection(
+export async function updateConfigSection<T = unknown>(
   guildId: string,
   section: string,
-  data: any,
-): Promise<any> {
+  data: Partial<T>,
+): Promise<T> {
   try {
-    // Use PostgreSQL's JSONB || operator for deep merge
-    // This preserves existing fields not present in the update
-    const result = await db.query<GuildConfigRow>(
+    // PostgreSQL's JSONB || operator preserves omitted top-level section fields.
+    const result = await db.query<{ updated_section: T }>(
       `INSERT INTO guild_configs (guild_id, config, updated_at)
        VALUES ($1, jsonb_build_object($2, $3), NOW())
        ON CONFLICT (guild_id)
@@ -92,7 +91,7 @@ export async function updateConfigSection(
       [guildId, section, JSON.stringify(data)],
     );
 
-    return result.rows[0];
+    return result.rows[0].updated_section;
   } catch (error) {
     logger.error('Error updating guild config section:', { guildId, section, error });
     throw error;

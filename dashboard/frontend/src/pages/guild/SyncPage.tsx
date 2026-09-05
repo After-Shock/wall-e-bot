@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Copy } from 'lucide-react';
-import api from '../../api/axios';
+import { api } from '../../services/api';
 import SyncModal from './SyncModal';
 
 interface Guild {

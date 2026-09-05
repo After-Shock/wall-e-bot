@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, AlertTriangle, X, Loader2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
-import api from '../../api/axios';
+import { api } from '../../services/api';
 
 const CATEGORIES = [
-  { key: 'general',    emoji: '⚙️', name: 'General',         desc: 'Welcome, leveling, starboard, prefix' },
-  { key: 'moderation', emoji: '🛡️', name: 'Moderation',      desc: 'Logging, automod, spam, word filters, link protection' },
+  { key: 'general',    emoji: '⚙️', name: 'General',         desc: 'Prefix, language, timezone, welcome, leveling' },
+  { key: 'moderation', emoji: '🛡️', name: 'Moderation',      desc: 'Moderation, automod, spam, word and link filters' },
   { key: 'commands',   emoji: '🤖', name: 'Custom Commands',  desc: 'Commands & groups, triggers, responses' },
   { key: 'roles',      emoji: '🎭', name: 'Roles',            desc: 'Auto roles (reaction roles not copied)' },
   { key: 'tickets',    emoji: '🎫', name: 'Tickets',          desc: 'Panels, categories, forms, ticket config' },

@@ -27,6 +27,7 @@ export default function WelcomeMessagesPage() {
     update,
     isUpdating,
     updateError,
+    updateWarning,
     refetch
   } = useGuildConfig<WelcomeConfig>(guildId, 'welcome');
 
@@ -122,6 +123,8 @@ export default function WelcomeMessagesPage() {
           variant="error"
         />
       )}
+
+      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {/* Success Message */}
       {showSuccess && (

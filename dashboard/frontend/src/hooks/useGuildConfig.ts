@@ -4,7 +4,7 @@ import { AxiosError } from 'axios';
 
 /**
  * Reusable hook for managing guild configuration sections
- * Provides data fetching, mutations with optimistic updates, and error handling
+ * Provides data fetching, an awaited mutation, and error handling
  *
  * @template T - Type of the configuration section
  * @param guildId - Discord guild ID
@@ -47,55 +47,28 @@ export function useGuildConfig<T>(guildId: string | undefined, section: string) 
     retry: 2,
   });
 
-  // Update config section with optimistic updates
+  // Update the section and replace cached data only after the server responds.
   const {
-    mutate: update,
-    mutateAsync: updateAsync,
+    mutateAsync: update,
     isPending: isUpdating,
     error: updateError,
+    data: updateResult,
   } = useMutation({
     mutationFn: async (updates: Partial<T>) => {
       if (!guildId) throw new Error('Guild ID is required');
 
-      const response = await api.patch<{ success: boolean; data: T }>(
+      const response = await api.patch<{ success: boolean; data: T; warning?: string }>(
         `/api/guilds/${guildId}/config/${section}`,
         updates
       );
-      return response.data.data;
+      return response.data;
     },
-    onMutate: async (updates: Partial<T>) => {
-      // Cancel any outgoing refetches to prevent them from overwriting our optimistic update
-      await queryClient.cancelQueries({ queryKey });
-
-      // Snapshot the previous value
-      const previousConfig = queryClient.getQueryData<T>(queryKey);
-
-      // Optimistically update to the new value
-      if (previousConfig) {
-        queryClient.setQueryData<T>(queryKey, {
-          ...previousConfig,
-          ...updates,
-        });
-      }
-
-      // Return context with the previous value for rollback
-      return { previousConfig };
-    },
-    onError: (error, updates, context) => {
-      // Rollback to the previous value on error
-      if (context?.previousConfig) {
-        queryClient.setQueryData(queryKey, context.previousConfig);
-      }
-
+    onError: (error) => {
       console.error(`Failed to update ${section} config:`, error);
     },
-    onSuccess: (data) => {
+    onSuccess: (result) => {
       // Update the cache with the server response
-      queryClient.setQueryData(queryKey, data);
-    },
-    onSettled: () => {
-      // Always refetch after error or success to ensure we're in sync with server
-      queryClient.invalidateQueries({ queryKey });
+      queryClient.setQueryData(queryKey, result.data);
     },
   });
 
@@ -112,17 +85,17 @@ export function useGuildConfig<T>(guildId: string | undefined, section: string) 
     /** Refetch the configuration data */
     refetch,
 
-    /** Update configuration (fire and forget) */
+    /** Update configuration and resolve with the authoritative saved section */
     update,
-
-    /** Update configuration (returns a promise) */
-    updateAsync,
 
     /** Whether an update is in progress */
     isUpdating,
 
     /** Error from updating configuration */
     updateError: updateError as AxiosError | null,
+
+    /** Non-fatal warning when settings persisted but bot cache visibility is delayed */
+    updateWarning: updateResult?.warning ?? null,
   };
 }
 
