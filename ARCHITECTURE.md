@@ -16,7 +16,9 @@ The Saltbox Compose file keeps the same containers but uses prefixed service key
 
 ## Request and authentication flow
 
-The browser reaches nginx, which serves the SPA and proxies `/api` and `/auth` traffic to the backend. Passport exchanges the Discord OAuth authorization code, and the backend stores access and refresh tokens encrypted at rest with AES-256-GCM using `TOKEN_ENCRYPTION_KEY`. Plaintext tokens exist only while processing OAuth/API calls. Sessions are stored in Redis using an HTTP-only cookie, and guild routes apply guild-access authorization.
+The browser reaches nginx, which serves the SPA and proxies `/api` and `/auth` traffic to the backend. Passport exchanges the Discord OAuth authorization code, and the backend stores access and refresh tokens encrypted at rest in PostgreSQL with AES-256-GCM using `TOKEN_ENCRYPTION_KEY`. Decrypted access and refresh tokens are also retained in the Redis-backed Passport session while that session is active. The browser receives only an HTTP-only session cookie, and guild routes apply guild-access authorization.
+
+The standard nginx configuration proxies to `backend:3001`, matching the standard production service key. Saltbox names that service `wall-e-backend`; its frontend image currently uses the same nginx configuration, so `/api` and `/auth` proxy resolution is a known Saltbox routing mismatch until the configuration is made topology-aware. Do not treat the Saltbox dashboard routing as verified in its current form.
 
 The bot connects outbound to Discord, reads and writes durable state in PostgreSQL, and uses Redis for transient coordination. Manual dashboard snapshots contain guild JSON configuration only; they do not replace PostgreSQL or Discord backups.
 

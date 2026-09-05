@@ -86,7 +86,7 @@ const command: Command = {
         const maxAgeHours = interaction.options.getInteger('max-age-hours');
         const maxMessages = interaction.options.getInteger('max-messages');
 
-        if (maxAgeHours == null && maxMessages == null) {
+        if (maxAgeHours === null && maxMessages === null) {
           await interaction.reply({
             embeds: [errorEmbed('Missing Limits', 'Provide at least one of `max-age-hours` or `max-messages`.')],
             ephemeral: true,
@@ -101,7 +101,7 @@ const command: Command = {
 
         if ((existing.rowCount ?? 0) > 0) {
           await interaction.reply({
-            embeds: [errorEmbed('Already Configured', `Channel already configured. Use \`/auto-delete edit\` to update it.`)],
+            embeds: [errorEmbed('Already Configured', 'Channel already configured. Use `/auto-delete edit` to update it.')],
             ephemeral: true,
           });
           return;
@@ -114,8 +114,8 @@ const command: Command = {
         );
 
         const details: string[] = [];
-        if (maxAgeHours != null) details.push(`Max age: **${maxAgeHours}h**`);
-        if (maxMessages != null) details.push(`Max messages: **${maxMessages}**`);
+        if (maxAgeHours !== null) details.push(`Max age: **${maxAgeHours}h**`);
+        if (maxMessages !== null) details.push(`Max messages: **${maxMessages}**`);
 
         await interaction.reply({
           embeds: [successEmbed('Auto-Delete Configured', `${channel} will be cleaned up automatically.\n${details.join(' | ')}`)],
@@ -129,7 +129,7 @@ const command: Command = {
         const maxAgeHours = interaction.options.getInteger('max-age-hours');
         const maxMessages = interaction.options.getInteger('max-messages');
 
-        if (maxAgeHours == null && maxMessages == null) {
+        if (maxAgeHours === null && maxMessages === null) {
           await interaction.reply({
             embeds: [errorEmbed('No Fields Provided', 'Provide at least one field to update.')],
             ephemeral: true,
@@ -140,11 +140,11 @@ const command: Command = {
         const setClauses: string[] = [];
         const values: unknown[] = [guildId, channel.id];
 
-        if (maxAgeHours != null) {
+        if (maxAgeHours !== null) {
           values.push(maxAgeHours);
           setClauses.push(`max_age_hours = $${values.length}`);
         }
-        if (maxMessages != null) {
+        if (maxMessages !== null) {
           values.push(maxMessages);
           setClauses.push(`max_messages = $${values.length}`);
         }
@@ -239,8 +239,8 @@ const command: Command = {
           max_messages: number | null;
           enabled: boolean;
         }) => {
-          const age = row.max_age_hours != null ? `Age: ${row.max_age_hours}h` : 'Age: —';
-          const msgs = row.max_messages != null ? `Messages: ${row.max_messages}` : 'Messages: —';
+          const age = row.max_age_hours !== null ? `Age: ${row.max_age_hours}h` : 'Age: —';
+          const msgs = row.max_messages !== null ? `Messages: ${row.max_messages}` : 'Messages: —';
           const status = row.enabled ? '✅ Enabled' : '❌ Disabled';
           return `<#${row.channel_id}> — ${age} | ${msgs} | ${status}`;
         });

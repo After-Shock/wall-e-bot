@@ -72,7 +72,7 @@ export default {
             const embed = new EmbedBuilder();
             if (embedData.title) embed.setTitle(embedData.title);
             if (embedData.description) embed.setDescription(embedData.description);
-            if (embedData.color != null) embed.setColor(embedData.color);
+            if (embedData.color !== undefined) embed.setColor(embedData.color);
             if (embedData.url) embed.setURL(embedData.url);
             if (embedData.author?.name) embed.setAuthor({ name: embedData.author.name, iconURL: embedData.author.icon_url, url: embedData.author.url });
             if (embedData.footer?.text) embed.setFooter({ text: embedData.footer.text, iconURL: embedData.footer.icon_url });

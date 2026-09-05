@@ -210,6 +210,7 @@ async function handleTicketCloseConfirm(
   try {
     const allMessages: any[] = [];
     let lastId: string | undefined;
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const batch = await channel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
       if (batch.size === 0) break;
