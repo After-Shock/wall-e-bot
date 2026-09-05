@@ -287,11 +287,10 @@ export class WallEClient extends Client {
    * 
    * Shutdown sequence:
    * 1. Set bot presence to indicate shutdown
-   * 2. Stop the scheduler (prevents new tasks from starting)
-   * 3. Allow brief delay for in-flight operations
-   * 4. Destroy Discord connection
-   * 5. Close Redis connection
-   * 6. Close database connection pool
+   * 2. Stop timers and await the critical scheduler tick
+   * 3. Destroy Discord connection
+   * 4. Close Redis connection
+   * 5. Close database connection pool
    */
   async shutdown(): Promise<void> {
     logger.info('🔄 Shutting down services...');

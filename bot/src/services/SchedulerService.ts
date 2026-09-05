@@ -194,6 +194,10 @@ export class SchedulerService {
     logger.info('Scheduler service started');
   }
 
+  /**
+   * Stop new timers and await the critical 60-second tick. Low-frequency
+   * maintenance already started by the hour/5-minute timers remains best-effort.
+   */
   async stop(): Promise<void> {
     this.started = false;
     if (this.schedulerTimeout) {
@@ -217,6 +221,8 @@ export class SchedulerService {
       this.autoDeleteSubscriber = null;
       try {
         await subscriber.unsubscribe();
+      } catch (err) {
+        logger.error('[Scheduler] Failed to unsubscribe auto-delete subscriber:', err);
       } finally {
         subscriber.disconnect();
       }

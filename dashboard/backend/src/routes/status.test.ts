@@ -20,7 +20,7 @@ function fakeRedis(values: Record<string, string | null>): Redis {
   } as unknown as Redis;
 }
 
-const HEALTHY_DB = { overdue: '0', disabled_by_failure: '0', n: '0' };
+const HEALTHY_DB = { overdue: '0', disabled_by_failure: '0' };
 const freshTick = () => ({ 'health:bot:last_tick': String(Date.now()) });
 
 function app() {
@@ -34,6 +34,7 @@ test('all healthy -> 200 ok', async () => {
   const r = await request(app()).get('/health/status');
   assert.equal(r.status, 200);
   assert.equal(r.body.status, 'ok');
+  assert.equal('failedJobs' in r.body.checks, false, 'historical queue rows are not a live health signal');
 });
 
 test('a stalled scheduler is down, not merely degraded', async () => {

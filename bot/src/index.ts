@@ -42,12 +42,11 @@ process.on('uncaughtException', (error: Error) => {
  * 
  * Order of operations:
  * 1. Stop accepting new commands (set status)
- * 2. Stop scheduler to prevent new tasks from starting
- * 3. Wait for in-flight operations (brief delay)
- * 4. Disconnect from Discord
- * 5. Close Redis connection
- * 6. Close database connection pool
- * 7. Exit process
+ * 2. Stop timers and await the critical scheduler tick
+ * 3. Disconnect from Discord
+ * 4. Close Redis connection
+ * 5. Close database connection pool
+ * 6. Exit process
  */
 async function shutdown(signal: string): Promise<void> {
   if (isShuttingDown) {

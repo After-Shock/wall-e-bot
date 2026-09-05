@@ -14,8 +14,8 @@
  * fails on `degraded` too.
  *
  * The checks are deliberately the failure modes that were silent before: a
- * scheduler that stopped ticking, tasks overdue or auto-disabled, jobs failing,
- * and Discord throttling.
+ * scheduler that stopped ticking, tasks overdue or auto-disabled, and Discord
+ * throttling.
  *
  * @module routes/status
  */
@@ -142,23 +142,6 @@ async function checkScheduledMessages(): Promise<Check> {
   }
 }
 
-/** Queue jobs that failed. Non-zero means the scheduler tick threw. */
-async function checkFailedJobs(): Promise<Check> {
-  if (!dbPool) return { status: 'down', detail: 'no database' };
-  try {
-    const { rows } = await withTimeout(
-      dbPool.query("SELECT count(*) AS n FROM failed_jobs WHERE failed_at > NOW() - INTERVAL '24 hours'"),
-      CHECK_TIMEOUT_MS,
-    );
-    const n = Number(rows[0].n);
-    return n > 0
-      ? { status: 'degraded', detail: `${n} job failure(s) in 24h`, value: n }
-      : { status: 'ok', value: 0 };
-  } catch (err) {
-    return { status: 'down', detail: (err as Error).message };
-  }
-}
-
 /** Discord throttling. Invisible from outside — commands just get slow. */
 async function checkRateLimits(): Promise<Check> {
   if (!redisClient) return { status: 'ok', detail: 'no redis' };
@@ -174,16 +157,15 @@ async function checkRateLimits(): Promise<Check> {
 }
 
 router.get('/status', async (_req: Request, res: Response) => {
-  const [database, redis, scheduler, scheduledMessages, failedJobs, rateLimits] = await Promise.all([
+  const [database, redis, scheduler, scheduledMessages, rateLimits] = await Promise.all([
     checkDatabase(),
     checkRedis(),
     checkScheduler(),
     checkScheduledMessages(),
-    checkFailedJobs(),
     checkRateLimits(),
   ]);
 
-  const checks = { database, redis, scheduler, scheduledMessages, failedJobs, rateLimits };
+  const checks = { database, redis, scheduler, scheduledMessages, rateLimits };
   const status = worst(Object.values(checks).map((c) => c.status));
 
   let bot: unknown = null;

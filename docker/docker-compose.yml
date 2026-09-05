@@ -46,8 +46,8 @@ services:
   # Redis Cache
   # ---------------------------------------------------------------------------
   # AOF persistence enabled: data survives container restarts.
-  # maxmemory-policy noeviction: BullMQ job data must never be silently
-  # evicted; cache keys all carry TTLs so they expire on their own.
+  # maxmemory-policy noeviction prevents silent loss of sessions and transient
+  # coordination keys; bounded cache keys carry TTLs and expire on their own.
   redis:
     image: redis:7-alpine
     container_name: wall-e-redis

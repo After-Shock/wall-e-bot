@@ -30,12 +30,14 @@ const mockGuild = {
   },
 };
 
+const mockSubscriberUnsubscribe = jest.fn<any>();
+const mockSubscriberDisconnect = jest.fn();
 const mockRedisClient = {
   duplicate: () => ({
     on: jest.fn(),
     subscribe: jest.fn(),
-    unsubscribe: jest.fn(),
-    disconnect: jest.fn(),
+    unsubscribe: mockSubscriberUnsubscribe,
+    disconnect: mockSubscriberDisconnect,
   }),
 };
 
@@ -79,6 +81,7 @@ describe('SchedulerService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
+    mockSubscriberUnsubscribe.mockResolvedValue(undefined);
     
     // @ts-expect-error - Using mock client
     scheduler = new SchedulerService(mockClient);
@@ -136,8 +139,8 @@ describe('SchedulerService', () => {
       expect(runTick).toHaveBeenCalledTimes(3);
     });
 
-    it('processes PostgreSQL work that remained due while the process was down', async () => {
-      const dueTask = {
+    it('processes fixture-backed work that became due between service instances', async () => {
+      const persistedTask = {
         id: 17,
         guild_id: 'guild-123',
         channel_id: 'channel-1',
@@ -147,37 +150,37 @@ describe('SchedulerService', () => {
         enabled: true,
         failure_count: 0,
       };
-      const dueRows = deferred();
-      let servedDueRows = false;
+      let isDue = false;
       mockQuery.mockImplementation(async (sql: unknown) => {
         if (typeof sql === 'string' && sql.includes('FROM scheduled_messages')) {
-          await dueRows.promise;
-          if (!servedDueRows) {
-            servedDueRows = true;
-            return { rows: [dueTask], rowCount: 1 };
-          }
+          return { rows: isDue && persistedTask.enabled ? [{ ...persistedTask }] : [], rowCount: 0 };
         }
         if (typeof sql === 'string' && sql.includes('UPDATE scheduled_messages SET enabled = false')) {
+          persistedTask.enabled = false;
           return CLAIM_WON;
         }
         return { rows: [], rowCount: 0 };
       });
 
-      // No in-memory queue state is carried into this new service instance.
-      // The due row remains in PostgreSQL and the immediate startup tick finds it.
+      // The first process sees no due work, then shuts down. The isolated
+      // fixture persists independently of the service's in-memory timer state.
       // @ts-expect-error - Using mock client
       scheduler = new SchedulerService(mockClient);
-      let started = false;
-      const startPromise = scheduler.start().then(() => { started = true; });
-      await Promise.resolve();
-      expect(started).toBe(false);
+      await scheduler.start();
+      await scheduler.stop();
+      expect(mockChannelSend).not.toHaveBeenCalled();
 
-      dueRows.resolve();
-      await startPromise;
+      // Work becomes due while the process is down. A fresh service instance
+      // finds the same persisted row during its awaited startup tick.
+      isDue = true;
+      // @ts-expect-error - Using mock client
+      scheduler = new SchedulerService(mockClient);
+      await scheduler.start();
       expect(mockChannelSend).toHaveBeenCalledWith('Persisted while offline');
+      expect(persistedTask.enabled).toBe(false);
     });
 
-    it('awaits an in-flight tick during shutdown and starts no later tick', async () => {
+    it('awaits an in-flight critical tick during shutdown and starts no later tick', async () => {
       const inFlight = deferred();
       const runTick = jest.spyOn(scheduler, 'runSchedulerTick')
         .mockResolvedValueOnce(undefined)
@@ -196,6 +199,40 @@ describe('SchedulerService', () => {
 
       await jest.advanceTimersByTimeAsync(180_000);
       expect(runTick).toHaveBeenCalledTimes(2);
+    });
+
+    it('logs an unsubscribe failure, disconnects, and still awaits the in-flight tick', async () => {
+      const inFlight = deferred();
+      jest.spyOn(scheduler, 'runSchedulerTick')
+        .mockResolvedValueOnce(undefined)
+        .mockReturnValueOnce(inFlight.promise);
+      const loggerErrorSpy = jest.spyOn(logger, 'error').mockImplementation((() => logger) as any);
+
+      await scheduler.start();
+      await jest.advanceTimersByTimeAsync(60_000);
+      mockSubscriberUnsubscribe.mockRejectedValueOnce(new Error('unsubscribe failed'));
+
+      let stopOutcome: 'pending' | 'resolved' | 'rejected' = 'pending';
+      const stopPromise = scheduler.stop().then(
+        () => { stopOutcome = 'resolved'; },
+        () => { stopOutcome = 'rejected'; },
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      try {
+        expect(stopOutcome).toBe('pending');
+      } finally {
+        inFlight.resolve();
+        await stopPromise;
+      }
+      expect(stopOutcome).toBe('resolved');
+
+      expect(mockSubscriberDisconnect).toHaveBeenCalledTimes(1);
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        '[Scheduler] Failed to unsubscribe auto-delete subscriber:',
+        expect.objectContaining({ message: 'unsubscribe failed' }),
+      );
+      loggerErrorSpy.mockRestore();
     });
   });
 

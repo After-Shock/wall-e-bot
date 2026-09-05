@@ -22,7 +22,7 @@ Returns `status: ok | degraded | down`.
   not ticked in 3 minutes (it ticks every 60s).
 - **degraded → HTTP 200.** Works, but something needs a human: scheduled
   messages overdue by >10 minutes, tasks auto-disabled after repeated failures,
-  job failures in the last 24h, or Discord rate limits in the last hour.
+  or Discord rate limits in the last hour.
 - **ok → HTTP 200.**
 
 ## Recommended uptime-kuma monitors
@@ -38,7 +38,7 @@ see the warning below it.
    expected value `ok`. Fails on `degraded` too. Longer interval so a single
    late task does not page anyone.
 
-   > Not a Keyword monitor. `"status":"ok"` appears **seven** times in a healthy
+   > Not a Keyword monitor. `"status":"ok"` appears **six** times in a healthy
    > body — once at the top level and once per nested check — so a keyword match
    > still succeeds when the top-level status is `degraded`, and the monitor
    > would never fire. Verified: injecting a degraded state produced
@@ -91,14 +91,17 @@ undo.
 
 ## What is deliberately not measured
 
-Request rates, latency histograms, per-command counters. Nothing would read
-them. The checks above exist because each one corresponds to a failure that
-actually happened and was silent at the time:
+The `failed_jobs` table is retained as historical migration data, but the
+removed queue no longer writes it, so old rows are not a live health signal.
+
+Request rates, latency histograms, and per-command counters are also omitted;
+nothing would read them. The checks above exist because each one corresponds
+to a failure that actually happened and was silent at the time:
 
 - a scheduled task retrying forever against a deleted channel
 - temp bans marked lifted without being lifted
 - a Redis pub/sub subscriber that never connected
-- the scheduler tick throwing and only landing in `failed_jobs`
+- the scheduler heartbeat stopping while the API itself remained healthy
 - nginx holding a stale backend IP, 502ing every API and auth request for 37
   hours while the backend itself reported healthy
 

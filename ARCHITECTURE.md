@@ -34,6 +34,8 @@ Every checked-in deployment starts one bot process through `npm start`; there is
 
 `SchedulerService` runs an awaited poll immediately after the Discord guild cache is ready, then schedules the next poll about 60 seconds after the preceding poll finishes. This prevents overlapping polls in the supported single-process topology. PostgreSQL, not in-memory timer state, remains authoritative for due scheduled messages, interval commands, and temporary bans across downtime.
 
+Graceful shutdown prevents another critical poll and awaits one already in flight. The hourly ticket/auto-delete checks and 5-minute presence refresh remain fire-and-forget maintenance; shutdown clears their future timers but does not track work they already started.
+
 Scheduled-message claims and failure metadata are durable, but delivery is not exactly once. A process failure after claiming an occurrence and before Discord accepts it can lose that occurrence. Preserve a single bot process unless scheduler ownership and delivery semantics are deliberately redesigned.
 
 ## Operational boundaries
