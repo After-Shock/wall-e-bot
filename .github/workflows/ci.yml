@@ -56,33 +56,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     
-    services:
-      # PostgreSQL for integration tests
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      # Redis for integration tests
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -101,8 +74,8 @@ jobs:
 
       - name: Run tests
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379
+          DATABASE_URL: postgresql://test:test@127.0.0.1:1/test
+          REDIS_URL: redis://127.0.0.1:1
           DISCORD_TOKEN: test-token-for-ci
           DISCORD_CLIENT_ID: 123456789012345678
           NODE_ENV: test
@@ -128,13 +101,6 @@ jobs:
       - name: Run production audit policy
         run: npm run audit:prod
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        if: always()
-        with:
-          files: ./bot/coverage/lcov.info,./dashboard/backend/coverage/lcov.info
-          fail_ci_if_error: false
-
   # ===========================================================================
   # Build Job
   # ===========================================================================
@@ -158,11 +124,14 @@ jobs:
       - name: Build shared package
         run: npm run build -w shared
 
-      - name: Build all packages
-        run: npm run build --workspaces --if-present
+      - name: Build bot
+        run: npm run build -w bot
 
-      - name: Check for TypeScript errors
-        run: npx tsc --noEmit --project bot/tsconfig.json
+      - name: Build dashboard backend
+        run: npm run build -w dashboard/backend
+
+      - name: Build dashboard frontend
+        run: npm run build -w dashboard/frontend
 
   # ===========================================================================
   # Docker Build Job

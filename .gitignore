@@ -35,6 +35,9 @@ Thumbs.db
 # Testing
 coverage/
 .nyc_output/
+/jest_rs/
+/node-compile-cache/
+/tsx-1000/
 
 # Docker
 docker/data/

@@ -1,310 +1,74 @@
 # Wall-E Bot 🤖
 
-A feature-rich Discord bot with a web dashboard, inspired by YAGPDB, Carl-bot, and MEE6.
+Wall-E is a TypeScript Discord server-management bot with an Express API and a React dashboard. It supports moderation, tickets, custom commands, reaction and automatic roles, leveling, welcome messages, scheduled messages, auto-delete, analytics, and manual configuration snapshots.
 
-## Features
+## Repository layout
 
-### Moderation
-- **Kick/Ban/Mute** - Standard moderation commands with reason logging
-- **Warn System** - Track and manage user warnings
-- **Auto-Mod** - Spam detection, word filters, caps lock detection, link filtering
-- **Moderation Logs** - Comprehensive logging of all mod actions
-- **Auto-Delete** - Remove messages from configured channels on a schedule
+- `bot/` — Discord gateway, commands, moderation, and schedulers
+- `dashboard/backend/` — Express API, Discord OAuth, configuration, and migrations
+- `dashboard/frontend/` — React/Vite dashboard served by nginx in production
+- `shared/` — types shared by the three consumers
+- `docker/` — development, production, and Saltbox Compose configurations
 
-### Server Management
-- **Reaction Roles** - Let users self-assign roles via reactions
-- **Welcome/Leave Messages** - Customizable welcome and goodbye messages
-- **Auto Roles** - Automatically assign roles to new members
-- **Custom Commands** - Create server-specific commands
-- **Tickets** - Create support panels and manage ticket workflows
+The runtime uses PostgreSQL for durable data and Redis for sessions, rate limits, queues, and short-lived caches. See [ARCHITECTURE.md](ARCHITECTURE.md) for current boundaries and [docs/testing.md](docs/testing.md) for the authoritative development and verification workflow.
 
-### Leveling System
-- **XP & Levels** - Reward active members with XP
-- **Role Rewards** - Auto-assign roles at certain levels
-- **Leaderboards** - View server XP rankings
-- **Customizable** - Configure XP rates, level-up messages
+## Quick start
 
-### Utility
-- **Server Info** - Detailed server and user information
-- **Scheduled Messages** - Schedule recurring server announcements
-
-### Dashboard
-- **Server Management** - Configure all features from the web
-- **Analytics** - View server statistics and growth
-- **Customization** - Change bot avatar, nickname per server
-
-## Tech Stack
-
-- **Bot**: Node.js, TypeScript, Discord.js v14
-- **Backend**: Express.js, PostgreSQL, Redis
-- **Frontend**: React, TailwindCSS
-- **Infrastructure**: Docker, Docker Compose
-
-## Quick Start
-
-### Prerequisites
-- Node.js 20+
-- Docker & Docker Compose v2+
-- A Discord Application (from Discord Developer Portal)
-
-### Development Setup
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/After-Shock/wall-e-bot.git
-   cd wall-e-bot
-   ```
-
-2. Copy environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Configure your `.env` file with your Discord credentials (see Environment Variables section)
-
-4. Start development with Docker:
-   ```bash
-   npm run docker:dev
-   ```
-
-5. Access the dashboard at `http://localhost:3000`
-
-### Production Deployment
+Prerequisites are Node.js 20.19.4 (the CI runtime), npm, Docker with Compose v2, and a Discord application.
 
 ```bash
-npm run docker:prod
+cp .env.example .env
+# Fill in the required Discord, database, Redis, session, and token-encryption values.
+npm ci
+npm run docker:dev
 ```
 
-## Docker Compose Reference
+The development dashboard is available at `http://localhost:3002`; its API is at `http://localhost:3001`. The production Compose frontend is published on port 3000.
 
-The project includes two Docker Compose configurations in the `docker/` directory:
+Run tests, builds, the configured bot-only lint check, and the production dependency audit using [docs/testing.md](docs/testing.md). Backend and frontend lint coverage has not been added yet.
 
-### Services Overview
+## Production Compose deployment
 
-| Service | Description | Ports | Image |
-|---------|-------------|-------|-------|
-| `postgres` | PostgreSQL database for persistent storage | 5432 (dev only) | postgres:16-alpine |
-| `redis` | Redis cache for sessions and rate limiting | 6379 (dev only) | redis:7-alpine |
-| `bot` | Discord bot application | - | Custom (Node.js) |
-| `backend` | Express.js REST API | 3001 | Custom (Node.js) |
-| `frontend` | React dashboard | 3000 (dev), 80 (prod) | Custom (nginx) |
-
-### Development (`docker-compose.dev.yml`)
-
-Optimized for local development with hot-reloading and exposed database ports.
+Configure `.env`, then build the new images. Run the versioned migration runner from the new backend image **before** replacing the running services:
 
 ```bash
-# Start all services
-docker compose -f docker/docker-compose.dev.yml up -d
-
-# View logs
-docker compose -f docker/docker-compose.dev.yml logs -f
-
-# Stop all services
-docker compose -f docker/docker-compose.dev.yml down
-
-# Rebuild after code changes
-docker compose -f docker/docker-compose.dev.yml up -d --build
-```
-
-**Features:**
-- Volume mounts for live code reloading
-- Exposed PostgreSQL (5432) and Redis (6379) ports for local debugging
-- No restart policies (manual control)
-
-### Production (`docker-compose.yml`)
-
-Optimized for production deployment with security and reliability.
-
-```bash
-# Start production stack
-docker compose -f docker/docker-compose.yml up -d
-
-# View resource usage
-docker stats
-```
-
-**Deploying an update — migrate BEFORE swapping containers:**
-
-```bash
-cd /opt/wall-e-bot && git pull
-docker compose -f docker/docker-compose.yml build --no-cache
-
-# Run migrations from the NEW image while the OLD containers keep serving.
-# `run --rm` does not replace the running services.
-docker compose -f docker/docker-compose.yml run --rm --no-deps backend node dist/db/migrate.js
-
-docker compose -f docker/docker-compose.yml up -d
-```
-
-Running `up -d` first and migrating afterwards — the order this project used
-previously — starts new code against the old schema, so every deploy has a
-window where the API 500s on columns it was built for. Migrations here are
-additive (`ADD COLUMN IF NOT EXISTS`), which is what makes migrating ahead of
-the swap safe.
-
-> **Do not scale the bot with `--scale bot=2`.** Scheduled messages claim their
-> work atomically and are safe, but the auto-close, auto-delete and presence
-> timers in `SchedulerService.start()` run on plain intervals in every process,
-> so a second instance duplicates them — double ticket-close messages and double
-> auto-delete sweeps. Sharding needs those moved onto the job queue first.
-
-**Features:**
-- Multi-stage builds for smaller images
-- Health checks on Postgres and Redis (the API exposes `/health` for liveness
-  and `/health/ready`, which verifies both, for readiness)
-- Automatic restart policies (`unless-stopped`)
-- No exposed database ports (internal network only)
-- Nginx reverse proxy for frontend
-
-### Useful Commands
-
-```bash
-# Access PostgreSQL shell
-docker exec -it wall-e-postgres psql -U wallE -d wall_e_bot
-
-# Access Redis CLI
-docker exec -it wall-e-redis redis-cli
-
-# View bot logs only
-docker logs -f wall-e-bot
-
-# Restart a single service
-docker compose -f docker/docker-compose.yml restart bot
-
-# Remove all data (fresh start)
-docker compose -f docker/docker-compose.yml down -v
-```
-
-### Resource Requirements
-
-**Minimum (Development):**
-- 2 CPU cores
-- 2GB RAM
-- 5GB disk space
-
-**Recommended (Production):**
-- 4 CPU cores
-- 4GB RAM
-- 20GB disk space (for logs and database)
-
-## Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DISCORD_TOKEN` | Bot token from Discord Developer Portal | Yes |
-| `DISCORD_CLIENT_ID` | Application client ID | Yes |
-| `DISCORD_CLIENT_SECRET` | OAuth2 client secret (for dashboard) | Yes |
-| `DATABASE_URL` | PostgreSQL connection string | Auto (Docker) |
-| `REDIS_URL` | Redis connection string | Auto (Docker) |
-| `JWT_SECRET` | Secret for JWT token signing | Yes |
-| `DASHBOARD_URL` | Frontend URL for OAuth callbacks | Yes |
-
----
-
-## 🧂 Saltbox Integration
-
-<p align="center">
-  <img src="https://docs.saltbox.dev/images/logo.png" alt="Saltbox" width="150">
-  <br>
-  <strong>SALTBOX VERIFIED</strong>
-</p>
-
-Wall-E Bot includes native support for [Saltbox](https://github.com/saltyorg/Saltbox) deployments with Traefik reverse proxy integration.
-
-### Saltbox Quick Start
-
-1. **Clone to your Saltbox server:**
-   ```bash
-   cd /opt
-   git clone https://github.com/After-Shock/wall-e-bot.git
-   cd wall-e-bot
-   ```
-
-2. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-   
-   Required Saltbox-specific variables:
-   ```env
-   # Your Saltbox domain
-   DOMAIN=yourdomain.com
-   
-   # Wall-E subdomain (optional, defaults to wall-e.${DOMAIN})
-   WALL_E_DOMAIN=wall-e.yourdomain.com
-   
-   # Database password (required)
-   DB_PASSWORD=your_secure_password
-   ```
-
-3. **Deploy:**
-   ```bash
-   docker compose -f docker/docker-compose.saltbox.yml up -d
-   ```
-
-4. **Access dashboard:** `https://wall-e.yourdomain.com`
-
-### Saltbox Features
-
-- ✅ **Traefik Integration** - Automatic HTTPS with Let's Encrypt
-- ✅ **Saltbox Network** - Uses existing `saltbox` Docker network
-- ✅ **Backup Compatible** - Data stored in `/opt/wall-e-bot/` for Saltbox backups
-- ✅ **Managed Labels** - Containers tagged with `saltbox_managed=true`
-- ✅ **Authelia Ready** - Optional authentication middleware (uncomment in compose file)
-
-### Saltbox Commands
-
-```bash
-# Start Wall-E Bot
-docker compose -f docker/docker-compose.saltbox.yml up -d
-
-# View logs
-docker compose -f docker/docker-compose.saltbox.yml logs -f
-
-# Update
+cd /opt/wall-e-bot
 git pull
-docker compose -f docker/docker-compose.saltbox.yml up -d --build
-
-# Stop
-docker compose -f docker/docker-compose.saltbox.yml down
-
-# Full reset (removes data)
-docker compose -f docker/docker-compose.saltbox.yml down
-rm -rf /opt/wall-e-bot/{postgres,redis}
+docker compose -f docker/docker-compose.yml build
+docker compose -f docker/docker-compose.yml run --rm --no-deps backend node dist/db/migrate.js
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-### Saltbox Directory Structure
+The migration runner takes an advisory lock, applies each pending migration in its own transaction, records its version and checksum, and rejects edits to previously applied SQL. Migration history is forward-only: correct a deployed schema with a new migration rather than editing an old one. Running migrations before `up -d` avoids starting new code against the old schema.
 
-```
-/opt/wall-e-bot/
-├── postgres/          # PostgreSQL data
-├── redis/             # Redis persistence
-└── (source files)     # Cloned repository
-```
+The production Compose service keys are `postgres`, `redis`, `bot`, `backend`, and `frontend`; their containers are named `wall-e-postgres`, `wall-e-redis`, `wall-e-bot`, `wall-e-backend`, and `wall-e-frontend`.
 
-## Project Structure
+Do not scale the bot process horizontally without an explicit scheduler ownership design. The normal `start` command runs one bot process. An optional `start:shard` entry point exists, but sharding is not automatic and the current interval-based maintenance tasks are not safe to duplicate across processes.
 
-```
-wall-e-bot/
-├── bot/                    # Discord bot
-│   └── src/
-│       ├── commands/       # Slash commands
-│       ├── events/         # Discord events
-│       ├── services/       # Business logic
-│       └── structures/     # Core classes
-├── dashboard/
-│   ├── backend/           # Express.js API
-│   └── frontend/          # React dashboard
-├── shared/                # Shared types & utilities
-└── docker/                # Docker configurations
+## Saltbox deployment
+
+The Saltbox topology uses its external `saltbox` network and service names prefixed with `wall-e-`. Set `DOMAIN`, `WALL_E_DOMAIN`, and `DB_PASSWORD` in `.env`, ensure the Saltbox network exists, and use the same migrate-before-replacement sequence:
+
+```bash
+cd /opt/wall-e-bot
+git pull
+docker compose -f docker/docker-compose.saltbox.yml build
+docker compose -f docker/docker-compose.saltbox.yml run --rm --no-deps wall-e-backend node dist/db/migrate.js
+docker compose -f docker/docker-compose.saltbox.yml up -d
 ```
 
-## Contributing
+The Saltbox backend service and container are both `wall-e-backend`; the bot is `wall-e-bot`. The dashboard defaults to `https://wall-e.${DOMAIN}` unless `WALL_E_DOMAIN` overrides it.
 
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+Useful non-destructive commands:
+
+```bash
+docker compose -f docker/docker-compose.yml logs -f
+docker compose -f docker/docker-compose.saltbox.yml logs -f wall-e-backend
+docker exec -it wall-e-postgres psql -U wall_e -d wall_e_bot
+```
+
+Manual configuration snapshots cover the guild JSON configuration only. They are not backups of PostgreSQL, Discord roles/channels/members/messages, custom-command rows, or schedules; maintain separate database and host backups.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE).
