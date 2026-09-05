@@ -32,10 +32,11 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
   const [modalState, setModalState] = useState<ModalState>('idle');
   const [syncedCount, setSyncedCount] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
+  const [visibilityWarning, setVisibilityWarning] = useState('');
 
   const mutation = useMutation({
     mutationFn: async (categories: CategoryKey[]) => {
-      const response = await api.post<{ syncedCount: number }>(
+      const response = await api.post<{ syncedCount: number; warning?: string }>(
         `/api/guilds/${guildId}/copy-from/${sourceGuildId}`,
         { categories },
       );
@@ -44,6 +45,7 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
     onMutate: () => setModalState('loading'),
     onSuccess: (data) => {
       setSyncedCount(data.syncedCount);
+      setVisibilityWarning(data.warning ?? '');
       setModalState('success');
       queryClient.invalidateQueries({ queryKey: ['guild', guildId] });
     },
@@ -70,6 +72,7 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
   const handleTryAgain = () => {
     setModalState('idle');
     setErrorMsg('');
+    setVisibilityWarning('');
   };
 
   const isLoading = modalState === 'loading';
@@ -197,6 +200,12 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
               <p className="text-discord-light text-xs text-center">
                 Remember to reassign channel and role settings where needed.
               </p>
+              {visibilityWarning && (
+                <div className="flex gap-2 items-start p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                  <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+                  <p className="text-yellow-300 text-xs">{visibilityWarning}</p>
+                </div>
+              )}
             </div>
             <div className="flex justify-end">
               <button className="btn btn-secondary text-sm" onClick={onClose}>

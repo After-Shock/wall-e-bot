@@ -51,10 +51,11 @@ export default function GuildPage() {
 
 const updateMutation = useMutation({
     mutationFn: async (updates: ConfigUpdate) => {
-      return api.patch<{ success: true; data: GuildConfig['config']; warning?: string }>(
+      const response = await api.patch<{ success: true; data: GuildConfig['config']; warning?: string }>(
         `/api/guilds/${guildId}`,
         updates,
       );
+      return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guild', guildId] });
@@ -136,8 +137,8 @@ const updateMutation = useMutation({
                         </label>
                       ))}
                     </div>
-                    {updateMutation.data?.data?.warning && (
-                      <p className="mt-3 text-sm text-yellow-400">{updateMutation.data.data.warning}</p>
+                    {updateMutation.data?.warning && (
+                      <p className="mt-3 text-sm text-yellow-400">{updateMutation.data.warning}</p>
                     )}
                   </div>
                 </div>

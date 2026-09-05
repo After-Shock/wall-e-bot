@@ -27,6 +27,7 @@ function buildApp() {
 }
 
 function installRedisMocks(t: test.TestContext, deletedKeys: string[]) {
+  const cache = new Set([`guild:${guildId}:config`]);
   t.mock.method(redis, 'get', async () => JSON.stringify([
     { id: guildId, name: 'Guild', icon: null, owner: true, permissions: '0' },
     { id: sourceGuildId, name: 'Source', icon: null, owner: true, permissions: '0' },
@@ -35,13 +36,16 @@ function installRedisMocks(t: test.TestContext, deletedKeys: string[]) {
   t.mock.method(redis as any, 'incrWithTtl', async () => [1, 60]);
   t.mock.method(redis, 'del', async (...keys: string[]) => {
     deletedKeys.push(...keys);
-    return keys.length;
+    let removed = 0;
+    for (const key of keys) if (cache.delete(key)) removed++;
+    return removed;
   });
+  return cache;
 }
 
 test('legacy PATCH merges module flags and preserves existing configuration', async (t) => {
   const deletedKeys: string[] = [];
-  installRedisMocks(t, deletedKeys);
+  const staleCache = installRedisMocks(t, deletedKeys);
   let config: Record<string, any> = {
     prefix: '?', language: 'fr', timezone: 'Europe/Paris',
     modules: { welcome: false, leveling: true, moderation: true },
@@ -73,6 +77,7 @@ test('legacy PATCH merges module flags and preserves existing configuration', as
   assert.deepEqual(config.unrelated, { retained: true });
   assert.deepEqual(config.modules, { welcome: true, leveling: true, moderation: true });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
+  assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 
   const invalid = await request(buildApp())
     .patch(`/api/guilds/${guildId}`)
@@ -106,7 +111,7 @@ const initialTargetConfig = {
 
 async function copyConfigFixture(t: test.TestContext, categories: string[]) {
   const deletedKeys: string[] = [];
-  installRedisMocks(t, deletedKeys);
+  const staleCache = installRedisMocks(t, deletedKeys);
   let target = structuredClone(initialTargetConfig);
   const client = {
     query: async (sql: string, params?: any[]) => {
@@ -125,11 +130,11 @@ async function copyConfigFixture(t: test.TestContext, categories: string[]) {
   const response = await request(buildApp())
     .post(`/api/guilds/${guildId}/copy-from/${sourceGuildId}`)
     .send({ categories });
-  return { response, target, deletedKeys };
+  return { response, target, deletedKeys, staleCache };
 }
 
 test('general-only copy preserves target moderation and strips IDs only in selected data', async (t) => {
-  const { response, target, deletedKeys } = await copyConfigFixture(t, ['general']);
+  const { response, target, deletedKeys, staleCache } = await copyConfigFixture(t, ['general']);
   assert.equal(response.status, 200);
   assert.equal(target.prefix, '$');
   assert.equal(target.welcome.channelId, null);
@@ -140,10 +145,11 @@ test('general-only copy preserves target moderation and strips IDs only in selec
   assert.equal(target.authToken, 'target-secret');
   assert.deepEqual(target.modules, { ...initialTargetConfig.modules, welcome: true, leveling: false });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
+  assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 });
 
 test('moderation-only copy preserves target general settings and IDs', async (t) => {
-  const { response, target, deletedKeys } = await copyConfigFixture(t, ['moderation']);
+  const { response, target, deletedKeys, staleCache } = await copyConfigFixture(t, ['moderation']);
   assert.equal(response.status, 200);
   assert.equal(target.prefix, '!');
   assert.deepEqual(target.welcome, initialTargetConfig.welcome);
@@ -155,10 +161,11 @@ test('moderation-only copy preserves target general settings and IDs', async (t)
   assert.equal(target.authToken, 'target-secret');
   assert.deepEqual(target.modules, { ...initialTargetConfig.modules, moderation: false, automod: true });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
+  assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 });
 
 test('combined copy merges all selected general and moderation sections', async (t) => {
-  const { response, target, deletedKeys } = await copyConfigFixture(t, ['general', 'moderation']);
+  const { response, target, deletedKeys, staleCache } = await copyConfigFixture(t, ['general', 'moderation']);
   assert.equal(response.status, 200);
   assert.equal(response.body.syncedCount, 2);
   assert.equal(target.prefix, '$');
@@ -171,11 +178,12 @@ test('combined copy merges all selected general and moderation sections', async 
     welcome: true, leveling: false, moderation: false, automod: true,
   });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
+  assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 });
 
 test('section PATCH returns the authoritative section and rejects incomplete nested updates', async (t) => {
   const deletedKeys: string[] = [];
-  installRedisMocks(t, deletedKeys);
+  const staleCache = installRedisMocks(t, deletedKeys);
   let leveling = {
     enabled: true, xpPerMessage: { min: 10, max: 20 }, xpCooldown: 60,
     levelUpMessage: 'Great!', roleRewards: [], ignoredChannels: [], ignoredRoles: [], xpMultipliers: [],
@@ -200,11 +208,12 @@ test('section PATCH returns the authoritative section and rejects incomplete nes
   assert.deepEqual(response.body, { success: true, data: leveling });
   assert.deepEqual(leveling.xpPerMessage, { min: 10, max: 20 });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
+  assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 });
 
 test('general PATCH invalidates the exact cache key and retains its response contract', async (t) => {
   const deletedKeys: string[] = [];
-  installRedisMocks(t, deletedKeys);
+  const staleCache = installRedisMocks(t, deletedKeys);
   t.mock.method(db, 'query', async () => ({ rows: [] }) as any);
 
   const response = await request(buildApp())
@@ -214,6 +223,7 @@ test('general PATCH invalidates the exact cache key and retains its response con
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { prefix: '?' });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
+  assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 });
 
 test('a bounded cache failure reports persisted settings with delayed bot visibility', async (t) => {

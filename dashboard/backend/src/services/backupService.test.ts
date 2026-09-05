@@ -9,6 +9,7 @@ after(() => redis.disconnect());
 test('snapshot restore invalidates the exact guild configuration cache key', async (t) => {
   const guildId = '12345678901234567';
   const deleted: string[] = [];
+  const staleCache = new Set([`guild:${guildId}:config`]);
   let queryCount = 0;
   t.mock.method(db, 'query', async () => {
     queryCount++;
@@ -22,11 +23,14 @@ test('snapshot restore invalidates the exact guild configuration cache key', asy
   });
   t.mock.method(redis, 'del', async (...keys: string[]) => {
     deleted.push(...keys);
-    return keys.length;
+    let removed = 0;
+    for (const key of keys) if (staleCache.delete(key)) removed++;
+    return removed;
   });
 
   const cacheInvalidated = await restoreBackup('backup-1', guildId);
 
   assert.equal(cacheInvalidated, true);
   assert.deepEqual(deleted, [`guild:${guildId}:config`]);
+  assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 });
