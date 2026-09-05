@@ -50,6 +50,9 @@ const MAX_TASK_FAILURES = 5;
  * Handles scheduled messages, temp ban expirations, and other timed operations.
  */
 export class SchedulerService {
+  private schedulerTimeout: ReturnType<typeof setTimeout> | null = null;
+  private schedulerTick: Promise<void> | null = null;
+  private started = false;
   private autoCloseInterval: ReturnType<typeof setInterval> | null = null;
   private autoDeleteInterval: ReturnType<typeof setInterval> | null = null;
   private activityInterval: ReturnType<typeof setInterval> | null = null;
@@ -57,14 +60,7 @@ export class SchedulerService {
 
   constructor(private client: WallEClient) {}
 
-  /**
-   * Start the scheduler background loop.
-   * Should be called once during bot initialization.
-   */
-  /**
-   * Public method called by QueueService (BullMQ) every 60s.
-   * Runs the critical scheduled-message and interval-command checks.
-   */
+  /** Runs the critical scheduled-message, interval-command, and temp-ban checks. */
   async runSchedulerTick(): Promise<void> {
     try {
       await this.checkScheduledTasks();
@@ -83,6 +79,27 @@ export class SchedulerService {
     }
     // Last: a heartbeat only means something if the work above actually ran.
     await recordSchedulerTick(this.client);
+  }
+
+  /** Run one tick at a time and wait about a minute after it finishes. */
+  private async runGuardedSchedulerTick(): Promise<void> {
+    if (this.schedulerTick) return this.schedulerTick;
+
+    const tick = this.runSchedulerTick()
+      .catch((err) => {
+        logger.error('[Scheduler] scheduler tick failed:', err);
+      })
+      .finally(() => {
+        if (this.schedulerTick === tick) this.schedulerTick = null;
+        if (this.started) {
+          this.schedulerTimeout = setTimeout(() => {
+            this.schedulerTimeout = null;
+            void this.runGuardedSchedulerTick();
+          }, 60_000);
+        }
+      });
+    this.schedulerTick = tick;
+    return tick;
   }
 
   /** Unban users whose temp ban has expired. */
@@ -116,17 +133,12 @@ export class SchedulerService {
     }
   }
 
-  start() {
-    // Publish a heartbeat straight away. The BullMQ tick is the thing that
-    // normally refreshes it, but the first one is up to 60s out — without this
-    // the status endpoint reports "down" for a minute after every restart, and
-    // an alert that cries wolf on every deploy is worse than no alert.
-    void recordSchedulerTick(this.client);
-
-    // Critical 60s tick is now driven by BullMQ (QueueService).
-    // Run immediately on start to catch any missed tasks.
-    this.checkScheduledTasks();
-    this.checkIntervalCommands();
+  async start(): Promise<void> {
+    if (this.started) {
+      if (this.schedulerTick) await this.schedulerTick;
+      return;
+    }
+    this.started = true;
 
     // Check for inactive tickets every hour
     this.autoCloseInterval = setInterval(() => { this.checkAutoClose(); }, 60 * 60 * 1000);
@@ -158,7 +170,7 @@ export class SchedulerService {
     this.autoDeleteSubscriber.on('message', (_channel, message) => {
       try {
         const payload = JSON.parse(message) as { guildId: string; configId?: number };
-        if (payload.configId != null) {
+        if (payload.configId !== null && payload.configId !== undefined) {
           this.runAutoDeleteById(payload.configId, payload.guildId).catch(e =>
             logger.error('run-now single failed:', e),
           );
@@ -176,10 +188,18 @@ export class SchedulerService {
     this.activityInterval = setInterval(() => { this.applyBotActivity(); }, 5 * 60 * 1000);
     this.applyBotActivity(); // apply on start
 
+    // Await the first durable-work poll so ready never reports a scheduler that
+    // has not yet checked work accumulated while this process was offline.
+    await this.runGuardedSchedulerTick();
     logger.info('Scheduler service started');
   }
 
-  stop() {
+  async stop(): Promise<void> {
+    this.started = false;
+    if (this.schedulerTimeout) {
+      clearTimeout(this.schedulerTimeout);
+      this.schedulerTimeout = null;
+    }
     if (this.autoCloseInterval) {
       clearInterval(this.autoCloseInterval);
       this.autoCloseInterval = null;
@@ -193,10 +213,15 @@ export class SchedulerService {
       this.activityInterval = null;
     }
     if (this.autoDeleteSubscriber) {
-      this.autoDeleteSubscriber.unsubscribe();
-      this.autoDeleteSubscriber.disconnect();
+      const subscriber = this.autoDeleteSubscriber;
       this.autoDeleteSubscriber = null;
+      try {
+        await subscriber.unsubscribe();
+      } finally {
+        subscriber.disconnect();
+      }
     }
+    if (this.schedulerTick) await this.schedulerTick;
   }
 
   private async applyBotActivity() {
@@ -542,7 +567,7 @@ export class SchedulerService {
           const embed = new EmbedBuilder();
           if (embedData.title) embed.setTitle(embedData.title);
           if (embedData.description) embed.setDescription(embedData.description);
-          if (embedData.color != null) embed.setColor(embedData.color);
+          if (embedData.color !== undefined) embed.setColor(embedData.color);
           if (embedData.url) embed.setURL(embedData.url);
           if (embedData.author?.name) embed.setAuthor({ name: embedData.author.name, iconURL: embedData.author.icon_url, url: embedData.author.url });
           if (embedData.footer?.text) embed.setFooter({ text: embedData.footer.text, iconURL: embedData.footer.icon_url });
@@ -704,7 +729,7 @@ export class SchedulerService {
     sorted.forEach((msg, index) => {
       let shouldDelete = false;
       if (cutoff && msg.createdTimestamp < cutoff) shouldDelete = true;
-      if (config.max_messages != null && index >= config.max_messages) shouldDelete = true;
+      if (config.max_messages !== null && index >= config.max_messages) shouldDelete = true;
       if (shouldDelete) toDelete.push(msg);
     });
 

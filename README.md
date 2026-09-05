@@ -10,7 +10,7 @@ Wall-E is a TypeScript Discord server-management bot with an Express API and a R
 - `shared/` — types shared by the three consumers
 - `docker/` — development, production, and Saltbox Compose configurations
 
-The runtime uses PostgreSQL for durable data and Redis for sessions, rate limits, queues, and short-lived caches. See [ARCHITECTURE.md](ARCHITECTURE.md) for current boundaries and [docs/testing.md](docs/testing.md) for the authoritative development and verification workflow.
+The runtime uses PostgreSQL for durable data and Redis for sessions, rate limits, cooldowns, and short-lived caches. See [ARCHITECTURE.md](ARCHITECTURE.md) for current boundaries and [docs/testing.md](docs/testing.md) for the authoritative development and verification workflow.
 
 ## Quick start
 
@@ -43,7 +43,7 @@ The migration runner takes an advisory lock, applies each pending migration in i
 
 The production Compose service keys are `postgres`, `redis`, `bot`, `backend`, and `frontend`; their containers are named `wall-e-postgres`, `wall-e-redis`, `wall-e-bot`, `wall-e-backend`, and `wall-e-frontend`.
 
-Do not scale the bot process horizontally without an explicit scheduler ownership design. The normal `start` command runs one bot process. An optional `start:shard` entry point exists, but sharding is not automatic and the current interval-based maintenance tasks are not safe to duplicate across processes.
+All checked-in Compose deployments run exactly one bot process through the normal `start` command. Do not scale or shard it without an explicit scheduler-ownership design: scheduled polling and interval-based maintenance are not safe to duplicate across processes.
 
 ## Saltbox deployment
 

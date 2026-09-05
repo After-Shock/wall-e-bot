@@ -64,9 +64,6 @@ export default {
     logger.info('Guild whitelist synced');
 
     // Start the scheduler now that the guild cache is populated
-    client.scheduler.start();
-
-    // Start BullMQ queue (drives the 60s scheduler tick reliably)
-    await client.queue.start();
+    await client.scheduler.start();
   },
 };

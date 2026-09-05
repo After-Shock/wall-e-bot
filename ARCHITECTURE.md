@@ -10,7 +10,7 @@ Wall-E is a TypeScript monorepo with three runtime applications and one shared p
 | `backend` | `wall-e-backend` | Express API, Discord OAuth, guild configuration, status routes |
 | `frontend` | `wall-e-frontend` | React/Vite static assets served by nginx |
 | `postgres` | `wall-e-postgres` | Durable application data and JSONB guild configuration |
-| `redis` | `wall-e-redis` | Sessions, rate limits, queues, cooldowns, and caches |
+| `redis` | `wall-e-redis` | Sessions, rate limits, cooldowns, and caches |
 
 The Saltbox Compose file keeps the same containers but uses prefixed service keys (`wall-e-backend`, for example) on the external `saltbox` network. The standard production file uses `wall-e-network` plus the external `pangolin` network for the frontend. These are intentionally separate deployment topologies.
 
@@ -30,7 +30,9 @@ Deployments build the new backend image, run its migration command against the s
 
 ## Scheduling and process topology
 
-The normal bot start path runs a single process. `start:shard` is an optional explicit entry point; it does not activate automatically. Sharding or multiple bot replicas are not currently an operationally transparent option because interval-based ticket, auto-delete, and presence work would run once per process, and queue workers do not route all work by shard ownership.
+Every checked-in deployment starts one bot process through `npm start`; there is no separate sharding entry point. Sharding or multiple bot replicas are not currently supported because scheduled polling and interval-based ticket, auto-delete, and presence work would run once per process.
+
+`SchedulerService` runs an awaited poll immediately after the Discord guild cache is ready, then schedules the next poll about 60 seconds after the preceding poll finishes. This prevents overlapping polls in the supported single-process topology. PostgreSQL, not in-memory timer state, remains authoritative for due scheduled messages, interval commands, and temporary bans across downtime.
 
 Scheduled-message claims and failure metadata are durable, but delivery is not exactly once. A process failure after claiming an occurrence and before Discord accepts it can lose that occurrence. Preserve a single bot process unless scheduler ownership and delivery semantics are deliberately redesigned.
 

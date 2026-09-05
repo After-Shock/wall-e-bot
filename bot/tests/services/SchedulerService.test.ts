@@ -84,23 +84,118 @@ describe('SchedulerService', () => {
     scheduler = new SchedulerService(mockClient);
   });
 
-  afterEach(() => {
-    scheduler.stop();
+  afterEach(async () => {
+    await scheduler.stop();
     jest.clearAllTimers();
   });
 
-  describe('start', () => {
-    it('should run immediate checks on start', () => {
-      scheduler.start();
+  describe('local scheduler lifecycle', () => {
+    const deferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => { resolve = done; });
+      return { promise, resolve };
+    };
 
-      expect(mockQuery).toHaveBeenCalled(); // Immediate check
+    it('awaits the immediate scheduler tick before startup completes', async () => {
+      const tick = deferred();
+      const runTick = jest.spyOn(scheduler, 'runSchedulerTick').mockReturnValue(tick.promise);
+      let started = false;
+
+      const startPromise = scheduler.start().then(() => { started = true; });
+      await Promise.resolve();
+
+      expect(runTick).toHaveBeenCalledTimes(1);
+      expect(started).toBe(false);
+
+      tick.resolve();
+      await startPromise;
+      expect(started).toBe(true);
     });
-  });
 
-  describe('stop', () => {
-    it('should stop without error', () => {
-      scheduler.start();
-      expect(() => scheduler.stop()).not.toThrow();
+    it('schedules the next tick only after the current tick finishes', async () => {
+      const inFlight = deferred();
+      const runTick = jest.spyOn(scheduler, 'runSchedulerTick')
+        .mockResolvedValueOnce(undefined)
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValue(undefined);
+
+      await scheduler.start();
+      expect(runTick).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(runTick).toHaveBeenCalledTimes(2);
+
+      await jest.advanceTimersByTimeAsync(180_000);
+      expect(runTick).toHaveBeenCalledTimes(2);
+
+      inFlight.resolve();
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(59_999);
+      expect(runTick).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(runTick).toHaveBeenCalledTimes(3);
+    });
+
+    it('processes PostgreSQL work that remained due while the process was down', async () => {
+      const dueTask = {
+        id: 17,
+        guild_id: 'guild-123',
+        channel_id: 'channel-1',
+        message: 'Persisted while offline',
+        embed: false,
+        next_run: new Date('2026-01-01T00:00:00Z'),
+        enabled: true,
+        failure_count: 0,
+      };
+      const dueRows = deferred();
+      let servedDueRows = false;
+      mockQuery.mockImplementation(async (sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('FROM scheduled_messages')) {
+          await dueRows.promise;
+          if (!servedDueRows) {
+            servedDueRows = true;
+            return { rows: [dueTask], rowCount: 1 };
+          }
+        }
+        if (typeof sql === 'string' && sql.includes('UPDATE scheduled_messages SET enabled = false')) {
+          return CLAIM_WON;
+        }
+        return { rows: [], rowCount: 0 };
+      });
+
+      // No in-memory queue state is carried into this new service instance.
+      // The due row remains in PostgreSQL and the immediate startup tick finds it.
+      // @ts-expect-error - Using mock client
+      scheduler = new SchedulerService(mockClient);
+      let started = false;
+      const startPromise = scheduler.start().then(() => { started = true; });
+      await Promise.resolve();
+      expect(started).toBe(false);
+
+      dueRows.resolve();
+      await startPromise;
+      expect(mockChannelSend).toHaveBeenCalledWith('Persisted while offline');
+    });
+
+    it('awaits an in-flight tick during shutdown and starts no later tick', async () => {
+      const inFlight = deferred();
+      const runTick = jest.spyOn(scheduler, 'runSchedulerTick')
+        .mockResolvedValueOnce(undefined)
+        .mockReturnValueOnce(inFlight.promise);
+
+      await scheduler.start();
+      await jest.advanceTimersByTimeAsync(60_000);
+      let stopped = false;
+      const stopPromise = scheduler.stop().then(() => { stopped = true; });
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+
+      inFlight.resolve();
+      await stopPromise;
+      expect(stopped).toBe(true);
+
+      await jest.advanceTimersByTimeAsync(180_000);
+      expect(runTick).toHaveBeenCalledTimes(2);
     });
   });
 
