@@ -2,7 +2,6 @@
  * Wall-E Bot Entry Point
  * 
  * Initializes the Discord client with graceful shutdown handling.
- * For production deployments with >2500 guilds, use shard.ts instead.
  * 
  * @module index
  */
