@@ -129,13 +129,17 @@ const initialTargetConfig = {
   logging: { enabled: false, channelId: '12345678901234568' },
 };
 
-async function copyConfigFixture(t: test.TestContext, categories: string[]) {
+async function copyConfigFixture(
+  t: test.TestContext,
+  categories: string[],
+  source: Record<string, any> = sourceConfig,
+) {
   const deletedKeys: string[] = [];
   const staleCache = installRedisMocks(t, deletedKeys);
   let target = structuredClone(initialTargetConfig);
   const client = {
     query: async (sql: string, params?: any[]) => {
-      if (sql.includes('SELECT config FROM guild_configs')) return { rows: [{ config: structuredClone(sourceConfig) }] };
+      if (sql.includes('SELECT config FROM guild_configs')) return { rows: [{ config: structuredClone(source) }] };
       if (sql.includes('INSERT INTO guild_configs')) {
         const copied = JSON.parse(params![1]);
         if (sql.includes('SET config = $2')) target = copied;
@@ -243,6 +247,35 @@ test('combined copy merges all selected general and moderation sections', async 
   });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
   assert.equal(staleCache.has(`guild:${guildId}:config`), false);
+});
+
+test('copy accepts previously cleared null IDs and keeps them cleared', async (t) => {
+  const clearedSource: Record<string, any> = structuredClone(sourceConfig);
+  clearedSource.welcome.channelId = null;
+  clearedSource.welcome.leaveChannelId = null;
+  clearedSource.welcome.autoRole = [];
+  clearedSource.leveling.levelUpChannel = null;
+  clearedSource.leveling.ignoredChannels = [];
+  clearedSource.leveling.ignoredRoles = [];
+  clearedSource.leveling.roleRewards = [];
+  clearedSource.leveling.xpMultipliers = [];
+  clearedSource.moderation.muteRoleId = null;
+  clearedSource.moderation.modLogChannelId = null;
+
+  const { response, target } = await copyConfigFixture(
+    t,
+    ['general', 'moderation'],
+    clearedSource,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(target.welcome.channelId, null);
+  assert.equal((target.welcome as any).leaveChannelId, null);
+  assert.equal(target.leveling.levelUpChannel, null);
+  assert.equal((target.moderation as any).muteRoleId, null);
+  assert.equal(target.moderation.modLogChannelId, null);
+  assert.deepEqual(target.logging, initialTargetConfig.logging);
+  assert.equal(target.authToken, 'target-secret');
 });
 
 test('section PATCH returns the authoritative section and rejects incomplete nested updates', async (t) => {

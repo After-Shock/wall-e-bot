@@ -9,6 +9,7 @@ import { z } from 'zod';
 // Discord snowflake ID regex (17-19 digits)
 const discordIdRegex = /^\d{17,19}$/;
 const discordId = z.string().regex(discordIdRegex, 'Invalid Discord ID format');
+const optionalDiscordId = discordId.nullish();
 
 // Hex color regex (#RRGGBB)
 const hexColorRegex = /^#[0-9A-F]{6}$/i;
@@ -19,7 +20,7 @@ const hexColor = z.string().regex(hexColorRegex, 'Invalid hex color (must be #RR
  */
 export const WelcomeConfigSchema = z.object({
   enabled: z.boolean(),
-  channelId: discordId.optional(),
+  channelId: optionalDiscordId,
   message: z.string().min(1).max(2000), // Discord message limit
   embedEnabled: z.boolean(),
   embedColor: hexColor.optional(),
@@ -30,7 +31,7 @@ export const WelcomeConfigSchema = z.object({
 
   // Leave messages
   leaveEnabled: z.boolean(),
-  leaveChannelId: discordId.optional(),
+  leaveChannelId: optionalDiscordId,
   leaveMessage: z.string().min(1).max(2000).optional(),
 }).partial();
 
@@ -48,6 +49,7 @@ export const LevelingConfigSchema = z.object({
     discordId,
     z.literal('current'),
     z.literal('dm'),
+    z.null(),
   ]).optional(),
   levelUpMessage: z.string().min(1).max(2000),
   roleRewards: z.array(z.object({
@@ -67,8 +69,8 @@ export const LevelingConfigSchema = z.object({
  * Moderation Configuration
  */
 export const ModerationConfigSchema = z.object({
-  muteRoleId: discordId.optional(),
-  modLogChannelId: discordId.optional(),
+  muteRoleId: optionalDiscordId,
+  modLogChannelId: optionalDiscordId,
   warnThresholds: z.object({
     kick: z.number().int().min(1).max(100),
     ban: z.number().int().min(1).max(100),
@@ -125,7 +127,7 @@ export const AutoModConfigSchema = z.object({
  */
 export const LoggingConfigSchema = z.object({
   enabled: z.boolean(),
-  channelId: discordId.optional(),
+  channelId: optionalDiscordId,
 
   events: z.object({
     messageDelete: z.boolean(),
