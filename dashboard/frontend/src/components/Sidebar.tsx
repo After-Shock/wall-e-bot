@@ -4,7 +4,6 @@ import {
   MessageSquare,
   Shield,
   ShieldAlert,
-  ScrollText,
   Smile,
   Terminal,
   Star,
@@ -12,15 +11,12 @@ import {
   Bell,
   Clock,
   Zap,
-  Palette,
-  Lightbulb,
   BarChart3,
   Users,
   Settings,
   ChevronDown,
   ChevronRight,
   Database,
-  Crown,
   RefreshCw,
   Trash2,
   X,
@@ -60,7 +56,6 @@ const getNavItems = (guildId: string): NavItem[] => [
     children: [
       { name: 'Welcome Messages', href: `/dashboard/${guildId}/welcome/messages`, icon: MessageSquare },
       { name: 'Auto Roles', href: `/dashboard/${guildId}/welcome/autoroles`, icon: Users },
-      { name: 'Server Rules', href: `/dashboard/${guildId}/welcome/rules`, icon: ScrollText },
     ],
   },
   {
@@ -82,13 +77,7 @@ const getNavItems = (guildId: string): NavItem[] => [
       { name: 'Spam Protection', href: `/dashboard/${guildId}/automod/spam`, icon: ShieldAlert },
       { name: 'Word Filters', href: `/dashboard/${guildId}/automod/filters`, icon: Terminal },
       { name: 'Link Protection', href: `/dashboard/${guildId}/automod/links`, icon: Zap },
-      { name: 'Advanced AI', href: `/dashboard/${guildId}/automod/advanced`, icon: Crown },
     ],
-  },
-  {
-    name: 'Logging',
-    href: `/dashboard/${guildId}/logging`,
-    icon: ScrollText,
   },
   {
     name: 'Reaction Roles',
@@ -99,11 +88,6 @@ const getNavItems = (guildId: string): NavItem[] => [
     name: 'Custom Commands',
     href: `/dashboard/${guildId}/commands`,
     icon: Terminal,
-  },
-  {
-    name: 'Starboard',
-    href: `/dashboard/${guildId}/starboard`,
-    icon: Star,
   },
   {
     name: 'Leveling',
@@ -121,24 +105,7 @@ const getNavItems = (guildId: string): NavItem[] => [
     icon: Bell,
     children: [
       { name: 'Scheduled Messages', href: `/dashboard/${guildId}/announcements/scheduled`, icon: Clock },
-      { name: 'Twitch Alerts', href: `/dashboard/${guildId}/announcements/twitch`, icon: Zap },
-      { name: 'Auto Feeds', href: `/dashboard/${guildId}/announcements/feeds`, icon: Bell },
     ],
-  },
-  {
-    name: 'Triggers',
-    href: `/dashboard/${guildId}/triggers`,
-    icon: Zap,
-  },
-  {
-    name: 'Embeds',
-    href: `/dashboard/${guildId}/embeds`,
-    icon: Palette,
-  },
-  {
-    name: 'Suggestions',
-    href: `/dashboard/${guildId}/suggestions`,
-    icon: Lightbulb,
   },
   {
     name: 'Tickets',

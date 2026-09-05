@@ -25,3 +25,21 @@ test('legacy PATCH accepts partial module flags for atomic merging', () => {
   assert.equal(result.success, true);
   if (result.success) assert.deepEqual(result.data, { modules: { welcome: true } });
 });
+
+test('automod writes reject retired advanced options instead of stripping them', () => {
+  const retiredOptions = {
+    imageScanning: { enabled: true, scanForNsfw: true, scanForViolence: true, scanForGore: true, action: 'delete', threshold: 90 },
+    linkSafety: { enabled: true, checkPhishing: true, checkMalware: true, checkIpLoggers: true, action: 'delete' },
+    raidProtection: { enabled: true, joinThreshold: 10, accountAgeMinimum: 7, verificationLevel: 'high', action: 'ban' },
+  } as const;
+  for (const [retiredKey, value] of Object.entries(retiredOptions)) {
+    const result = AutoModConfigSchema.safeParse({ [retiredKey]: value });
+    assert.equal(result.success, false, `${retiredKey} must be rejected`);
+  }
+});
+
+test('legacy writes reject retired starboard and advanced automod options', () => {
+  assert.equal(GuildConfigSchema.safeParse({ starboard: { enabled: true, threshold: 3, emoji: '⭐', selfStar: false, ignoredChannels: [] } }).success, false);
+  assert.equal(GuildConfigSchema.safeParse({ modules: { starboard: true } }).success, false);
+  assert.equal(GuildConfigSchema.safeParse({ automod: { raidProtection: { enabled: true, joinThreshold: 10, accountAgeMinimum: 7, verificationLevel: 'high', action: 'ban' } } }).success, false);
+});

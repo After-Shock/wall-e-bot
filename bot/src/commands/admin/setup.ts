@@ -80,7 +80,6 @@ const command: Command = {
           welcome: false,
           logging: false,
           reactionRoles: true,
-          starboard: false,
           customCommands: true,
         },
         moderation: {
@@ -131,13 +130,6 @@ const command: Command = {
             nicknameChange: false,
             usernameChange: false,
           },
-          ignoredChannels: [],
-        },
-        starboard: {
-          enabled: false,
-          threshold: 3,
-          emoji: '⭐',
-          selfStar: false,
           ignoredChannels: [],
         },
       };

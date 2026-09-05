@@ -9,7 +9,6 @@ import {
   Settings,
   Smile,
   Terminal,
-  Star,
   Activity,
   ArrowRight,
   Hash,
@@ -74,13 +73,6 @@ const quickActions = [
     icon: TrendingUp,
     href: 'leveling',
     color: 'bg-yellow-500/20 text-yellow-400',
-  },
-  {
-    name: 'Starboard',
-    description: 'Highlight popular messages',
-    icon: Star,
-    href: 'starboard',
-    color: 'bg-orange-500/20 text-orange-400',
   },
 ];
 

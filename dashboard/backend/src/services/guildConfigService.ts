@@ -116,7 +116,6 @@ export async function initializeConfig(guildId: string): Promise<any> {
       welcome: false,
       logging: false,
       reactionRoles: false,
-      starboard: false,
       customCommands: false,
     },
     moderation: {
@@ -188,13 +187,6 @@ export async function initializeConfig(guildId: string): Promise<any> {
         nicknameChange: false,
         usernameChange: false,
       },
-      ignoredChannels: [],
-    },
-    starboard: {
-      enabled: false,
-      threshold: 3,
-      emoji: '⭐',
-      selfStar: false,
       ignoredChannels: [],
     },
   };

@@ -36,6 +36,16 @@ interface ConfigUpdate {
   modules?: Partial<ModulesConfig>;
 }
 
+const supportedModuleKeys: Array<keyof ModulesConfig> = [
+  'moderation',
+  'automod',
+  'leveling',
+  'welcome',
+  'logging',
+  'reactionRoles',
+  'customCommands',
+];
+
 export default function GuildPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const queryClient = useQueryClient();
@@ -118,24 +128,24 @@ const updateMutation = useMutation({
                   <div>
                     <h3 className="font-medium mb-4">Enabled Modules</h3>
                     <div className="space-y-3">
-                      {Object.entries(config?.config?.modules || {}).map(([key, enabled]) => (
-                        <label key={key} className="flex items-center justify-between">
-                          <span className="capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
-                          <button
-                            className={`toggle ${enabled ? 'toggle-enabled' : 'toggle-disabled'}`}
-                            onClick={() => {
-                              updateMutation.mutate({
-                                modules: {
-                                  ...config?.config?.modules,
-                                  [key]: !enabled,
-                                },
-                              });
-                            }}
-                          >
-                            <span className={`toggle-dot ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
-                          </button>
-                        </label>
-                      ))}
+                      {supportedModuleKeys.map((key) => {
+                        const enabled = config?.config?.modules?.[key] ?? false;
+                        return (
+                          <label key={key} className="flex items-center justify-between">
+                            <span className="capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
+                            <button
+                              className={`toggle ${enabled ? 'toggle-enabled' : 'toggle-disabled'}`}
+                              onClick={() => {
+                                updateMutation.mutate({
+                                  modules: { [key]: !enabled },
+                                });
+                              }}
+                            >
+                              <span className={`toggle-dot ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                            </button>
+                          </label>
+                        );
+                      })}
                     </div>
                     {updateMutation.data?.warning && (
                       <p className="mt-3 text-sm text-yellow-400">{updateMutation.data.warning}</p>

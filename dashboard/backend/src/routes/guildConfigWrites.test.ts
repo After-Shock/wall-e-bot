@@ -48,15 +48,17 @@ test('legacy PATCH merges module flags and preserves existing configuration', as
   const staleCache = installRedisMocks(t, deletedKeys);
   let config: Record<string, any> = {
     prefix: '?', language: 'fr', timezone: 'Europe/Paris',
-    modules: { welcome: false, leveling: true, moderation: true },
+    modules: { welcome: false, leveling: true, moderation: true, starboard: true },
     welcome: { enabled: true, message: 'Bonjour', embedEnabled: false, dmEnabled: false, leaveEnabled: false },
     leveling: { enabled: true, xpPerMessage: { min: 3, max: 7 }, xpCooldown: 60, levelUpMessage: 'Level!', roleRewards: [], ignoredChannels: [], ignoredRoles: [], xpMultipliers: [] },
     unrelated: { retained: true },
   };
+  let submittedUpdates: Record<string, any> | undefined;
 
   t.mock.method(db, 'query', async (sql: string, params?: any[]) => {
     if (!sql.includes('INSERT INTO guild_configs')) return { rows: [] } as any;
     const updates = JSON.parse(params![1]);
+    submittedUpdates = updates;
     if (sql.includes('RETURNING config')) {
       config = { ...config, ...updates, modules: { ...config.modules, ...(updates.modules ?? {}) } };
       return { rows: [{ config }] } as any;
@@ -75,7 +77,8 @@ test('legacy PATCH merges module flags and preserves existing configuration', as
   assert.equal(config.welcome.message, 'Bonjour');
   assert.deepEqual(config.leveling.xpPerMessage, { min: 3, max: 7 });
   assert.deepEqual(config.unrelated, { retained: true });
-  assert.deepEqual(config.modules, { welcome: true, leveling: true, moderation: true });
+  assert.deepEqual(config.modules, { welcome: true, leveling: true, moderation: true, starboard: true });
+  assert.deepEqual(submittedUpdates, { modules: { welcome: true } });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
   assert.equal(staleCache.has(`guild:${guildId}:config`), false);
 
@@ -83,6 +86,23 @@ test('legacy PATCH merges module flags and preserves existing configuration', as
     .patch(`/api/guilds/${guildId}`)
     .send({ moderation: { warnThresholds: { kick: 2 } } });
   assert.equal(invalid.status, 400);
+});
+
+test('legacy PATCH rejects retired starboard and advanced automod keys', async (t) => {
+  installRedisMocks(t, []);
+
+  for (const body of [
+    { starboard: { enabled: true, threshold: 3, emoji: '⭐', selfStar: false, ignoredChannels: [] } },
+    { modules: { starboard: true } },
+    { automod: { imageScanning: { enabled: true, scanForNsfw: true, scanForViolence: true, scanForGore: true, action: 'delete', threshold: 90 } } },
+    { automod: { linkSafety: { enabled: true, checkPhishing: true, checkMalware: true, checkIpLoggers: true, action: 'delete' } } },
+    { automod: { raidProtection: { enabled: true, joinThreshold: 10, accountAgeMinimum: 7, verificationLevel: 'high', action: 'ban' } } },
+  ]) {
+    const response = await request(buildApp())
+      .patch(`/api/guilds/${guildId}`)
+      .send(body);
+    assert.equal(response.status, 400, JSON.stringify(body));
+  }
 });
 
 const sourceConfig = {
@@ -156,12 +176,56 @@ test('moderation-only copy preserves target general settings and IDs', async (t)
   assert.deepEqual(target.leveling, initialTargetConfig.leveling);
   assert.equal(target.moderation.modLogChannelId, null);
   assert.deepEqual(target.automod.ignoredChannels, []);
-  assert.equal((target.automod as any).raidProtection.alertChannel, null);
+  assert.equal((target.automod as any).raidProtection, undefined);
   assert.equal(target.logging.channelId, '12345678901234568');
   assert.equal(target.authToken, 'target-secret');
   assert.deepEqual(target.modules, { ...initialTargetConfig.modules, moderation: false, automod: true });
   assert.deepEqual(deletedKeys, [`guild:${guildId}:config`]);
   assert.equal(staleCache.has(`guild:${guildId}:config`), false);
+});
+
+test('automod section PATCH accepts supported edits and rejects retired options', async (t) => {
+  const deletedKeys: string[] = [];
+  installRedisMocks(t, deletedKeys);
+  const storedAutomod = {
+    enabled: true,
+    antiSpam: { enabled: true, maxMessages: 5, interval: 10, action: 'warn' },
+    wordFilter: { enabled: true, words: ['bad'], action: 'delete' },
+    linkFilter: { enabled: true, allowedDomains: ['example.com'], action: 'delete' },
+    capsFilter: { enabled: false, threshold: 70, minLength: 10, action: 'delete' },
+    ignoredChannels: [], ignoredRoles: [],
+    imageScanning: { enabled: true }, linkSafety: { enabled: true }, raidProtection: { enabled: true },
+  };
+  t.mock.method(db, 'query', async (sql: string, params?: any[]) => {
+    if (sql.includes('RETURNING config -> $2 AS updated_section')) {
+      return { rows: [{ updated_section: { ...storedAutomod, ...JSON.parse(params![2]) } }] } as any;
+    }
+    return { rows: [] } as any;
+  });
+
+  const supported = await request(buildApp())
+    .patch(`/api/guilds/${guildId}/config/automod`)
+    .send({ antiSpam: { enabled: false, maxMessages: 5, interval: 10, action: 'warn' } });
+  assert.equal(supported.status, 200);
+  assert.equal(supported.body.data.raidProtection.enabled, true, 'historical stored JSON remains readable');
+
+  for (const retiredKey of ['imageScanning', 'linkSafety', 'raidProtection']) {
+    const values: Record<string, unknown> = {
+      imageScanning: { enabled: true, scanForNsfw: true, scanForViolence: true, scanForGore: true, action: 'delete', threshold: 90 },
+      linkSafety: { enabled: true, checkPhishing: true, checkMalware: true, checkIpLoggers: true, action: 'delete' },
+      raidProtection: { enabled: true, joinThreshold: 10, accountAgeMinimum: 7, verificationLevel: 'high', action: 'ban' },
+    };
+    const rejected = await request(buildApp())
+      .patch(`/api/guilds/${guildId}/config/automod`)
+      .send({ [retiredKey]: values[retiredKey] });
+    assert.equal(rejected.status, 400, retiredKey);
+  }
+});
+
+test('retired starboard config routes are not available', async (t) => {
+  installRedisMocks(t, []);
+  assert.equal((await request(buildApp()).get(`/api/guilds/${guildId}/config/starboard`)).status, 404);
+  assert.equal((await request(buildApp()).patch(`/api/guilds/${guildId}/config/starboard`).send({ enabled: true })).status, 404);
 });
 
 test('combined copy merges all selected general and moderation sections', async (t) => {

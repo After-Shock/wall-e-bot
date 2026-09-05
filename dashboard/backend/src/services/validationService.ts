@@ -115,39 +115,10 @@ export const AutoModConfigSchema = z.object({
     action: z.enum(['delete', 'warn']),
   }),
 
-  // Advanced: Image scanning (Premium)
-  imageScanning: z.object({
-    enabled: z.boolean(),
-    scanForNsfw: z.boolean(),
-    scanForViolence: z.boolean(),
-    scanForGore: z.boolean(),
-    action: z.enum(['delete', 'warn', 'mute']),
-    threshold: z.number().int().min(0).max(100), // confidence threshold
-  }).optional(),
-
-  // Advanced: Link safety (Premium)
-  linkSafety: z.object({
-    enabled: z.boolean(),
-    checkPhishing: z.boolean(),
-    checkMalware: z.boolean(),
-    checkIpLoggers: z.boolean(),
-    action: z.enum(['delete', 'warn', 'mute']),
-  }).optional(),
-
-  // Advanced: Raid protection (Premium)
-  raidProtection: z.object({
-    enabled: z.boolean(),
-    joinThreshold: z.number().int().min(1).max(100), // max joins per minute
-    accountAgeMinimum: z.number().int().min(0).max(365), // days
-    verificationLevel: z.enum(['low', 'medium', 'high']),
-    action: z.enum(['kick', 'ban']),
-    alertChannel: discordId.optional(),
-  }).optional(),
-
   // Ignored channels/roles
   ignoredChannels: z.array(discordId).max(100),
   ignoredRoles: z.array(discordId).max(100),
-}).partial();
+}).partial().strict();
 
 /**
  * Logging Configuration
@@ -172,18 +143,6 @@ export const LoggingConfigSchema = z.object({
     usernameChange: z.boolean(),
   }),
 
-  ignoredChannels: z.array(discordId).max(100),
-}).partial();
-
-/**
- * Starboard Configuration
- */
-export const StarboardConfigSchema = z.object({
-  enabled: z.boolean(),
-  channelId: discordId.optional(),
-  threshold: z.number().int().min(1).max(100),
-  emoji: z.string().min(1).max(100), // Unicode emoji or custom emoji format
-  selfStar: z.boolean(),
   ignoredChannels: z.array(discordId).max(100),
 }).partial();
 
@@ -219,17 +178,15 @@ export const GuildConfigSchema = z.object({
     welcome: z.boolean(),
     logging: z.boolean(),
     reactionRoles: z.boolean(),
-    starboard: z.boolean(),
     customCommands: z.boolean(),
-  }).partial(),
+  }).partial().strict(),
 
   moderation: ModerationConfigSchema,
   automod: AutoModConfigSchema,
   leveling: LevelingConfigSchema,
   welcome: WelcomeConfigSchema,
   logging: LoggingConfigSchema,
-  starboard: StarboardConfigSchema,
-}).partial();
+}).partial().strict();
 
 /**
  * Map of config sections to their validation schemas
@@ -240,7 +197,6 @@ export const sectionSchemas: Record<string, z.ZodTypeAny> = {
   moderation: ModerationConfigSchema,
   automod: AutoModConfigSchema,
   logging: LoggingConfigSchema,
-  starboard: StarboardConfigSchema,
 };
 
 /**

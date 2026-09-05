@@ -638,37 +638,6 @@ guildsRouter.patch(
   }),
 );
 
-// Starboard Configuration
-guildsRouter.get(
-  '/:guildId/config/starboard',
-  requireAuth,
-  requireGuildAccess,
-  asyncHandler(async (req, res) => {
-    await handleGetConfigSection(req, res, 'starboard', {
-      enabled: false,
-      threshold: 3,
-      emoji: '⭐',
-      selfStar: false,
-      ignoredChannels: [],
-    });
-  }),
-);
-
-guildsRouter.patch(
-  '/:guildId/config/starboard',
-  requireAuth,
-  requireGuildAccess,
-  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
-  asyncHandler(async (req, res) => {
-    await handlePatchConfigSection(
-      req,
-      res,
-      'starboard',
-      validationService.StarboardConfigSchema,
-    );
-  }),
-);
-
 // ============================================================================
 // Analytics Endpoints (Premium Feature)
 // ============================================================================
@@ -1748,8 +1717,15 @@ guildsRouter.post(
           }
         }
         if (selected.includes('moderation')) {
-          for (const key of ['moderation', 'automod']) {
-            if (Object.prototype.hasOwnProperty.call(sourceConfig, key)) selectedConfig[key] = sourceConfig[key];
+          if (Object.prototype.hasOwnProperty.call(sourceConfig, 'moderation')) {
+            selectedConfig.moderation = sourceConfig.moderation;
+          }
+          if (sourceConfig.automod && typeof sourceConfig.automod === 'object') {
+            selectedConfig.automod = Object.fromEntries(
+              ['enabled', 'antiSpam', 'wordFilter', 'linkFilter', 'capsFilter', 'ignoredChannels', 'ignoredRoles']
+                .filter(key => Object.prototype.hasOwnProperty.call(sourceConfig.automod, key))
+                .map(key => [key, sourceConfig.automod[key]]),
+            );
           }
           for (const key of ['moderation', 'automod']) {
             if (typeof sourceConfig.modules?.[key] === 'boolean') selectedModules[key] = sourceConfig.modules[key];
@@ -1757,7 +1733,21 @@ guildsRouter.post(
         }
         if (Object.keys(selectedModules).length > 0) selectedConfig.modules = selectedModules;
 
-        const cleaned = stripServerIds(selectedConfig);
+        const validationResult = validationService.safeValidateConfig(
+          validationService.GuildConfigSchema,
+          selectedConfig,
+        );
+        if (!validationResult.success) {
+          await client.query('ROLLBACK');
+          res.status(400).json({
+            error: 'Source server has invalid supported configuration',
+            details: validationResult.error.errors,
+          });
+          return;
+        }
+
+        // ID stripping intentionally uses null for cleared persisted assignments.
+        const cleaned = stripServerIds(validationResult.data) as Record<string, any>;
         if (cleaned.welcome) cleaned.welcome.autoRole = [];
         if (cleaned.leveling) {
           if (!['current', 'dm'].includes(cleaned.leveling.levelUpChannel)) cleaned.leveling.levelUpChannel = null;
@@ -1769,7 +1759,6 @@ guildsRouter.post(
         if (cleaned.automod) {
           cleaned.automod.ignoredChannels = [];
           cleaned.automod.ignoredRoles = [];
-          if (cleaned.automod.raidProtection) cleaned.automod.raidProtection.alertChannel = null;
         }
         await client.query(
           `INSERT INTO guild_configs (guild_id, config, updated_at)

@@ -83,7 +83,15 @@ export default function WordFiltersPage() {
     if (!localConfig) return;
 
     try {
-      await update(localConfig);
+      await update({
+        enabled: localConfig.enabled,
+        antiSpam: localConfig.antiSpam,
+        wordFilter: localConfig.wordFilter,
+        linkFilter: localConfig.linkFilter,
+        capsFilter: localConfig.capsFilter,
+        ignoredChannels: localConfig.ignoredChannels,
+        ignoredRoles: localConfig.ignoredRoles,
+      });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {

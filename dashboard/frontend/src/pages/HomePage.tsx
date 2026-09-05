@@ -135,26 +135,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-20 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl font-bold mb-12">Trusted by Communities</h2>
-          <div className="grid grid-cols-3 gap-8">
-            <div>
-              <div className="text-4xl font-bold text-discord-blurple">0+</div>
-              <div className="text-discord-light">Servers</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold text-discord-blurple">0+</div>
-              <div className="text-discord-light">Users</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold text-discord-blurple">12+</div>
-              <div className="text-discord-light">Commands</div>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

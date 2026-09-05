@@ -8,34 +8,30 @@ A feature-rich Discord bot with a web dashboard, inspired by YAGPDB, Carl-bot, a
 - **Kick/Ban/Mute** - Standard moderation commands with reason logging
 - **Warn System** - Track and manage user warnings
 - **Auto-Mod** - Spam detection, word filters, caps lock detection, link filtering
-- **Raid Protection** - Automatic lockdown during raids
 - **Moderation Logs** - Comprehensive logging of all mod actions
+- **Auto-Delete** - Remove messages from configured channels on a schedule
 
 ### Server Management
 - **Reaction Roles** - Let users self-assign roles via reactions
 - **Welcome/Leave Messages** - Customizable welcome and goodbye messages
 - **Auto Roles** - Automatically assign roles to new members
 - **Custom Commands** - Create server-specific commands
-- **Starboard** - Highlight popular messages
+- **Tickets** - Create support panels and manage ticket workflows
 
 ### Leveling System
 - **XP & Levels** - Reward active members with XP
 - **Role Rewards** - Auto-assign roles at certain levels
-- **Leaderboards** - Server and global leaderboards
+- **Leaderboards** - View server XP rankings
 - **Customizable** - Configure XP rates, level-up messages
 
 ### Utility
 - **Server Info** - Detailed server and user information
-- **Polls** - Create polls with reactions
-- **Reminders** - Set personal reminders
-- **Tags** - Quick response system
-- **Search** - YouTube, Wikipedia, Urban Dictionary lookups
+- **Scheduled Messages** - Schedule recurring server announcements
 
 ### Dashboard
 - **Server Management** - Configure all features from the web
 - **Analytics** - View server statistics and growth
 - **Customization** - Change bot avatar, nickname per server
-- **Premium Features** - Manage premium subscriptions
 
 ## Tech Stack
 

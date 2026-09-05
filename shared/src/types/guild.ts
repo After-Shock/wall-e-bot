@@ -14,7 +14,6 @@ export interface GuildConfig {
     welcome: boolean;
     logging: boolean;
     reactionRoles: boolean;
-    starboard: boolean;
     customCommands: boolean;
   };
   
@@ -33,8 +32,6 @@ export interface GuildConfig {
   // Logging settings
   logging: LoggingConfig;
   
-  // Starboard settings
-  starboard: StarboardConfig;
 }
 
 export interface ModerationConfig {
@@ -81,35 +78,6 @@ export interface AutoModConfig {
     threshold: number; // percentage
     minLength: number;
     action: 'delete' | 'warn';
-  };
-
-  // Advanced: Image scanning (Premium)
-  imageScanning?: {
-    enabled: boolean;
-    scanForNsfw: boolean;
-    scanForViolence: boolean;
-    scanForGore: boolean;
-    action: 'delete' | 'warn' | 'mute';
-    threshold: number; // 0-100 confidence threshold
-  };
-
-  // Advanced: Link safety (Premium)
-  linkSafety?: {
-    enabled: boolean;
-    checkPhishing: boolean;
-    checkMalware: boolean;
-    checkIpLoggers: boolean;
-    action: 'delete' | 'warn' | 'mute';
-  };
-
-  // Advanced: Raid protection (Premium)
-  raidProtection?: {
-    enabled: boolean;
-    joinThreshold: number; // max joins per minute
-    accountAgeMinimum: number; // minimum account age in days
-    verificationLevel: 'low' | 'medium' | 'high';
-    action: 'kick' | 'ban';
-    alertChannel?: string;
   };
 
   // Ignored channels/roles
@@ -174,18 +142,6 @@ export interface LoggingConfig {
   };
   
   ignoredChannels: string[];
-}
-
-export interface StarboardConfig {
-  enabled: boolean;
-  channelId?: string;
-  threshold: number;
-  emoji: string;
-  selfStar: boolean;
-  ignoredChannels: string[];
-  embedColor?: string;
-  ignoreBots?: boolean;
-  ignoreNsfw?: boolean;
 }
 
 export interface ReactionRole {

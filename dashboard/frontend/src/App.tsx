@@ -10,7 +10,6 @@ import NotFoundPage from './pages/NotFoundPage';
 // Guild feature pages
 import WelcomeMessagesPage from './pages/guild/WelcomeMessagesPage';
 import AutoRolesPage from './pages/guild/AutoRolesPage';
-import ServerRulesPage from './pages/guild/ServerRulesPage';
 import ModerationPage from './pages/guild/ModerationPage';
 import WarningsPage from './pages/guild/WarningsPage';
 import TempBansPage from './pages/guild/TempBansPage';
@@ -18,25 +17,17 @@ import AutoDeletePage from './pages/guild/AutoDeletePage';
 import SpamProtectionPage from './pages/guild/SpamProtectionPage';
 import WordFiltersPage from './pages/guild/WordFiltersPage';
 import LinkProtectionPage from './pages/guild/LinkProtectionPage';
-import LoggingPage from './pages/guild/LoggingPage';
 import ReactionRolesPage from './pages/guild/ReactionRolesPage';
 import CustomCommandsPage from './pages/guild/CustomCommandsPage';
-import StarboardPage from './pages/guild/StarboardPage';
 import LevelingSettingsPage from './pages/guild/LevelingSettingsPage';
 import RoleRewardsPage from './pages/guild/RoleRewardsPage';
 import LeaderboardPage from './pages/guild/LeaderboardPage';
 import ScheduledMessagesPage from './pages/guild/ScheduledMessagesPage';
-import TwitchAlertsPage from './pages/guild/TwitchAlertsPage';
-import AutoFeedsPage from './pages/guild/AutoFeedsPage';
-import TriggersPage from './pages/guild/TriggersPage';
-import EmbedBuilderPage from './pages/guild/EmbedBuilderPage';
-import SuggestionsPage from './pages/guild/SuggestionsPage';
 import TicketsPage from './pages/guild/TicketsPage';
 import AdminPage from './pages/AdminPage';
 
 // Premium features
 import AnalyticsPage from './pages/guild/AnalyticsPage';
-import AdvancedAutomodPage from './pages/guild/AdvancedAutomodPage';
 import BackupPage from './pages/guild/BackupPage';
 import SyncPage from './pages/guild/SyncPage';
 
@@ -64,7 +55,6 @@ function App() {
           <Route path="welcome" element={<WelcomeMessagesPage />} />
           <Route path="welcome/messages" element={<WelcomeMessagesPage />} />
           <Route path="welcome/autoroles" element={<AutoRolesPage />} />
-          <Route path="welcome/rules" element={<ServerRulesPage />} />
           
           {/* Moderation */}
           <Route path="moderation" element={<ModerationPage />} />
@@ -78,19 +68,12 @@ function App() {
           <Route path="automod/spam" element={<SpamProtectionPage />} />
           <Route path="automod/filters" element={<WordFiltersPage />} />
           <Route path="automod/links" element={<LinkProtectionPage />} />
-          <Route path="automod/advanced" element={<AdvancedAutomodPage />} />
-
-          {/* Logging */}
-          <Route path="logging" element={<LoggingPage />} />
           
           {/* Reaction Roles */}
           <Route path="reaction-roles" element={<ReactionRolesPage />} />
           
           {/* Custom Commands */}
           <Route path="commands" element={<CustomCommandsPage />} />
-          
-          {/* Starboard */}
-          <Route path="starboard" element={<StarboardPage />} />
           
           {/* Leveling */}
           <Route path="leveling" element={<LevelingSettingsPage />} />
@@ -101,18 +84,6 @@ function App() {
           {/* Announcements */}
           <Route path="announcements" element={<ScheduledMessagesPage />} />
           <Route path="announcements/scheduled" element={<ScheduledMessagesPage />} />
-          <Route path="announcements/twitch" element={<TwitchAlertsPage />} />
-          <Route path="announcements/feeds" element={<AutoFeedsPage />} />
-          
-          {/* Triggers */}
-          <Route path="triggers" element={<TriggersPage />} />
-          
-          {/* Embeds */}
-          <Route path="embeds" element={<EmbedBuilderPage />} />
-          
-          {/* Suggestions */}
-          <Route path="suggestions" element={<SuggestionsPage />} />
-          
           {/* Tickets */}
           <Route path="tickets" element={<TicketsPage />} />
 
