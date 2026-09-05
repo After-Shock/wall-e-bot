@@ -39,8 +39,7 @@ export class AutoModService {
     );
 
     if (count > maxMessages) {
-      await this.takeAction(message, action, 'Spam detected', muteDuration);
-      return true;
+      return this.takeAction(message, action, 'Spam detected', muteDuration);
     }
 
     return false;
@@ -55,13 +54,12 @@ export class AutoModService {
     );
 
     if (hasBlockedWord) {
-      await this.takeAction(
+      return this.takeAction(
         message, 
         config.wordFilter.action, 
         'Blocked word detected',
         config.wordFilter.muteDuration,
       );
-      return true;
     }
 
     return false;
@@ -81,6 +79,7 @@ export class AutoModService {
         if (!host) return true;
 
         return !config.linkFilter!.allowedDomains.some(value => {
+          if (typeof value !== 'string') return false;
           const allowed = normalizeHostname(value);
           return allowed !== null && (host === allowed || host.endsWith(`.${allowed}`));
         });
@@ -90,8 +89,7 @@ export class AutoModService {
     });
 
     if (hasBlockedLink) {
-      await this.takeAction(message, config.linkFilter.action, 'Unapproved link detected');
-      return true;
+      return this.takeAction(message, config.linkFilter.action, 'Unapproved link detected');
     }
 
     return false;
@@ -111,8 +109,7 @@ export class AutoModService {
     const capsPercentage = (uppercaseChars / letterChars) * 100;
 
     if (capsPercentage > config.capsFilter.threshold) {
-      await this.takeAction(message, config.capsFilter.action, 'Excessive caps detected');
-      return true;
+      return this.takeAction(message, config.capsFilter.action, 'Excessive caps detected');
     }
 
     return false;
@@ -123,14 +120,14 @@ export class AutoModService {
     action: string,
     reason: string,
     muteDuration?: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (action !== 'delete' && action !== 'warn' && action !== 'mute') {
       logger.warn(`[AutoMod] Skipping unsupported action "${action}" for guild ${message.guild?.id ?? 'unknown'}`);
-      return;
+      return false;
     }
     if (action === 'mute' && (!Number.isFinite(muteDuration) || (muteDuration ?? 0) <= 0)) {
       logger.warn(`[AutoMod] Skipping mute without a positive mute duration for guild ${message.guild?.id ?? 'unknown'}`);
-      return;
+      return false;
     }
 
     try {
@@ -158,8 +155,11 @@ export class AutoModService {
 
       // Log the action
       await this.logAutoModAction(message, action, reason);
+      return true;
     } catch (error) {
       logger.error('AutoMod action failed:', error);
+      // A supported action may already have partially completed; do not punish twice.
+      return true;
     }
   }
 

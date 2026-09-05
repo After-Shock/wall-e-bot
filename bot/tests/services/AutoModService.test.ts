@@ -79,6 +79,32 @@ describe('AutoModService', () => {
     expect(fixture.deleteMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores malformed persisted allowlist entries and honors a later valid host', async () => {
+    const config = baseConfig();
+    config.linkFilter = {
+      enabled: true,
+      allowedDomains: [null, 42, ' Example.COM. '] as never,
+      action: 'delete',
+    };
+    const fixture = buildFixture(config, 'https://example.com/path');
+
+    await expect(fixture.service.handleMessage(fixture.message as never)).resolves.toBe(false);
+    expect(fixture.deleteMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not let malformed persisted allowlist entries approve a host', async () => {
+    const config = baseConfig();
+    config.linkFilter = {
+      enabled: true,
+      allowedDomains: ['https://example.com', null, 42] as never,
+      action: 'delete',
+    };
+    const fixture = buildFixture(config, 'https://example.com/path');
+
+    await expect(fixture.service.handleMessage(fixture.message as never)).resolves.toBe(true);
+    expect(fixture.deleteMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('uses first-match order and applies only one punishment', async () => {
     const config = baseConfig();
     config.antiSpam = { enabled: true, maxMessages: 1, interval: 10, action: 'warn' };
@@ -97,11 +123,24 @@ describe('AutoModService', () => {
     const fixture = buildFixture(config);
     fixture.incrementSpamTracker.mockResolvedValue(2);
 
-    await expect(fixture.service.handleMessage(fixture.message as never)).resolves.toBe(true);
+    await expect(fixture.service.handleMessage(fixture.message as never)).resolves.toBe(false);
     expect(fixture.deleteMessage).not.toHaveBeenCalled();
     expect(fixture.warn).not.toHaveBeenCalled();
     expect(fixture.timeout).not.toHaveBeenCalled();
     expect(warnLog).toHaveBeenCalledWith(expect.stringContaining(`unsupported action "${action}"`));
+  });
+
+  it.each(['kick', 'ban'])('continues to a valid word action after skipped legacy spam action %s', async action => {
+    const config = baseConfig();
+    config.antiSpam = { enabled: true, maxMessages: 1, interval: 10, action } as never;
+    config.wordFilter = { enabled: true, words: ['blocked'], action: 'warn' };
+    const fixture = buildFixture(config, 'blocked');
+    fixture.incrementSpamTracker.mockResolvedValue(2);
+
+    await expect(fixture.service.handleMessage(fixture.message as never)).resolves.toBe(true);
+    expect(fixture.deleteMessage).toHaveBeenCalledTimes(1);
+    expect(fixture.warn).toHaveBeenCalledTimes(1);
+    expect(fixture.timeout).not.toHaveBeenCalled();
   });
 
   it('logs and safely skips mute when its duration is unusable', async () => {
@@ -109,7 +148,7 @@ describe('AutoModService', () => {
     config.wordFilter = { enabled: true, words: ['blocked'], action: 'mute' };
     const fixture = buildFixture(config, 'blocked');
 
-    await expect(fixture.service.handleMessage(fixture.message as never)).resolves.toBe(true);
+    await expect(fixture.service.handleMessage(fixture.message as never)).resolves.toBe(false);
     expect(fixture.deleteMessage).not.toHaveBeenCalled();
     expect(fixture.timeout).not.toHaveBeenCalled();
     expect(warnLog).toHaveBeenCalledWith(expect.stringContaining('positive mute duration'));
