@@ -254,19 +254,9 @@ export interface ContentInsights {
   }>;
 }
 
-// Backup & Restore types
-export interface BackupConfig {
-  enabled: boolean;
-  autoBackup: boolean;
-  backupFrequency: 'daily' | 'weekly' | 'monthly';
-  maxBackups: number; // Keep last N backups
-  includeMessages: boolean;
-  includeMembers: boolean;
-  includeRoles: boolean;
-  includeChannels: boolean;
-}
-
-export interface Backup {
+// Configuration snapshot types. New captures contain config only; optional
+// legacy fields keep existing guild_backups rows readable.
+export interface ConfigurationSnapshot {
   id: string;
   guildId: string;
   name: string;
@@ -283,7 +273,7 @@ export interface Backup {
   };
 }
 
-export interface BackupListItem {
+export interface ConfigurationSnapshotListItem {
   id: string;
   name: string;
   type: 'manual' | 'automatic';

@@ -2,11 +2,11 @@ import { db } from '../db/index.js';
 import { logger } from '../utils/logger.js';
 import { invalidateGuildConfigCache } from '../utils/guildConfigCache.js';
 import { guildConfigService } from './index.js';
-import type { Backup, BackupListItem, BackupConfig } from '@wall-e/shared';
+import type { ConfigurationSnapshot, ConfigurationSnapshotListItem } from '@wall-e/shared';
 
 /**
- * Backup & Restore Service
- * Handles creation, storage, and restoration of guild configuration backups
+ * Configuration Snapshot Service
+ * Handles creation, storage, and restoration of guild JSON configuration snapshots
  */
 
 /**
@@ -16,12 +16,7 @@ export async function createBackup(
   guildId: string,
   name: string,
   userId?: string,
-  options: {
-    includeRoles?: boolean;
-    includeChannels?: boolean;
-    includeMembers?: boolean;
-  } = {},
-): Promise<Backup> {
+): Promise<ConfigurationSnapshot> {
   try {
     // Get current guild configuration
     const config = await guildConfigService.getConfig(guildId);
@@ -31,25 +26,9 @@ export async function createBackup(
     }
 
     // Build backup data
-    const backupData: Backup['data'] = {
+    const backupData: ConfigurationSnapshot['data'] = {
       config,
     };
-
-    // Optionally include roles (from Discord API or cache)
-    if (options.includeRoles) {
-      // In production, this would fetch from Discord API
-      backupData.roles = [];
-    }
-
-    // Optionally include channels
-    if (options.includeChannels) {
-      backupData.channels = [];
-    }
-
-    // Optionally include members
-    if (options.includeMembers) {
-      backupData.members = [];
-    }
 
     // Calculate backup size (approximate)
     const dataString = JSON.stringify(backupData);
@@ -63,7 +42,7 @@ export async function createBackup(
       [guildId, name, 'manual', size, userId || null, backupData],
     );
 
-    const backup: Backup = {
+    const backup: ConfigurationSnapshot = {
       id: result.rows[0].id,
       guildId: result.rows[0].guild_id,
       name: result.rows[0].name,
@@ -86,7 +65,7 @@ export async function createBackup(
 /**
  * List all backups for a guild
  */
-export async function listBackups(guildId: string): Promise<BackupListItem[]> {
+export async function listBackups(guildId: string): Promise<ConfigurationSnapshotListItem[]> {
   try {
     const result = await db.query(
       `SELECT id, name, type, size, created_at, created_by
@@ -113,7 +92,7 @@ export async function listBackups(guildId: string): Promise<BackupListItem[]> {
 /**
  * Get a specific backup
  */
-export async function getBackup(backupId: string, guildId: string): Promise<Backup | null> {
+export async function getBackup(backupId: string, guildId: string): Promise<ConfigurationSnapshot | null> {
   try {
     const result = await db.query(
       `SELECT id, guild_id, name, type, size, created_at, created_by, data
@@ -192,82 +171,6 @@ export async function deleteBackup(backupId: string, guildId: string): Promise<v
     logger.info(`Deleted backup ${backupId} for guild ${guildId}`);
   } catch (error) {
     logger.error('Failed to delete backup:', error);
-    throw error;
-  }
-}
-
-/**
- * Get backup configuration
- */
-export async function getBackupConfig(guildId: string): Promise<BackupConfig> {
-  try {
-    const config = await guildConfigService.getConfigSection(guildId, 'backup');
-
-    // Return defaults if not found
-    if (!config) {
-      return {
-        enabled: false,
-        autoBackup: false,
-        backupFrequency: 'weekly',
-        maxBackups: 10,
-        includeMessages: false,
-        includeMembers: false,
-        includeRoles: false,
-        includeChannels: false,
-      };
-    }
-
-    return config;
-  } catch (error) {
-    logger.error('Failed to get backup config:', error);
-    throw error;
-  }
-}
-
-/**
- * Update backup configuration
- */
-export async function updateBackupConfig(
-  guildId: string,
-  config: Partial<BackupConfig>,
-): Promise<BackupConfig> {
-  try {
-    const updated = await guildConfigService.updateConfigSection(guildId, 'backup', config);
-    return updated;
-  } catch (error) {
-    logger.error('Failed to update backup config:', error);
-    throw error;
-  }
-}
-
-/**
- * Clean up old backups based on maxBackups setting
- */
-export async function cleanupOldBackups(guildId: string): Promise<void> {
-  try {
-    const config = await getBackupConfig(guildId);
-
-    if (!config.enabled || !config.autoBackup) {
-      return;
-    }
-
-    // Delete backups exceeding maxBackups
-    await db.query(
-      `DELETE FROM guild_backups
-       WHERE guild_id = $1
-       AND type = 'automatic'
-       AND id NOT IN (
-         SELECT id FROM guild_backups
-         WHERE guild_id = $1 AND type = 'automatic'
-         ORDER BY created_at DESC
-         LIMIT $2
-       )`,
-      [guildId, config.maxBackups],
-    );
-
-    logger.info(`Cleaned up old backups for guild ${guildId}`);
-  } catch (error) {
-    logger.error('Failed to cleanup old backups:', error);
     throw error;
   }
 }

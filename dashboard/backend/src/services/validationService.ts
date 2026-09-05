@@ -148,19 +148,9 @@ export const LoggingConfigSchema = z.object({
   ignoredChannels: z.array(discordId).max(100),
 }).partial();
 
-/**
- * Backup Configuration
- */
-export const BackupConfigSchema = z.object({
-  enabled: z.boolean(),
-  autoBackup: z.boolean(),
-  backupFrequency: z.enum(['daily', 'weekly', 'monthly']),
-  maxBackups: z.number().int().min(1).max(50),
-  includeMessages: z.boolean(),
-  includeMembers: z.boolean(),
-  includeRoles: z.boolean(),
-  includeChannels: z.boolean(),
-}).partial();
+export const ConfigurationSnapshotRequestSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+}).strict();
 
 /**
  * Full Guild Configuration Schema

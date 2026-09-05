@@ -87,7 +87,7 @@ function App() {
           {/* Tickets */}
           <Route path="tickets" element={<TicketsPage />} />
 
-          {/* Backup & Restore (Premium) */}
+          {/* Configuration snapshots */}
           <Route path="backup" element={<BackupPage />} />
 
           {/* Sync Settings */}

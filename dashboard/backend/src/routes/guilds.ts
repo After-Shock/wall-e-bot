@@ -736,68 +736,22 @@ guildsRouter.get(
 );
 
 // ============================================================================
-// Backup & Restore Endpoints (Premium Feature)
+// Configuration Snapshot Endpoints
 // ============================================================================
 
 /**
- * Get backup configuration
+ * Tombstone the retired automatic-backup configuration path before the
+ * dynamic :backupId route can interpret "config" as a snapshot ID.
  */
-guildsRouter.get(
+guildsRouter.all(
   '/:guildId/backups/config',
   requireAuth,
   requireGuildAccess,
-  asyncHandler(async (req, res) => {
-    const { guildId } = req.params;
-
-    try {
-      const config = await backupService.getBackupConfig(guildId);
-      res.json(config);
-    } catch (error) {
-      logger.error('Error fetching backup config:', { guildId, error });
-      res.status(500).json({ error: 'Failed to fetch backup configuration' });
-    }
-  }),
-);
-
-/**
- * Update backup configuration
- */
-guildsRouter.patch(
-  '/:guildId/backups/config',
-  requireAuth,
-  requireGuildAccess,
-  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
-  asyncHandler(async (req, res) => {
-    const { guildId } = req.params;
-    const updates = req.body;
-
-    try {
-      // Validate the request body
-      const validationResult = validationService.safeValidateConfig(
-        validationService.BackupConfigSchema,
-        updates,
-      );
-
-      if (!validationResult.success) {
-        res.status(400).json({
-          error: 'Validation failed',
-          message: 'Invalid backup configuration data',
-          details: validationResult.error.errors,
-        });
-        return;
-      }
-
-      const updated = await backupService.updateBackupConfig(
-        guildId,
-        validationResult.data,
-      );
-
-      res.json({ success: true, data: updated });
-    } catch (error) {
-      logger.error('Error updating backup config:', { guildId, error });
-      res.status(500).json({ error: 'Failed to update backup configuration' });
-    }
-  }),
+  (_req, res) => {
+    res.status(410).json({
+      error: 'Automatic backup configuration is no longer supported',
+    });
+  },
 );
 
 /**
@@ -831,9 +785,17 @@ guildsRouter.post(
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const { guildId } = req.params;
-    const { name, includeRoles, includeChannels, includeMembers } = req.body;
+    const validationResult = validationService.ConfigurationSnapshotRequestSchema.safeParse(req.body);
 
-    if (!name || typeof name !== 'string' || name.length < 1 || name.length > 100) {
+    if (!validationResult.success) {
+      const unsupported = validationResult.error.issues.some(issue => issue.code === 'unrecognized_keys');
+      if (unsupported) {
+        res.status(400).json({
+          error: 'Unsupported snapshot options',
+          message: 'Configuration snapshots accept only a name',
+        });
+        return;
+      }
       res.status(400).json({ error: 'Invalid backup name (1-100 characters required)' });
       return;
     }
@@ -841,13 +803,8 @@ guildsRouter.post(
     try {
       const backup = await backupService.createBackup(
         guildId,
-        name,
+        validationResult.data.name,
         authReq.user?.id,
-        {
-          includeRoles: !!includeRoles,
-          includeChannels: !!includeChannels,
-          includeMembers: !!includeMembers,
-        },
       );
 
       res.json({ success: true, data: backup });
