@@ -89,6 +89,26 @@ describe('buildTranscript', () => {
     expect(firstIdx).toBeLessThan(secondIdx);
   });
 
+  it('includes embed form answers', () => {
+    const messages = [{
+      author: { tag: 'Wall-E#0001' },
+      content: '<@user-1>',
+      createdAt: new Date('2026-01-01T10:00:00Z'),
+      attachments: { size: 0, map: () => [] },
+      embeds: [{
+        title: 'Ticket #0001 - Support',
+        description: 'Please review this request.',
+        fields: [{ name: 'What do you need help with?', value: 'Account access' }],
+      }],
+    }];
+
+    const result = buildTranscript('support-0001', 'user-1', new Date('2026-01-01'), messages as any);
+
+    expect(result).toContain('  Ticket #0001 - Support');
+    expect(result).toContain('  Please review this request.');
+    expect(result).toContain('  What do you need help with?: Account access');
+  });
+
   it('includes attachment URLs', () => {
     const messages = [
       {

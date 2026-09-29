@@ -7,13 +7,15 @@ import {
   ButtonStyle,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
+  type Guild,
   type GuildBasedChannel,
   type TextChannel,
 } from 'discord.js';
 import { COLORS } from '@wall-e/shared';
 import type { PoolClient } from 'pg';
 import type { WallEClient } from '../structures/Client.js';
-import { resolveChannelName } from '../utils/ticketUtils.js';
+import { buildTranscript, resolveChannelName } from '../utils/ticketUtils.js';
+import { logger } from '../utils/logger.js';
 
 type TicketInteraction = ButtonInteraction | ChatInputCommandInteraction | any;
 
@@ -28,6 +30,23 @@ export interface TicketReservation {
   ticketNumber: number;
   existingChannelId?: string;
 }
+
+export interface ManagedTicketRecord {
+  id: number;
+  channel_id: string;
+  user_id: string;
+  created_at: Date;
+  category_closed_id?: string | null;
+  transcript_channel_id?: string | null;
+}
+
+export interface CloseTicketResult {
+  closed: boolean;
+  error?: string;
+  transcriptMessageId?: string;
+}
+
+export const TRANSCRIPT_REQUIRED_MESSAGE = 'Transcript channel missing — set it in the dashboard.';
 
 function uniqueIds(ids: string[]): string[] {
   return [...new Set(ids.filter(Boolean))];
@@ -204,10 +223,6 @@ export async function createManagedTicket(
 ) {
   const { panel, category, config, formAnswers } = input;
 
-  if (panel.style !== 'channel') {
-    throw new Error('Thread-style tickets are not supported yet. Please switch this panel to channel tickets.');
-  }
-
   await interaction.deferReply({ ephemeral: true });
 
   const reservation = await client.db.transaction(async dbClient =>
@@ -296,5 +311,110 @@ export async function createManagedTicket(
     }
 
     throw error;
+  }
+}
+
+/**
+ * Close a ticket only after its transcript has been delivered successfully.
+ * This is the single close path for both user actions and automatic closure.
+ */
+export async function closeTicket(
+  client: WallEClient,
+  guild: Guild,
+  ticket: ManagedTicketRecord,
+  closedBy: string,
+  reason: string,
+): Promise<CloseTicketResult> {
+  const channel = (guild.channels.cache.get(ticket.channel_id)
+    ?? await guild.channels.fetch(ticket.channel_id).catch(() => null)) as TextChannel | null;
+
+  if (!channel || !channel.isTextBased()) {
+    return { closed: false, error: 'Ticket channel not found.' };
+  }
+
+  if (!ticket.transcript_channel_id) {
+    return { closed: false, error: TRANSCRIPT_REQUIRED_MESSAGE };
+  }
+
+  try {
+    const transcriptChannel = (guild.channels.cache.get(ticket.transcript_channel_id)
+      ?? await guild.channels.fetch(ticket.transcript_channel_id).catch(() => null));
+    if (!transcriptChannel?.isTextBased() || !('send' in transcriptChannel)) {
+      return { closed: false, error: TRANSCRIPT_REQUIRED_MESSAGE };
+    }
+
+    const allMessages: any[] = [];
+    let lastId: string | undefined;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const batch = await channel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
+      if (batch.size === 0) break;
+      allMessages.push(...batch.values());
+      lastId = batch.last()?.id;
+      if (batch.size < 100) break;
+    }
+    allMessages.reverse();
+
+    const transcriptText = buildTranscript(channel.name, ticket.user_id, ticket.created_at, allMessages);
+    const transcriptEmbed = new EmbedBuilder()
+      .setColor(COLORS.MUTED)
+      .setTitle(`Ticket Transcript - ${channel.name}`)
+      .addFields(
+        { name: 'User', value: `<@${ticket.user_id}>`, inline: true },
+        { name: 'Closed By', value: `<@${closedBy}>`, inline: true },
+        { name: 'Reason', value: reason, inline: false },
+      )
+      .setTimestamp();
+
+    let transcriptMessage: { id: string };
+    try {
+      transcriptMessage = await transcriptChannel.send({
+        embeds: [transcriptEmbed],
+        files: [{
+          attachment: Buffer.from(transcriptText, 'utf-8'),
+          name: `transcript-${channel.name}.txt`,
+        }],
+      });
+    } catch (error) {
+      logger.error(`Failed to post transcript for ticket ${ticket.id}:`, error);
+      return { closed: false, error: TRANSCRIPT_REQUIRED_MESSAGE };
+    }
+
+    await client.db.pool.query(
+      `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
+       close_reason = $3, transcript_message_id = $4 WHERE id = $1`,
+      [ticket.id, closedBy, reason, transcriptMessage.id],
+    );
+
+    try {
+      const ticketUser = await client.users.fetch(ticket.user_id);
+      await ticketUser.send(
+        `Ticket Closed\nYour ticket ${channel.name} in ${guild.name} has been closed.\nReason: ${reason}`,
+      );
+    } catch {
+      // User has DMs disabled.
+    }
+
+    if (ticket.category_closed_id) {
+      try {
+        await channel.setParent(ticket.category_closed_id, { lockPermissions: false });
+        await channel.setName(`closed-${channel.name}`.substring(0, 100));
+      } catch (error) {
+        logger.error(`Ticket ${ticket.id} was closed but could not be moved to its archive category:`, error);
+      }
+    } else {
+      setTimeout(async () => {
+        try {
+          await channel.delete();
+        } catch {
+          // Already deleted.
+        }
+      }, 5000);
+    }
+
+    return { closed: true, transcriptMessageId: transcriptMessage.id };
+  } catch (error) {
+    logger.error(`Error closing ticket ${ticket.id}:`, error);
+    return { closed: false, error: 'Failed to close ticket. Please try again.' };
   }
 }

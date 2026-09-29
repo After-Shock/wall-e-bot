@@ -27,6 +27,11 @@ interface TranscriptMessage {
   content: string;
   createdAt: Date;
   attachments: { size: number; map?: (fn: (a: { url: string }) => string) => string[] };
+  embeds?: Array<{
+    title?: string | null;
+    description?: string | null;
+    fields?: Array<{ name: string; value: string }>;
+  }>;
 }
 
 /**
@@ -46,6 +51,13 @@ export function buildTranscript(
   for (const msg of messages) {
     const time = msg.createdAt.toISOString();
     transcript += `[${time}] ${msg.author.tag}: ${msg.content}\n`;
+    for (const embed of msg.embeds ?? []) {
+      if (embed.title) transcript += `  ${embed.title}\n`;
+      if (embed.description) transcript += `  ${embed.description.replace(/\n/g, '\n  ')}\n`;
+      for (const field of embed.fields ?? []) {
+        transcript += `  ${field.name}: ${field.value.replace(/\n/g, '\n    ')}\n`;
+      }
+    }
     if (msg.attachments.size > 0 && msg.attachments.map) {
       const urls = msg.attachments.map(a => a.url);
       transcript += `  Attachments: ${urls.join(', ')}\n`;

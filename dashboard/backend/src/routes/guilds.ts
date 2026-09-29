@@ -962,16 +962,15 @@ guildsRouter.post('/:guildId/ticket-panels', requireAuth, requireGuildAccess,
   rateLimitByGuild({ max: 10, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId } = req.params;
-    const { name, style = 'channel', panel_type = 'buttons', category_open_id, category_closed_id,
+    const { name, panel_type = 'buttons', category_open_id, category_closed_id,
             overflow_category_id, channel_name_template = '{type}-{number}' } = req.body;
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
-    if (style !== 'channel') { res.status(400).json({ error: 'Only channel-style tickets are currently supported' }); return; }
     if (!['buttons', 'dropdown'].includes(panel_type)) { res.status(400).json({ error: 'Invalid panel_type' }); return; }
     try {
       const r = await db.query(
-        `INSERT INTO ticket_panels (guild_id,name,style,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template],
+        `INSERT INTO ticket_panels (guild_id,name,panel_type,category_open_id,category_closed_id,overflow_category_id,channel_name_template)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [guildId, name, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template],
       );
       res.json(r.rows[0]);
     } catch (error) {
@@ -1016,12 +1015,8 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, panelId } = req.params;
-    const { name, style, panel_type, category_open_id, category_closed_id, overflow_category_id,
+    const { name, panel_type, category_open_id, category_closed_id, overflow_category_id,
             channel_name_template } = req.body;
-    if (style !== undefined && style !== 'channel') {
-      res.status(400).json({ error: 'Only channel-style tickets are currently supported' });
-      return;
-    }
     if (panel_type !== undefined && !['buttons', 'dropdown'].includes(panel_type)) {
       res.status(400).json({ error: 'Invalid panel_type' });
       return;
@@ -1029,11 +1024,11 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
     try {
       const r = await db.query(
         `UPDATE ticket_panels SET
-           name=COALESCE($3,name), style=COALESCE($4,style), panel_type=COALESCE($5,panel_type),
-           category_open_id=$6, category_closed_id=$7, overflow_category_id=$8,
-           channel_name_template=COALESCE($9,channel_name_template)
+           name=COALESCE($3,name), panel_type=COALESCE($4,panel_type),
+           category_open_id=$5, category_closed_id=$6, overflow_category_id=$7,
+           channel_name_template=COALESCE($8,channel_name_template)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [panelId, guildId, name, style, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template],
+        [panelId, guildId, name, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
       res.json(r.rows[0]);
@@ -1897,7 +1892,7 @@ guildsRouter.post(
         }
 
         const srcPanels = await client.query(
-          `SELECT id, name, style, panel_type, panel_group_id, channel_name_template
+          `SELECT id, name, panel_type, panel_group_id, channel_name_template
            FROM ticket_panels WHERE guild_id = $1`,
           [sourceGuildId],
         );
@@ -1906,13 +1901,13 @@ guildsRouter.post(
           const newGroupId = p.panel_group_id != null ? (panelGroupIdMap.get(p.panel_group_id) ?? null) : null;
           const ins = await client.query(
             `INSERT INTO ticket_panels
-               (guild_id, name, style, panel_type, panel_group_id,
+               (guild_id, name, panel_type, panel_group_id,
                 panel_channel_id, panel_message_id,
                 category_open_id, category_closed_id, overflow_category_id,
                 channel_name_template)
-             VALUES ($1, $2, $3, $4, $5, NULL, NULL, NULL, NULL, NULL, $6)
+             VALUES ($1, $2, $3, $4, NULL, NULL, NULL, NULL, NULL, $5)
              RETURNING id`,
-            [targetGuildId, p.name, p.style, p.panel_type, newGroupId, p.channel_name_template],
+            [targetGuildId, p.name, p.panel_type, newGroupId, p.channel_name_template],
           );
           panelIdMap.set(p.id as number, ins.rows[0].id as number);
           ticketRows++;

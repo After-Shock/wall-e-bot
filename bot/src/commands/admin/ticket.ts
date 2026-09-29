@@ -28,12 +28,6 @@ const command: Command = {
             .addStringOption(opt =>
               opt.setName('name').setDescription('Panel name').setRequired(true))
             .addStringOption(opt =>
-              opt.setName('style')
-                .setDescription('Ticket creation style')
-                .addChoices(
-                  { name: 'Channel (default)', value: 'channel' },
-                ))
-            .addStringOption(opt =>
               opt.setName('type')
                 .setDescription('Buttons or dropdown selector')
                 .addChoices(
@@ -110,12 +104,6 @@ const command: Command = {
         .setDescription('Rename the current ticket')
         .addStringOption(opt =>
           opt.setName('name').setDescription('New ticket name').setRequired(true)))
-    .addSubcommand(sub =>
-      sub.setName('transcript')
-        .setDescription('Save a transcript of the current ticket'))
-    .addSubcommand(sub =>
-      sub.setName('claim')
-        .setDescription('Claim the current ticket as yours'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
   guildOnly: true,
@@ -128,13 +116,12 @@ const command: Command = {
       switch (subcommand) {
         case 'create': {
           const name = interaction.options.getString('name', true);
-          const style = interaction.options.getString('style') || 'channel';
           const panelType = interaction.options.getString('type') || 'buttons';
 
           const result = await client.db.pool.query(
-            `INSERT INTO ticket_panels (guild_id, name, style, panel_type)
-             VALUES ($1, $2, $3, $4) RETURNING id`,
-            [interaction.guild!.id, name, style, panelType],
+            `INSERT INTO ticket_panels (guild_id, name, panel_type)
+             VALUES ($1, $2, $3) RETURNING id`,
+            [interaction.guild!.id, name, panelType],
           );
 
           const panelId = result.rows[0].id;
@@ -279,7 +266,7 @@ const command: Command = {
             .setColor(COLORS.PRIMARY)
             .setTitle('Ticket Panels')
             .setDescription(panels.rows.map((p: any) =>
-              `**ID ${p.id}** — ${p.name} (${p.style}/${p.panel_type})`,
+              `**ID ${p.id}** — ${p.name} (${p.panel_type})`,
             ).join('\n'));
 
           await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -471,58 +458,6 @@ const command: Command = {
         break;
       }
 
-      case 'transcript': {
-        const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2',
-          [interaction.guild!.id, interaction.channel!.id],
-        );
-        if (ticket.rows.length === 0) {
-          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not a ticket channel.')], ephemeral: true });
-          return;
-        }
-
-        await interaction.deferReply();
-        const ch = interaction.channel as TextChannel;
-
-        // Paginate to get all messages
-        const allMessages: any[] = [];
-        let lastId: string | undefined;
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          const batch = await ch.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
-          if (batch.size === 0) break;
-          allMessages.push(...batch.values());
-          lastId = batch.last()?.id;
-          if (batch.size < 100) break;
-        }
-        allMessages.reverse();
-
-        const { buildTranscript } = await import('../../utils/ticketUtils.js');
-        const text = buildTranscript(ch.name, ticket.rows[0].user_id, ticket.rows[0].created_at, allMessages);
-
-        await interaction.editReply({
-          content: '📝 Ticket transcript:',
-          files: [{ attachment: Buffer.from(text, 'utf-8'), name: `transcript-${ch.name}.txt` }],
-        });
-        break;
-      }
-
-      case 'claim': {
-        const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
-          [interaction.guild!.id, interaction.channel!.id],
-        );
-        if (ticket.rows.length === 0) {
-          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
-          return;
-        }
-        await client.db.pool.query(
-          'UPDATE tickets SET claimed_by = $3, status = \'claimed\' WHERE id = $1 AND guild_id = $2',
-          [ticket.rows[0].id, interaction.guild!.id, interaction.user.id],
-        );
-        await interaction.reply({ embeds: [successEmbed('Ticket Claimed', `${interaction.user} has claimed this ticket.`)] });
-        break;
-      }
     }
   },
 };

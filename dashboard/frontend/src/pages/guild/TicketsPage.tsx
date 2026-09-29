@@ -36,7 +36,6 @@ interface Category {
 interface Panel {
   id?: number;
   name: string;
-  style: 'channel' | 'thread';
   panel_type: 'buttons' | 'dropdown';
   category_open_id: string;
   category_closed_id: string;
@@ -86,7 +85,6 @@ interface ActiveTicket {
   category_name?: string;
   panel_name?: string;
   status: 'open' | 'claimed' | 'closed';
-  claimed_by?: string;
   created_at: string;
 }
 
@@ -654,7 +652,7 @@ export default function TicketsPage() {
                     {panel._expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     <span className="font-semibold">{panel.name}</span>
                     <span className="text-xs text-discord-light bg-discord-dark px-2 py-0.5 rounded">
-                      {panel.style} / {panel.panel_type}
+                      {panel.panel_type}
                     </span>
                     <span className="text-xs text-discord-light">
                       {panel.categories?.length || 0} categories
@@ -685,20 +683,6 @@ export default function TicketsPage() {
                   <div className="mt-4 space-y-4 border-t border-discord-dark pt-4">
                     {/* Panel settings */}
                     <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <label className="block font-medium mb-1">Style</label>
-                        <select
-                          value={panel.style}
-                          onChange={async e => {
-                            if (!guildId || !panel.id) return;
-                            const updated = await ticketApi.updatePanel(guildId, panel.id, { style: e.target.value });
-                            setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
-                          }}
-                          className="input w-full"
-                        >
-                          <option value="channel">Channel tickets</option>
-                        </select>
-                      </div>
                       <div>
                         <label className="block font-medium mb-1">Panel Type</label>
                         <select
@@ -1038,7 +1022,6 @@ export default function TicketsPage() {
                     </div>
                     <p className="text-xs text-discord-light truncate">
                       {`<@${ticket.user_id}>`}
-                      {ticket.claimed_by && ` • Claimed by <@${ticket.claimed_by}>`}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 text-xs text-discord-light flex-shrink-0">

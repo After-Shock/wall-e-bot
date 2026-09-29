@@ -20,6 +20,7 @@ import { logger } from '../utils/logger.js';
 import { sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
 import { recordSchedulerTick } from '../utils/heartbeat.js';
+import { closeTicket } from './TicketService.js';
 
 /**
  * Database row structure for scheduled messages.
@@ -399,8 +400,11 @@ export class SchedulerService {
 
         // Find tickets inactive for longer than auto_close_hours
         const staleTickets = await this.client.db.pool.query(
-          `SELECT t.id, t.channel_id, t.user_id, t.warned_inactive
+          `SELECT t.id, t.channel_id, t.user_id, t.created_at, t.warned_inactive,
+                  tp.category_closed_id, tc.transcript_channel_id
            FROM tickets t
+           LEFT JOIN ticket_panels tp ON t.panel_id = tp.id
+           LEFT JOIN ticket_config tc ON t.guild_id = tc.guild_id
            WHERE t.guild_id = $1
              AND t.status IN ('open', 'claimed')
              AND t.last_activity < NOW() - INTERVAL '1 hour' * $2`,
@@ -415,37 +419,21 @@ export class SchedulerService {
           if (!channel) continue;
 
           if (ticket.warned_inactive) {
-            // Already warned — close it now
-            await channel.send({
-              embeds: [new EmbedBuilder()
-                .setColor(COLORS.ERROR)
-                .setTitle('🔒 Ticket Auto-Closed')
-                .setDescription('This ticket has been automatically closed due to inactivity.'),
-              ],
-            });
-
-            await this.client.db.pool.query(
-              `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
-               close_reason = 'Auto-closed due to inactivity' WHERE id = $1`,
-              [ticket.id, this.client.user?.id ?? 'auto-close'],
+            const result = await closeTicket(
+              this.client,
+              guild,
+              ticket,
+              this.client.user?.id ?? 'auto-close',
+              'Auto-closed due to inactivity',
             );
-
-            // Try to move to closed category
-            const panelData = await this.client.db.pool.query(
-              `SELECT tp.category_closed_id FROM tickets t
-               JOIN ticket_panels tp ON t.panel_id = tp.id
-               WHERE t.id = $1`,
-              [ticket.id],
-            );
-            if (panelData.rows[0]?.category_closed_id) {
-              try {
-                await channel.setParent(panelData.rows[0].category_closed_id, { lockPermissions: false });
-                await channel.setName(`closed-${channel.name}`.substring(0, 100));
-              } catch { /* Ignore if already closed */ }
-            } else {
-              setTimeout(async () => {
-                try { await channel.delete(); } catch { /* already deleted */ }
-              }, 5000);
+            if (!result.closed) {
+              await channel.send({
+                embeds: [new EmbedBuilder()
+                  .setColor(COLORS.ERROR)
+                  .setTitle('Unable to Auto-Close Ticket')
+                  .setDescription(result.error || 'Failed to close ticket. Please contact an administrator.'),
+                ],
+              }).catch(error => logger.error(`Could not report auto-close failure for ticket ${ticket.id}:`, error));
             }
           } else {
             // First warning

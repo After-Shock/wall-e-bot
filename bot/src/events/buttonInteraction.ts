@@ -3,19 +3,15 @@ import {
   ButtonInteraction,
   StringSelectMenuInteraction,
   EmbedBuilder,
-  TextChannel,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
 } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
-import { buildTranscript } from '../utils/ticketUtils.js';
-import { createManagedTicket } from '../services/TicketService.js';
+import { closeTicket, createManagedTicket } from '../services/TicketService.js';
 import { isGuildAllowed } from '../utils/whitelist.js';
 
 export default {
@@ -65,16 +61,6 @@ async function handleButton(client: WallEClient, interaction: ButtonInteraction)
   if (id === 'ticket_close_cancel') {
     await interaction.update({ components: [] });
     return;
-  }
-  if (id === 'ticket_create') {
-    await interaction.reply({
-      content: 'This panel is outdated. Please ask an admin to re-create it with `/ticket panel send`.',
-      ephemeral: true,
-    });
-    return;
-  }
-  if (id === 'ticket_close') {
-    await handleLegacyTicketClose(client, interaction);
   }
 }
 
@@ -205,75 +191,15 @@ async function handleTicketCloseConfirm(
     components: [],
   });
 
-  const channel = interaction.channel as TextChannel;
-
-  try {
-    const allMessages: any[] = [];
-    let lastId: string | undefined;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const batch = await channel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
-      if (batch.size === 0) break;
-      allMessages.push(...batch.values());
-      lastId = batch.last()?.id;
-      if (batch.size < 100) break;
-    }
-    allMessages.reverse();
-
-    const transcriptText = buildTranscript(channel.name, ticket.user_id, ticket.created_at, allMessages);
-    const transcriptBuffer = Buffer.from(transcriptText, 'utf-8');
-
-    let transcriptMsgId: string | null = null;
-    if (ticket.transcript_channel_id) {
-      const transcriptChannel = interaction.guild!.channels.cache.get(ticket.transcript_channel_id) as TextChannel | undefined;
-      if (transcriptChannel) {
-        const transcriptEmbed = new EmbedBuilder()
-          .setColor(COLORS.MUTED)
-          .setTitle(`Ticket Transcript - ${channel.name}`)
-          .addFields(
-            { name: 'User', value: `<@${ticket.user_id}>`, inline: true },
-            { name: 'Closed By', value: `<@${interaction.user.id}>`, inline: true },
-            { name: 'Reason', value: reason, inline: false },
-          )
-          .setTimestamp();
-
-        const msg = await transcriptChannel.send({
-          embeds: [transcriptEmbed],
-          files: [{ attachment: transcriptBuffer, name: `transcript-${channel.name}.txt` }],
-        });
-        transcriptMsgId = msg.id;
-      }
-    }
-
-    await client.db.pool.query(
-      `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
-       close_reason = $3, transcript_message_id = $4 WHERE id = $1`,
-      [ticketId, interaction.user.id, reason, transcriptMsgId],
-    );
-
-    try {
-      const ticketUser = await client.users.fetch(ticket.user_id);
-      await ticketUser.send(
-        `Ticket Closed\nYour ticket ${channel.name} in ${interaction.guild!.name} has been closed.\nReason: ${reason}`,
-      );
-    } catch {
-      // User has DMs disabled.
-    }
-
-    if (ticket.category_closed_id) {
-      await channel.setParent(ticket.category_closed_id, { lockPermissions: false });
-      await channel.setName(`closed-${channel.name}`.substring(0, 100));
-    } else {
-      setTimeout(async () => {
-        try {
-          await channel.delete();
-        } catch {
-          // Already deleted.
-        }
-      }, 5000);
-    }
-  } catch (error) {
-    logger.error('Error closing ticket:', error);
+  const result = await closeTicket(client, interaction.guild!, ticket, interaction.user.id, reason);
+  if (!result.closed) {
+    await interaction.editReply({
+      embeds: [new EmbedBuilder()
+        .setColor(COLORS.ERROR)
+        .setTitle('Unable to Close Ticket')
+        .setDescription(result.error || 'Failed to close ticket. Please try again.')],
+      components: [],
+    });
   }
 }
 
@@ -316,31 +242,4 @@ async function handleReactionRoleSelect(client: WallEClient, interaction: String
     logger.error('Error handling reaction role select:', error);
     await interaction.reply({ content: 'Failed to update your roles.', ephemeral: true });
   }
-}
-
-async function handleLegacyTicketClose(client: WallEClient, interaction: ButtonInteraction) {
-  const ticket = await client.db.pool.query(
-    'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
-    [interaction.guild!.id, interaction.channel!.id],
-  );
-  if (ticket.rows.length === 0) {
-    await interaction.reply({ content: 'This is not a ticket channel.', ephemeral: true });
-    return;
-  }
-  const confirmBtn = new ButtonBuilder()
-    .setCustomId(`ticket_close_confirm:${ticket.rows[0].id}:No%20reason%20provided`)
-    .setLabel('Confirm Close')
-    .setEmoji('🔒')
-    .setStyle(ButtonStyle.Danger);
-  const cancelBtn = new ButtonBuilder()
-    .setCustomId('ticket_close_cancel')
-    .setLabel('Cancel')
-    .setStyle(ButtonStyle.Secondary);
-  await interaction.reply({
-    embeds: [new EmbedBuilder()
-      .setColor(COLORS.WARNING)
-      .setTitle('Close Ticket?')
-      .setDescription('Click confirm to close this ticket.')],
-    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(confirmBtn, cancelBtn)],
-  });
 }
