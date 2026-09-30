@@ -1,10 +1,17 @@
-type Sendable = { send: (content: string) => Promise<unknown> };
+import type { MessageMentionOptions } from 'discord.js';
 
-export async function sendLong(channel: Sendable, text: string): Promise<void> {
+type Sendable = { send: (options: { content: string; allowedMentions?: MessageMentionOptions }) => Promise<unknown> };
+
+/** Custom command output can echo user input, so it may only ping users, never @everyone/@here or roles. */
+export const CUSTOM_COMMAND_MENTIONS: MessageMentionOptions = { parse: ['users'] };
+
+export async function sendLong(channel: Sendable, text: string, allowedMentions?: MessageMentionOptions): Promise<void> {
   if (!text.trim()) return;
 
+  const send = (content: string) => channel.send({ content, allowedMentions });
+
   if (text.length <= 2000) {
-    await channel.send(text);
+    await send(text);
     return;
   }
 
@@ -13,7 +20,7 @@ export async function sendLong(channel: Sendable, text: string): Promise<void> {
     if (!remaining.trim()) break;
 
     if (remaining.length <= 2000) {
-      await channel.send(remaining);
+      await send(remaining);
       break;
     }
 
@@ -22,7 +29,7 @@ export async function sendLong(channel: Sendable, text: string): Promise<void> {
     if (splitAt <= 0) splitAt = slice.lastIndexOf(' ');
     if (splitAt <= 0) splitAt = 2000;
 
-    await channel.send(remaining.slice(0, splitAt).trimEnd());
+    await send(remaining.slice(0, splitAt).trimEnd());
     remaining = remaining.slice(splitAt).trimStart();
   }
 }

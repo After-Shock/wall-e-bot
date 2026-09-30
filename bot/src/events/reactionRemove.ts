@@ -1,6 +1,6 @@
 import { Events, MessageReaction, User, PartialMessageReaction, PartialUser } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
-import { sendLong } from '../utils/sendLong.js';
+import { CUSTOM_COMMAND_MENTIONS, sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
 import { isGuildAllowed } from '../utils/whitelist.js';
 
@@ -88,7 +88,7 @@ export default {
             .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
           await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
         } else {
-          await sendLong(channel as import('discord.js').TextChannel, rendered);
+          await sendLong(channel as import('discord.js').TextChannel, rendered, CUSTOM_COMMAND_MENTIONS);
         }
 
         client.db.pool.query('UPDATE custom_commands SET uses = uses + 1 WHERE id = $1', [cmd.id]).catch(() => {});

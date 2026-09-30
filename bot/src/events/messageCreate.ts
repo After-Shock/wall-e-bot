@@ -2,7 +2,7 @@ import { Events, Message } from 'discord.js';
 import { canExecuteCustomCommand, isSafeCustomCommandRegex } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
-import { sendLong } from '../utils/sendLong.js';
+import { CUSTOM_COMMAND_MENTIONS, sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
 import { isGuildAllowed } from '../utils/whitelist.js';
 
@@ -167,7 +167,7 @@ async function handleCustomCommands(
         .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
       await channel.send({ embeds: [embed] });
     } else {
-      await sendLong(channel, rendered);
+      await sendLong(channel, rendered, CUSTOM_COMMAND_MENTIONS);
     }
 
     client.db.pool.query(
