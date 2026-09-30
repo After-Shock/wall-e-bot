@@ -47,6 +47,10 @@ export interface CloseTicketResult {
 }
 
 export const TRANSCRIPT_REQUIRED_MESSAGE = 'Transcript channel missing — set it in the dashboard.';
+/** Only Administrators or members holding one of the ticket category's support roles may close it. */
+export function canCloseTicket(memberRoleIds: string[], supportRoleIds: string[], isAdministrator: boolean): boolean {
+  return isAdministrator || memberRoleIds.some(roleId => supportRoleIds.includes(roleId));
+}
 
 function uniqueIds(ids: string[]): string[] {
   return [...new Set(ids.filter(Boolean))];
@@ -292,14 +296,6 @@ export async function createManagedTicket(
 
     await interaction.editReply({ content: `Your ticket has been created: ${ticketChannel}` });
 
-    try {
-      await interaction.user.send(
-        `Ticket Created\nYour support ticket has been opened in ${interaction.guild!.name}: ${ticketChannel.name}`,
-      );
-    } catch {
-      // DMs disabled.
-    }
-
     return { ticketChannel, ticketId, ticketNumber };
   } catch (error) {
     if (ticketChannel) {
@@ -366,14 +362,16 @@ export async function closeTicket(
       )
       .setTimestamp();
 
+    const transcriptFile = () => ({
+      attachment: Buffer.from(transcriptText, 'utf-8'),
+      name: `transcript-${channel.name}.txt`,
+    });
+
     let transcriptMessage: { id: string };
     try {
       transcriptMessage = await transcriptChannel.send({
         embeds: [transcriptEmbed],
-        files: [{
-          attachment: Buffer.from(transcriptText, 'utf-8'),
-          name: `transcript-${channel.name}.txt`,
-        }],
+        files: [transcriptFile()],
       });
     } catch (error) {
       logger.error(`Failed to post transcript for ticket ${ticket.id}:`, error);
@@ -386,11 +384,13 @@ export async function closeTicket(
       [ticket.id, closedBy, reason, transcriptMessage.id],
     );
 
+    // Best-effort copy for the requestor; the transcript channel is the record.
     try {
       const ticketUser = await client.users.fetch(ticket.user_id);
-      await ticketUser.send(
-        `Ticket Closed\nYour ticket ${channel.name} in ${guild.name} has been closed.\nReason: ${reason}`,
-      );
+      await ticketUser.send({
+        content: `Your ticket ${channel.name} in ${guild.name} has been closed.\nReason: ${reason}`,
+        files: [transcriptFile()],
+      });
     } catch {
       // User has DMs disabled.
     }

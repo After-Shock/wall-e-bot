@@ -7,11 +7,12 @@ import {
   TextInputBuilder,
   TextInputStyle,
   ActionRowBuilder,
+  PermissionFlagsBits,
 } from 'discord.js';
 import type { WallEClient } from '../structures/Client.js';
 import { COLORS } from '@wall-e/shared';
 import { logger } from '../utils/logger.js';
-import { closeTicket, createManagedTicket } from '../services/TicketService.js';
+import { canCloseTicket, closeTicket, createManagedTicket } from '../services/TicketService.js';
 import { isGuildAllowed } from '../utils/whitelist.js';
 
 export default {
@@ -169,10 +170,11 @@ async function handleTicketCloseConfirm(
   reason: string,
 ) {
   const ticketResult = await client.db.pool.query(
-    `SELECT t.*, tp.category_closed_id, tc.transcript_channel_id
+    `SELECT t.*, tp.category_closed_id, tc.transcript_channel_id, tcat.support_role_ids
      FROM tickets t
      LEFT JOIN ticket_panels tp ON t.panel_id = tp.id
      LEFT JOIN ticket_config tc ON t.guild_id = tc.guild_id
+     LEFT JOIN ticket_categories tcat ON t.category_id = tcat.id
      WHERE t.id = $1 AND t.guild_id = $2 AND t.status IN ('open','claimed')`,
     [ticketId, interaction.guild!.id],
   );
@@ -183,6 +185,13 @@ async function handleTicketCloseConfirm(
   }
 
   const ticket = ticketResult.rows[0];
+  const member = interaction.member;
+  const memberRoleIds = Array.isArray(member?.roles) ? member.roles : [...(member?.roles.cache.keys() ?? [])];
+  const isAdministrator = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+  if (!canCloseTicket(memberRoleIds, ticket.support_role_ids ?? [], isAdministrator)) {
+    await interaction.reply({ content: 'Only support staff can close this ticket.', ephemeral: true });
+    return;
+  }
   await interaction.update({
     embeds: [new EmbedBuilder()
       .setColor(COLORS.WARNING)

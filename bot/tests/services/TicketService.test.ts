@@ -1,5 +1,14 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { closeTicket, TRANSCRIPT_REQUIRED_MESSAGE } from '../../src/services/TicketService.js';
+import { canCloseTicket, closeTicket, TRANSCRIPT_REQUIRED_MESSAGE } from '../../src/services/TicketService.js';
+
+describe('canCloseTicket', () => {
+  it('allows only Administrators or members holding one of the support roles', () => {
+    expect(canCloseTicket(['member', 'support-b'], ['support-a', 'support-b'], false)).toBe(true);
+    expect(canCloseTicket(['member'], [], true)).toBe(true);
+    expect(canCloseTicket(['member'], ['support-a'], false)).toBe(false);
+    expect(canCloseTicket(['member'], [], false)).toBe(false);
+  });
+});
 
 function messageBatch() {
   const message = {
@@ -62,7 +71,7 @@ function makeFixture(transcriptSend: jest.Mock<(payload: any) => Promise<any>>) 
 }
 
 describe('closeTicket', () => {
-  it('posts the transcript only to the transcript channel before closing', async () => {
+  it('posts the transcript to the transcript channel and DMs it to the requestor', async () => {
     const transcriptSend = jest.fn<(payload: any) => Promise<any>>().mockResolvedValue({ id: 'transcript-message' });
     const fixture = makeFixture(transcriptSend);
 
@@ -78,8 +87,18 @@ describe('closeTicket', () => {
     expect(transcriptSend).toHaveBeenCalledTimes(1);
     expect(transcriptSend.mock.calls[0][0]).toMatchObject({ files: [expect.objectContaining({ name: 'transcript-support-0001.txt' })] });
     expect(fixture.query).toHaveBeenCalledWith(expect.stringContaining("status = 'closed'"), [1, 'staff-id', 'Resolved', 'transcript-message']);
-    expect(fixture.ownerSend).toHaveBeenCalledWith(expect.any(String));
-    expect(fixture.ownerSend.mock.calls[0][0]).not.toEqual(expect.objectContaining({ files: expect.anything() }));
+    expect(fixture.ownerSend).toHaveBeenCalledTimes(1);
+    expect(fixture.ownerSend.mock.calls[0][0]).toMatchObject({ files: [expect.objectContaining({ name: 'transcript-support-0001.txt' })] });
+  });
+
+  it('still closes when the requestor has DMs disabled', async () => {
+    const transcriptSend = jest.fn<(payload: any) => Promise<any>>().mockResolvedValue({ id: 'transcript-message' });
+    const fixture = makeFixture(transcriptSend);
+    fixture.ownerSend.mockRejectedValue(new Error('Cannot send messages to this user'));
+
+    const result = await closeTicket(fixture.client as any, fixture.guild as any, fixture.ticket, 'staff-id', 'Resolved');
+
+    expect(result).toEqual({ closed: true, transcriptMessageId: 'transcript-message' });
   });
 
   it('leaves the ticket open when transcript delivery fails', async () => {
