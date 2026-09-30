@@ -41,10 +41,6 @@ export function truncate(str: string, length: number): string {
   return str.slice(0, length - 3) + '...';
 }
 
-export function escapeMarkdown(text: string): string {
-  return text.replace(/([*_`~|\\])/g, '\\$1');
-}
-
 /** Normalize a plain DNS hostname, rejecting URLs, ports, wildcards, and invalid labels. */
 export function normalizeHostname(value: string): string | null {
   const hostname = value.trim().toLowerCase().replace(/\.$/, '');
@@ -59,18 +55,6 @@ export function normalizeHostname(value: string): string | null {
 
 export function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-export function chunk<T>(array: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export function ordinal(n: number): string {
