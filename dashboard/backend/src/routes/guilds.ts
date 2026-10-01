@@ -1365,8 +1365,13 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
     if (panelsResult.rows.length === 0) { res.status(400).json({ error: 'Group has no panels' }); return; }
 
     const components = panelsResult.rows.flatMap(p => buildPanelComponents(p)).slice(0, 5);
+    // Group name as the title; each panel's own title and description stacked in group order.
+    const description = panelsResult.rows
+      .map((p: { name: string; description: string | null }) => p.description ? `**${p.name}**\n${p.description}` : `**${p.name}**`)
+      .join('\n\n')
+      .slice(0, 4096);
     const body = {
-      embeds: [{ color: 5793266, title: '🎫 Open a Ticket', description: group.name }],
+      embeds: [{ color: 5793266, title: group.name, description }],
       components,
     };
 

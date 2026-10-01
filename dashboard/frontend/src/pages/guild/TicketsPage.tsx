@@ -388,7 +388,7 @@ function GroupCard({
       </div>
 
       {sorted.length === 0 && (
-        <p className="text-sm text-discord-light">No panels yet. Use "Add to group…" on an ungrouped panel.</p>
+        <p className="text-sm text-discord-light">No panels yet. Choose this group in a panel's group dropdown below.</p>
       )}
 
       {sorted.map((panel, idx) => (
@@ -406,6 +406,7 @@ function GroupCard({
             >▼</button>
           </div>
           <span className="flex-1 font-medium text-sm">{panel.name}</span>
+          <span className="text-xs text-discord-light">edit below</span>
           <span className="text-xs text-discord-light">
             {panel.panel_type} · {panel.categories?.length ?? 0} categories
           </span>
@@ -524,7 +525,6 @@ export default function TicketsPage() {
     onSuccess: () => { invalidateGroups(); invalidatePanels(); fetchData(); },
   });
 
-  const ungroupedPanels = panels.filter(p => p.group_id == null);
 
   const saveConfig = async () => {
     if (!guildId) return;
@@ -830,7 +830,7 @@ export default function TicketsPage() {
           {/* Ungrouped Panels section */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-discord-light uppercase tracking-wider">Ungrouped Panels</h3>
+              <h3 className="text-sm font-semibold text-discord-light uppercase tracking-wider">Panels</h3>
               <button onClick={() => setShowNewPanel(true)} className="btn btn-primary flex items-center gap-2">
                 <Plus className="w-4 h-4" /> New Panel
               </button>
@@ -851,11 +851,12 @@ export default function TicketsPage() {
               </div>
             )}
 
-            {ungroupedPanels.length === 0 && !showNewPanel && (
-              <p className="text-sm text-discord-light">No ungrouped panels.</p>
+            {panels.length === 0 && !showNewPanel && (
+              <p className="text-sm text-discord-light">No panels yet.</p>
             )}
 
-            {ungroupedPanels.map(panel => (
+            {/* Every panel is edited here; groups above only order and send them. */}
+            {panels.map(panel => (
               <div key={panel.id} className="card">
                 {/* Panel header */}
                 <div className="flex items-center gap-3">
@@ -905,17 +906,21 @@ export default function TicketsPage() {
                     <Copy className="w-4 h-4" />
                   </button>
                   <select
-                    value=""
-                    onChange={e => {
-                      if (e.target.value)
-                        assignGroupMutation.mutate({ panelId: panel.id!, groupId: parseInt(e.target.value, 10), position: 0 });
-                    }}
+                    value={panel.group_id ?? ''}
+                    onChange={e => assignGroupMutation.mutate({
+                      panelId: panel.id!,
+                      groupId: e.target.value ? parseInt(e.target.value, 10) : null,
+                      position: 0,
+                    })}
                     className="input text-xs py-1 h-auto"
+                    aria-label={`Group for ${panel.name}`}
                   >
-                    <option value="">Add to group…</option>
+                    <option value="">No group</option>
                     {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
-                  <PanelSendButton panel={panel} channels={channels} guildId={guildId!} onAfterSend={fetchData} />
+                  {panel.group_id == null
+                    ? <PanelSendButton panel={panel} channels={channels} guildId={guildId!} onAfterSend={fetchData} />
+                    : <span className="text-xs text-discord-light">Sent with its group</span>}
                   <button
                     onClick={() => panel.id && deletePanel(panel.id)}
                     className="p-2 text-discord-light hover:text-red-400 transition-colors"

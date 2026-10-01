@@ -257,3 +257,34 @@ test('cloning a panel from another guild is a 404 and rolls back', async (t) => 
   assert.ok(statements.includes('ROLLBACK'));
   assert.ok(!statements.includes('COMMIT'));
 });
+
+test('group message stacks each panel title and description under the group name', async (t) => {
+  installMocks(t, 0);
+  let posted: any;
+  t.mock.method(globalThis, 'fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/messages')) {
+      posted = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ id: '11345678901234567', channel_id: '12345678901234568' }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ guild_id: guildId, type: 0 }), { status: 200 });
+  });
+  t.mock.method(db, 'query', async (sql: string) => {
+    if (sql.includes('FROM ticket_panel_groups')) return { rows: [{ id: 1, name: 'Live TV', last_channel_id: null, last_message_id: null }] } as any;
+    if (sql.includes('FROM ticket_panels p')) {
+      return { rows: [
+        { id: 1, name: 'Renewals', description: 'Already a member? Renew here.', panel_type: 'buttons', categories: [{ id: 7, name: 'Renew' }] },
+        { id: 2, name: 'New Members', description: null, panel_type: 'buttons', categories: [{ id: 8, name: 'Subscribe' }] },
+      ] } as any;
+    }
+    return { rows: [] } as any;
+  });
+
+  const response = await request(buildApp())
+    .post(`/api/guilds/${guildId}/ticket-panel-groups/1/send`)
+    .send({ channel_id: '12345678901234568' });
+
+  assert.equal(response.status, 200);
+  assert.equal(posted.embeds[0].title, 'Live TV');
+  assert.equal(posted.embeds[0].description, '**Renewals**\nAlready a member? Renew here.\n\n**New Members**');
+  assert.equal(posted.components.length, 2);
+});
