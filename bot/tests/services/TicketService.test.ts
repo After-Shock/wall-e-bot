@@ -1,5 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { canCloseTicket, closeTicket, TRANSCRIPT_REQUIRED_MESSAGE } from '../../src/services/TicketService.js';
+import { canCloseTicket, closeTicket, TRANSCRIPT_UNREACHABLE_MESSAGE } from '../../src/services/TicketService.js';
 
 describe('canCloseTicket', () => {
   it('allows only Administrators or members holding one of the support roles', () => {
@@ -113,7 +113,7 @@ describe('closeTicket', () => {
       'Resolved',
     );
 
-    expect(result).toEqual({ closed: false, error: TRANSCRIPT_REQUIRED_MESSAGE });
+    expect(result).toEqual({ closed: false, error: TRANSCRIPT_UNREACHABLE_MESSAGE });
     expect(fixture.query).not.toHaveBeenCalled();
     expect(fixture.deleteTicketChannel).not.toHaveBeenCalled();
     expect(fixture.ownerSend).not.toHaveBeenCalled();

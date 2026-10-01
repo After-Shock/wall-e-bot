@@ -12,7 +12,9 @@ import { z } from 'zod';
 import { reactionRoleBody, buildReactionRoleMessage, type ReactionRoleEntry } from '../utils/reactionRoles.js';
 import { resolveUsers } from '../utils/discordUsers.js';
 import { findCategoryInGuild } from '../utils/ticketScope.js';
-import { channelError } from '../utils/discordChannels.js';
+import {
+  categoryError, channelError, CHANNEL_MISSING_PERMISSIONS, isChannelPermissionError,
+} from '../utils/discordChannels.js';
 import { getUserGuilds, isGuildAdmin, GuildResolutionError } from '../utils/userGuilds.js';
 import { invalidateGuildConfigCache, withCacheWarning } from '../utils/guildConfigCache.js';
 
@@ -913,6 +915,10 @@ guildsRouter.put('/:guildId/ticket-config', requireAuth, requireGuildAccess,
   asyncHandler(async (req, res) => {
     const { guildId } = req.params;
     const { transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message } = req.body;
+    if (transcript_channel_id) {
+      const channelErr = await channelError(transcript_channel_id, guildId);
+      if (channelErr) { res.status(400).json({ error: `Transcript channel: ${channelErr}` }); return; }
+    }
     try {
       await db.query(
         `INSERT INTO ticket_config (guild_id, transcript_channel_id, max_tickets_per_user, auto_close_hours, welcome_message)
@@ -1022,14 +1028,26 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
       res.status(400).json({ error: 'Invalid panel_type' });
       return;
     }
+    // Only fields present in the body change; an empty value clears that field.
+    const categoryFields = ['category_open_id', 'category_closed_id', 'overflow_category_id'] as const;
+    for (const field of categoryFields) {
+      const categoryId = req.body[field];
+      if (!categoryId) continue;
+      const error = await categoryError(String(categoryId), guildId);
+      if (error) { res.status(400).json({ error }); return; }
+    }
+    const [setOpen, setClosed, setOverflow] = categoryFields.map(field => field in req.body);
     try {
       const r = await db.query(
         `UPDATE ticket_panels SET
            name=COALESCE($3,name), panel_type=COALESCE($4,panel_type),
-           category_open_id=$5, category_closed_id=$6, overflow_category_id=$7,
+           category_open_id=CASE WHEN $9 THEN $5 ELSE category_open_id END,
+           category_closed_id=CASE WHEN $10 THEN $6 ELSE category_closed_id END,
+           overflow_category_id=CASE WHEN $11 THEN $7 ELSE overflow_category_id END,
            channel_name_template=COALESCE($8,channel_name_template)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [panelId, guildId, name, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null, channel_name_template],
+        [panelId, guildId, name, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null,
+          channel_name_template, setOpen, setClosed, setOverflow],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
       res.json(r.rows[0]);
@@ -1205,7 +1223,7 @@ function buildPanelComponents(panel: {
 
 class DiscordAPIError extends Error {
   constructor(public status: number, public body: string) {
-    super(`Discord API ${status}: ${body}`);
+    super(isChannelPermissionError(body) ? CHANNEL_MISSING_PERMISSIONS : `Discord API ${status}: ${body}`);
   }
 }
 

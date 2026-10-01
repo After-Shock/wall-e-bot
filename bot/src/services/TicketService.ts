@@ -47,6 +47,8 @@ export interface CloseTicketResult {
 }
 
 export const TRANSCRIPT_REQUIRED_MESSAGE = 'Transcript channel missing — set it in the dashboard.';
+export const TRANSCRIPT_UNREACHABLE_MESSAGE =
+  "Wall-E can't post in the transcript channel. Give Wall-E's role View Channel, Send Messages and Attach Files there, then close again.";
 /** Only Administrators or members holding one of the ticket category's support roles may close it. */
 export function canCloseTicket(memberRoleIds: string[], supportRoleIds: string[], isAdministrator: boolean): boolean {
   return isAdministrator || memberRoleIds.some(roleId => supportRoleIds.includes(roleId));
@@ -375,7 +377,7 @@ export async function closeTicket(
       });
     } catch (error) {
       logger.error(`Failed to post transcript for ticket ${ticket.id}:`, error);
-      return { closed: false, error: TRANSCRIPT_REQUIRED_MESSAGE };
+      return { closed: false, error: TRANSCRIPT_UNREACHABLE_MESSAGE };
     }
 
     await client.db.pool.query(

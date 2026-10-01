@@ -406,6 +406,16 @@ export default function TicketsPage() {
     setPanels(prev => prev.map(p => p.id === panelId ? { ...p, _expanded: !p._expanded } : p));
   };
 
+  const savePanel = async (panelId: number, data: Record<string, unknown>) => {
+    if (!guildId) return;
+    try {
+      const updated = await ticketApi.updatePanel(guildId, panelId, data);
+      setPanels(prev => prev.map(p => p.id === panelId ? { ...p, ...updated } : p));
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to save panel');
+    }
+  };
+
   const addCategory = async (panelId: number) => {
     if (!guildId) return;
     const name = prompt('Category name:');
@@ -687,11 +697,7 @@ export default function TicketsPage() {
                         <label className="block font-medium mb-1">Panel Type</label>
                         <select
                           value={panel.panel_type}
-                          onChange={async e => {
-                            if (!guildId || !panel.id) return;
-                            const updated = await ticketApi.updatePanel(guildId, panel.id, { panel_type: e.target.value });
-                            setPanels(prev => prev.map(p => p.id === panel.id ? { ...p, ...updated } : p));
-                          }}
+                          onChange={e => { if (panel.id) void savePanel(panel.id, { panel_type: e.target.value }); }}
                           className="input w-full"
                         >
                           <option value="buttons">Buttons</option>
@@ -702,10 +708,7 @@ export default function TicketsPage() {
                         <label className="block font-medium mb-1">Channel Name Template</label>
                         <input
                           defaultValue={panel.channel_name_template}
-                          onBlur={async e => {
-                            if (!guildId || !panel.id) return;
-                            await ticketApi.updatePanel(guildId, panel.id, { channel_name_template: e.target.value });
-                          }}
+                          onBlur={e => { if (panel.id) void savePanel(panel.id, { channel_name_template: e.target.value }); }}
                           className="input w-full"
                           placeholder="{type}-{number}"
                         />
@@ -717,10 +720,7 @@ export default function TicketsPage() {
                         <label className="block font-medium mb-1">Open Category ID</label>
                         <input
                           defaultValue={panel.category_open_id}
-                          onBlur={async e => {
-                            if (!guildId || !panel.id) return;
-                            await ticketApi.updatePanel(guildId, panel.id, { category_open_id: e.target.value || null });
-                          }}
+                          onBlur={e => { if (panel.id) void savePanel(panel.id, { category_open_id: e.target.value.trim() || null }); }}
                           className="input w-full"
                           placeholder="Discord category ID"
                         />
@@ -729,10 +729,7 @@ export default function TicketsPage() {
                         <label className="block font-medium mb-1">Closed Category ID</label>
                         <input
                           defaultValue={panel.category_closed_id}
-                          onBlur={async e => {
-                            if (!guildId || !panel.id) return;
-                            await ticketApi.updatePanel(guildId, panel.id, { category_closed_id: e.target.value || null });
-                          }}
+                          onBlur={e => { if (panel.id) void savePanel(panel.id, { category_closed_id: e.target.value.trim() || null }); }}
                           className="input w-full"
                           placeholder="Discord category ID (for archived tickets)"
                         />
@@ -741,10 +738,7 @@ export default function TicketsPage() {
                         <label className="block font-medium mb-1">Overflow Category ID</label>
                         <input
                           defaultValue={panel.overflow_category_id}
-                          onBlur={async e => {
-                            if (!guildId || !panel.id) return;
-                            await ticketApi.updatePanel(guildId, panel.id, { overflow_category_id: e.target.value || null });
-                          }}
+                          onBlur={e => { if (panel.id) void savePanel(panel.id, { overflow_category_id: e.target.value.trim() || null }); }}
                           className="input w-full"
                           placeholder="Used when open category hits 50 channels"
                         />
