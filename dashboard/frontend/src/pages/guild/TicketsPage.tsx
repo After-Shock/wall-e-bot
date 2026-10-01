@@ -1017,7 +1017,12 @@ export default function TicketsPage() {
                           <div key={cat.id} className="bg-discord-dark rounded-lg">
                             {/* Category row */}
                             <div className="flex items-center gap-3 p-3">
-                              <span className="text-xl">{cat.emoji || '🎫'}</span>
+                              <EmojiPicker
+                                compact
+                                value={cat.emoji || ''}
+                                serverEmojis={serverEmojis}
+                                onChange={emoji => panel.id && cat.id && updateCategory(panel.id, cat.id, { emoji })}
+                              />
                               <div className="flex-1">
                                 <p className="font-medium text-sm">{cat.name}</p>
                                 <p className="text-xs text-discord-light">{cat.description || '(no description)'}</p>
@@ -1062,14 +1067,6 @@ export default function TicketsPage() {
                                       } : p))}
                                       onBlur={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { name: e.target.value })}
                                       className="input w-full"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs text-discord-light mb-1">Emoji</label>
-                                    <EmojiPicker
-                                      value={cat.emoji || ''}
-                                      serverEmojis={serverEmojis}
-                                      onChange={emoji => panel.id && cat.id && updateCategory(panel.id, cat.id, { emoji })}
                                     />
                                   </div>
                                   <div>

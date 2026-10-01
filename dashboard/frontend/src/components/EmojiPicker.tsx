@@ -22,11 +22,13 @@ export function EmojiPreview({ emoji }: { emoji: string }) {
 
 const STANDARD = ['🎫', '📋', '📺', '🎬', '📡', '🛠️', '❓', '💬', '💳', '💰', '🔄', '➕', '🆕', '⭐', '✅', '⚠️', '🔒', '📦', '🎮', '🎵', '📚', '🌺', '🍆', '👹'];
 
-export function EmojiPicker({ value, onChange, serverEmojis, fallback = '🎫' }: {
+export function EmojiPicker({ value, onChange, serverEmojis, fallback = '🎫', compact = false }: {
   value: string;
   onChange: (emoji: string) => void;
   serverEmojis: ServerEmoji[];
   fallback?: string;
+  /** Just the emoji as the button (for list rows). */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState('');
@@ -42,12 +44,15 @@ export function EmojiPicker({ value, onChange, serverEmojis, fallback = '🎫' }
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="input w-full flex items-center gap-2 text-left"
+        className={compact
+          ? 'text-xl leading-none p-1.5 rounded-lg border border-dashed border-discord-mid hover:border-discord-blurple hover:bg-discord-mid'
+          : 'input w-full flex items-center gap-2 text-left'}
+        title="Change button emoji"
         aria-label="Choose emoji"
         aria-expanded={open}
       >
         <EmojiPreview emoji={value || fallback} />
-        <span className="text-xs text-discord-light">{value ? 'Change' : 'Choose emoji'}</span>
+        {!compact && <span className="text-xs text-discord-light">{value ? 'Change' : 'Choose emoji'}</span>}
       </button>
 
       {open && (
