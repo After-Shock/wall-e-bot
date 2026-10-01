@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { reactionRoleBody, buildReactionRoleMessage, type ReactionRoleEntry } from '../utils/reactionRoles.js';
 import { resolveUsers } from '../utils/discordUsers.js';
 import { findCategoryInGuild } from '../utils/ticketScope.js';
+import { channelError } from '../utils/discordChannels.js';
 import { getUserGuilds, isGuildAdmin, GuildResolutionError } from '../utils/userGuilds.js';
 import { invalidateGuildConfigCache, withCacheWarning } from '../utils/guildConfigCache.js';
 
@@ -1241,14 +1242,8 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
     if (!channel_id) { res.status(400).json({ error: 'channel_id is required' }); return; }
 
     // Verify channel belongs to this guild
-    const channelCheck = await fetch(
-      `https://discord.com/api/v10/channels/${channel_id}`,
-      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } },
-    );
-    const channelData = await channelCheck.json() as { guild_id?: string };
-    if (!channelCheck.ok || channelData.guild_id !== guildId) {
-      res.status(400).json({ error: 'Invalid channel' }); return;
-    }
+    const channelErr = await channelError(channel_id, guildId);
+    if (channelErr) { res.status(400).json({ error: channelErr }); return; }
 
     const groupResult = await db.query(
       `SELECT * FROM ticket_panel_groups WHERE id = $1 AND guild_id = $2`,
@@ -1315,14 +1310,8 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireG
     if (!channel_id) { res.status(400).json({ error: 'channel_id is required' }); return; }
 
     // Verify channel belongs to this guild
-    const channelCheck = await fetch(
-      `https://discord.com/api/v10/channels/${channel_id}`,
-      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } },
-    );
-    const channelData = await channelCheck.json() as { guild_id?: string };
-    if (!channelCheck.ok || channelData.guild_id !== guildId) {
-      res.status(400).json({ error: 'Invalid channel' }); return;
-    }
+    const channelErr = await channelError(channel_id, guildId);
+    if (channelErr) { res.status(400).json({ error: channelErr }); return; }
 
     const panelResult = await db.query(
       `SELECT p.*, COALESCE(json_agg(c ORDER BY c.position) FILTER (WHERE c.id IS NOT NULL), '[]') AS categories
@@ -1892,22 +1881,22 @@ guildsRouter.post(
         }
 
         const srcPanels = await client.query(
-          `SELECT id, name, panel_type, panel_group_id, channel_name_template
+          `SELECT id, name, panel_type, group_id, stack_position, channel_name_template
            FROM ticket_panels WHERE guild_id = $1`,
           [sourceGuildId],
         );
         const panelIdMap = new Map<number, number>();
         for (const p of srcPanels.rows) {
-          const newGroupId = p.panel_group_id != null ? (panelGroupIdMap.get(p.panel_group_id) ?? null) : null;
+          const newGroupId = p.group_id != null ? (panelGroupIdMap.get(p.group_id) ?? null) : null;
           const ins = await client.query(
             `INSERT INTO ticket_panels
-               (guild_id, name, panel_type, panel_group_id,
+               (guild_id, name, panel_type, group_id, stack_position,
                 panel_channel_id, panel_message_id,
                 category_open_id, category_closed_id, overflow_category_id,
                 channel_name_template)
-             VALUES ($1, $2, $3, $4, NULL, NULL, NULL, NULL, NULL, $5)
+             VALUES ($1, $2, $3, $4, $5, NULL, NULL, NULL, NULL, NULL, $6)
              RETURNING id`,
-            [targetGuildId, p.name, p.panel_type, newGroupId, p.channel_name_template],
+            [targetGuildId, p.name, p.panel_type, newGroupId, p.stack_position, p.channel_name_template],
           );
           panelIdMap.set(p.id as number, ins.rows[0].id as number);
           ticketRows++;
@@ -2085,12 +2074,6 @@ guildsRouter.get('/:guildId/channels', requireAuth, requireGuildAccess, asyncHan
 
 const botAuth =() => ({ Authorization: `Bot ${process.env.DISCORD_TOKEN}` });
 
-async function channelInGuild(channelId: string, guildId: string): Promise<boolean> {
-  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}`, { headers: botAuth() });
-  if (!res.ok) return false;
-  return ((await res.json()) as { guild_id?: string }).guild_id === guildId;
-}
-
 // Returns an error message if the bot could not hand out one of these roles.
 // Without this the message posts fine and every button silently fails on click.
 async function unassignableRoleError(guildId: string, roleIds: string[]): Promise<string | null> {
@@ -2171,9 +2154,8 @@ guildsRouter.post('/:guildId/reaction-roles', requireAuth, requireGuildAccess,
     if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
     const body = parsed.data;
 
-    if (!await channelInGuild(body.channel_id, guildId)) {
-      res.status(400).json({ error: 'Invalid channel' }); return;
-    }
+    const channelErr = await channelError(body.channel_id, guildId);
+    if (channelErr) { res.status(400).json({ error: channelErr }); return; }
     const roleError = await unassignableRoleError(guildId, body.roles.map(r => r.role_id));
     if (roleError) { res.status(400).json({ error: roleError }); return; }
 
@@ -2210,9 +2192,8 @@ guildsRouter.patch('/:guildId/reaction-roles/:id', requireAuth, requireGuildAcce
     if (existing.rows.length === 0) { res.status(404).json({ error: 'Message not found' }); return; }
     const row = existing.rows[0] as { channel_id: string; message_id: string };
 
-    if (!await channelInGuild(body.channel_id, guildId)) {
-      res.status(400).json({ error: 'Invalid channel' }); return;
-    }
+    const channelErr = await channelError(body.channel_id, guildId);
+    if (channelErr) { res.status(400).json({ error: channelErr }); return; }
     const roleError = await unassignableRoleError(guildId, body.roles.map(r => r.role_id));
     if (roleError) { res.status(400).json({ error: roleError }); return; }
 
@@ -2365,7 +2346,8 @@ guildsRouter.post('/:guildId/scheduled-messages', requireAuth, requireGuildAcces
     const parsed = scheduledMessageBody.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
     const b = parsed.data;
-    if (!await channelInGuild(b.channel_id, guildId)) { res.status(400).json({ error: 'Invalid channel' }); return; }
+    const channelErr = await channelError(b.channel_id, guildId);
+    if (channelErr) { res.status(400).json({ error: channelErr }); return; }
 
     // First send happens one interval from now.
     const nextRun = new Date(Date.now() + b.interval_minutes * 60 * 1000);
@@ -2387,9 +2369,8 @@ guildsRouter.patch('/:guildId/scheduled-messages/:id', requireAuth, requireGuild
     const parsed = scheduledMessageBody.partial().safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
     const b = parsed.data;
-    if (b.channel_id && !await channelInGuild(b.channel_id, guildId)) {
-      res.status(400).json({ error: 'Invalid channel' }); return;
-    }
+    const channelErr = b.channel_id ? await channelError(b.channel_id, guildId) : null;
+    if (channelErr) { res.status(400).json({ error: channelErr }); return; }
 
     const sets: string[] = [];
     const vals: unknown[] = [];
