@@ -129,6 +129,103 @@ function SendChannelModal({
   );
 }
 
+type NewQuestion = { label: string; placeholder: string; style: 'short' | 'paragraph' };
+const blankQuestion = (): NewQuestion => ({ label: '', placeholder: '', style: 'short' });
+
+// Inline (not a browser prompt) so it survives switching tabs to copy text.
+function AddQuestionsForm({ remaining, onSave }: {
+  remaining: number;
+  onSave: (questions: NewQuestion[]) => Promise<number>;
+}) {
+  const [rows, setRows] = useState<NewQuestion[] | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  if (remaining <= 0) return null;
+  if (!rows) {
+    return (
+      <button
+        onClick={() => setRows([blankQuestion()])}
+        className="btn btn-secondary text-xs w-full flex items-center justify-center gap-1"
+      >
+        <Plus className="w-3 h-3" /> Add Questions
+      </button>
+    );
+  }
+
+  const update = (index: number, patch: Partial<NewQuestion>) =>
+    setRows(rows.map((row, i) => i === index ? { ...row, ...patch } : row));
+  const filled = rows
+    .filter(row => row.label.trim())
+    .map(row => ({ ...row, label: row.label.trim(), placeholder: row.placeholder.trim() }));
+
+  const save = async () => {
+    setSaving(true);
+    const saved = await onSave(filled);
+    setSaving(false);
+    // Keep anything that failed so it isn't lost.
+    const left = filled.slice(saved);
+    setRows(left.length ? left : null);
+  };
+
+  return (
+    <div className="space-y-2 border border-discord-mid rounded p-2">
+      {rows.map((row, i) => (
+        <div key={i} className="flex flex-wrap gap-2 items-center">
+          <input
+            value={row.label}
+            maxLength={45}
+            onChange={e => update(i, { label: e.target.value })}
+            className="input flex-1 min-w-[10rem] text-xs"
+            placeholder={`Question ${i + 1} (max 45 characters)`}
+            aria-label={`Question ${i + 1}`}
+          />
+          <input
+            value={row.placeholder}
+            maxLength={100}
+            onChange={e => update(i, { placeholder: e.target.value })}
+            className="input flex-1 min-w-[10rem] text-xs"
+            placeholder="Placeholder hint (optional)"
+            aria-label={`Placeholder for question ${i + 1}`}
+          />
+          <select
+            value={row.style}
+            onChange={e => update(i, { style: e.target.value as NewQuestion['style'] })}
+            className="input text-xs w-auto"
+            aria-label={`Answer type for question ${i + 1}`}
+          >
+            <option value="short">Short answer</option>
+            <option value="paragraph">Long answer</option>
+          </select>
+          <button
+            onClick={() => setRows(rows.length === 1 ? null : rows.filter((_, j) => j !== i))}
+            className="text-discord-light hover:text-red-400 transition-colors"
+            aria-label={`Remove question ${i + 1}`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <div className="flex flex-wrap gap-2 items-center">
+        {rows.length < remaining && (
+          <button
+            onClick={() => setRows([...rows, blankQuestion()])}
+            className="btn btn-secondary text-xs flex items-center gap-1"
+          >
+            <Plus className="w-3 h-3" /> Add another
+          </button>
+        )}
+        <span className="text-xs text-discord-light flex-1">
+          {remaining - rows.length} more slot{remaining - rows.length === 1 ? '' : 's'} (Discord allows 5 per form)
+        </span>
+        <button onClick={() => setRows(null)} className="btn btn-secondary text-xs">Cancel</button>
+        <button onClick={save} disabled={!filled.length || saving} className="btn btn-primary text-xs">
+          {saving ? 'Saving…' : `Save ${filled.length} question${filled.length === 1 ? '' : 's'}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PanelSendButton({ panel, channels, guildId, onAfterSend }: {
   panel: Panel; channels: DiscordChannel[]; guildId: string; onAfterSend?: () => void;
 }) {
@@ -460,24 +557,29 @@ export default function TicketsPage() {
     }
   };
 
-  const addFormField = async (categoryId: number, panelId: number) => {
-    if (!guildId) return;
-    const label = prompt('Field label (e.g. "What is your issue?"):');
-    if (!label?.trim()) return;
-    try {
-      const field = await ticketApi.createFormField(guildId, categoryId, {
-        label, placeholder: '', style: 'short', required: true, min_length: 0, max_length: 1024,
-      });
-      setPanels(prev => prev.map(p => p.id === panelId ? {
-        ...p,
-        categories: (p.categories || []).map(c => c.id === categoryId
-          ? { ...c, form_fields: [...(c.form_fields || []), field] }
-          : c
-        ),
-      } : p));
-    } catch (e: any) {
-      setError(e?.response?.data?.error || 'Failed to add field');
+  // Saves in order so positions follow the form; returns how many were saved before any failure.
+  const addFormFields = async (categoryId: number, panelId: number, questions: NewQuestion[]) => {
+    if (!guildId) return 0;
+    let saved = 0;
+    for (const question of questions) {
+      try {
+        const field = await ticketApi.createFormField(guildId, categoryId, {
+          ...question, required: true, min_length: 0, max_length: 1024,
+        });
+        setPanels(prev => prev.map(p => p.id === panelId ? {
+          ...p,
+          categories: (p.categories || []).map(c => c.id === categoryId
+            ? { ...c, form_fields: [...(c.form_fields || []), field] }
+            : c
+          ),
+        } : p));
+        saved++;
+      } catch (e: any) {
+        setError(e?.response?.data?.error || 'Failed to add question');
+        break;
+      }
     }
+    return saved;
   };
 
   const saveFormField = async (fieldId: number, categoryId: number, panelId: number, data: Partial<FormField>) => {
@@ -930,13 +1032,11 @@ export default function TicketsPage() {
                                     </button>
                                   </div>
                                 ))}
-                                {(cat.form_fields?.length || 0) < 5 && (
-                                  <button
-                                    onClick={() => guildId && cat.id && panel.id && addFormField(cat.id, panel.id)}
-                                    className="btn btn-secondary text-xs w-full flex items-center justify-center gap-1"
-                                  >
-                                    <Plus className="w-3 h-3" /> Add Question
-                                  </button>
+                                {cat.id && panel.id && (
+                                  <AddQuestionsForm
+                                    remaining={5 - (cat.form_fields?.length || 0)}
+                                    onSave={questions => addFormFields(cat.id!, panel.id!, questions)}
+                                  />
                                 )}
                               </div>
                             )}
