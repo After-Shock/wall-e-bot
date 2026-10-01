@@ -63,7 +63,9 @@ async function handleReactionCommand(
       const raw = responses[Math.floor(Math.random() * responses.length)];
 
       const member = await guild.members.fetch(user.id).catch(() => null);
-      const rendered = client.template.render(raw, {
+      // Embed responses are YAGPDB-style templates that parseCembed reads; Handlebars
+      // can't parse them and only logged a warning before falling back to the raw text.
+      const rendered = cmd.cembed_response ? raw : client.template.render(raw, {
         user: `<@${user.id}>`,
         username: member?.displayName ?? user.username,
         userId: user.id,

@@ -129,7 +129,9 @@ async function handleCustomCommands(
     if (!Array.isArray(responses) || responses.length === 0) continue;
     const raw = responses[Math.floor(Math.random() * responses.length)];
 
-    const rendered = client.template.render(raw, {
+    // Embed responses are YAGPDB-style templates that parseCembed reads; Handlebars
+    // can't parse them and only logged a warning before falling back to the raw text.
+    const rendered = cmd.cembed_response ? raw : client.template.render(raw, {
       user: `<@${message.author.id}>`,
       username: message.member?.displayName ?? message.author.username,
       userId: message.author.id,

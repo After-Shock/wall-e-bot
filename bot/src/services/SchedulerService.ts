@@ -541,7 +541,9 @@ export class SchedulerService {
 
       const responses = cmd.responses as string[];
       const raw = responses[Math.floor(Math.random() * responses.length)];
-      const rendered = this.client.template.render(raw, {
+      // Embed responses are YAGPDB-style templates that parseCembed reads; Handlebars
+      // can't parse them and only logged a warning before falling back to the raw text.
+      const rendered = cmd.cembed_response ? raw : this.client.template.render(raw, {
         server: guild.name,
         memberCount: guild.memberCount,
         channel: 'name' in channel ? `#${(channel as { name: string }).name}` : '',
