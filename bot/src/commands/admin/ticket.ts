@@ -384,7 +384,7 @@ const command: Command = {
           return;
         }
 
-        const reason = interaction.options.getString('reason') || 'No reason provided';
+        const reason = interaction.options.getString('reason') || '';
         const encodedReason = encodeURIComponent(reason).slice(0, 80);
 
         const confirmBtn = new ButtonBuilder()

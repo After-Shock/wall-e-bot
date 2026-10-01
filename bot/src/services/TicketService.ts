@@ -281,7 +281,7 @@ export async function createManagedTicket(
     );
 
     const closeBtn = new ButtonBuilder()
-      .setCustomId(`ticket_close_confirm:${ticketId}:No%20reason%20provided`)
+      .setCustomId(`ticket_close_confirm:${ticketId}:`)
       .setLabel('Close Ticket')
       .setEmoji('🔒')
       .setStyle(ButtonStyle.Danger);
@@ -360,9 +360,9 @@ export async function closeTicket(
       .addFields(
         { name: 'User', value: `<@${ticket.user_id}>`, inline: true },
         { name: 'Closed By', value: `<@${closedBy}>`, inline: true },
-        { name: 'Reason', value: reason, inline: false },
       )
       .setTimestamp();
+    if (reason) transcriptEmbed.addFields({ name: 'Reason', value: reason, inline: false });
 
     const transcriptFile = () => ({
       attachment: Buffer.from(transcriptText, 'utf-8'),
@@ -383,14 +383,14 @@ export async function closeTicket(
     await client.db.pool.query(
       `UPDATE tickets SET status = 'closed', closed_by = $2, closed_at = NOW(),
        close_reason = $3, transcript_message_id = $4 WHERE id = $1`,
-      [ticket.id, closedBy, reason, transcriptMessage.id],
+      [ticket.id, closedBy, reason || null, transcriptMessage.id],
     );
 
     // Best-effort copy for the requestor; the transcript channel is the record.
     try {
       const ticketUser = await client.users.fetch(ticket.user_id);
       await ticketUser.send({
-        content: `Your ticket ${channel.name} in ${guild.name} has been closed.\nReason: ${reason}`,
+        content: `Your ticket ${channel.name} in ${guild.name} has been closed.${reason ? `\nReason: ${reason}` : ''}`,
         files: [transcriptFile()],
       });
     } catch {

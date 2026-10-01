@@ -55,7 +55,9 @@ async function handleButton(client: WallEClient, interaction: ButtonInteraction)
   if (id.startsWith('ticket_close_confirm:')) {
     const parts = id.split(':');
     const ticketId = parseInt(parts[1], 10);
-    const reason = decodeURIComponent(parts.slice(2).join(':'));
+    const rawReason = decodeURIComponent(parts.slice(2).join(':'));
+    // Close buttons posted before reasons became optional still carry this default.
+    const reason = rawReason === 'No reason provided' ? '' : rawReason;
     await handleTicketCloseConfirm(client, interaction, ticketId, reason);
     return;
   }
@@ -180,7 +182,7 @@ async function handleTicketCloseConfirm(
   );
 
   if (ticketResult.rows.length === 0) {
-    await interaction.update({ content: 'Ticket not found or already closed.', components: [] });
+    await interaction.reply({ content: 'Ticket not found or already closed.', ephemeral: true });
     return;
   }
 
@@ -192,13 +194,11 @@ async function handleTicketCloseConfirm(
     await interaction.reply({ content: 'Only support staff can close this ticket.', ephemeral: true });
     return;
   }
-  await interaction.update({
-    embeds: [new EmbedBuilder()
-      .setColor(COLORS.WARNING)
-      .setTitle('Closing Ticket...')
-      .setDescription(`Reason: ${reason}`)],
-    components: [],
-  });
+  // Reply instead of editing the clicked message: the Close button sits on the
+  // welcome message holding the form answers, which the transcript must keep.
+  const closing = new EmbedBuilder().setColor(COLORS.WARNING).setTitle('Closing Ticket...');
+  if (reason) closing.setDescription(`Reason: ${reason}`);
+  await interaction.reply({ embeds: [closing] });
 
   const result = await closeTicket(client, interaction.guild!, ticket, interaction.user.id, reason);
   if (!result.closed) {

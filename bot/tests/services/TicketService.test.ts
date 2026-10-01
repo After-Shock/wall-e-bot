@@ -91,6 +91,18 @@ describe('closeTicket', () => {
     expect(fixture.ownerSend.mock.calls[0][0]).toMatchObject({ files: [expect.objectContaining({ name: 'transcript-support-0001.txt' })] });
   });
 
+  it('omits the reason everywhere when none is given', async () => {
+    const transcriptSend = jest.fn<(payload: any) => Promise<any>>().mockResolvedValue({ id: 'transcript-message' });
+    const fixture = makeFixture(transcriptSend);
+
+    await closeTicket(fixture.client as any, fixture.guild as any, fixture.ticket, 'staff-id', '');
+
+    const fieldNames = transcriptSend.mock.calls[0][0].embeds[0].data.fields.map((f: any) => f.name);
+    expect(fieldNames).not.toContain('Reason');
+    expect(fixture.query).toHaveBeenCalledWith(expect.any(String), [1, 'staff-id', null, 'transcript-message']);
+    expect(fixture.ownerSend.mock.calls[0][0].content).not.toContain('Reason');
+  });
+
   it('still closes when the requestor has DMs disabled', async () => {
     const transcriptSend = jest.fn<(payload: any) => Promise<any>>().mockResolvedValue({ id: 'transcript-message' });
     const fixture = makeFixture(transcriptSend);
