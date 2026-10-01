@@ -37,6 +37,7 @@ interface Category {
 interface Panel {
   id?: number;
   name: string;
+  description: string | null;
   panel_type: 'buttons' | 'dropdown';
   category_open_id: string;
   category_closed_id: string;
@@ -860,6 +861,42 @@ export default function TicketsPage() {
                 {/* Expanded panel editor */}
                 {panel._expanded && (
                   <div className="mt-4 space-y-4 border-t border-discord-dark pt-4">
+                    {/* Panel message: what users see above the buttons */}
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <label className="block font-medium mb-1" htmlFor={`panel-title-${panel.id}`}>Panel title</label>
+                        <input
+                          id={`panel-title-${panel.id}`}
+                          defaultValue={panel.name}
+                          maxLength={100}
+                          onBlur={e => {
+                            const name = e.target.value.trim();
+                            if (panel.id && name && name !== panel.name) void savePanel(panel.id, { name });
+                          }}
+                          className="input w-full"
+                          placeholder="OhanaTV Support"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-1" htmlFor={`panel-description-${panel.id}`}>Description</label>
+                        <textarea
+                          id={`panel-description-${panel.id}`}
+                          defaultValue={panel.description || ''}
+                          maxLength={4000}
+                          rows={4}
+                          onBlur={e => {
+                            const description = e.target.value.trim();
+                            if (panel.id && description !== (panel.description || '')) void savePanel(panel.id, { description });
+                          }}
+                          className="input w-full"
+                          placeholder="To create a ticket use the appropriate button below: ..."
+                        />
+                        <p className="text-xs text-discord-light mt-1">
+                          Shown under the title. Discord formatting works (**bold**, line breaks, emojis). Re-send the panel to update a posted one.
+                        </p>
+                      </div>
+                    </div>
+
                     {/* Panel settings */}
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>

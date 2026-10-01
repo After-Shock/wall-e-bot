@@ -1028,10 +1028,18 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, panelId } = req.params;
-    const { name, panel_type, category_open_id, category_closed_id, overflow_category_id,
+    const { name, description, panel_type, category_open_id, category_closed_id, overflow_category_id,
             channel_name_template } = req.body;
     if (panel_type !== undefined && !['buttons', 'dropdown'].includes(panel_type)) {
       res.status(400).json({ error: 'Invalid panel_type' });
+      return;
+    }
+    if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.length > 100)) {
+      res.status(400).json({ error: 'Panel title must be 1–100 characters' });
+      return;
+    }
+    if (description !== undefined && description !== null && (typeof description !== 'string' || description.length > 4000)) {
+      res.status(400).json({ error: 'Panel description must be 4000 characters or fewer' });
       return;
     }
     // Only fields present in the body change; an empty value clears that field.
@@ -1050,10 +1058,11 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
            category_open_id=CASE WHEN $9 THEN $5 ELSE category_open_id END,
            category_closed_id=CASE WHEN $10 THEN $6 ELSE category_closed_id END,
            overflow_category_id=CASE WHEN $11 THEN $7 ELSE overflow_category_id END,
-           channel_name_template=COALESCE($8,channel_name_template)
+           channel_name_template=COALESCE($8,channel_name_template),
+           description=CASE WHEN $13 THEN $12 ELSE description END
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [panelId, guildId, name, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null,
-          channel_name_template, setOpen, setClosed, setOverflow],
+        [panelId, guildId, typeof name === 'string' ? name.trim() : name, panel_type, category_open_id||null, category_closed_id||null, overflow_category_id||null,
+          channel_name_template, setOpen, setClosed, setOverflow, description?.trim() || null, 'description' in req.body],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Panel not found' }); return; }
       res.json(r.rows[0]);
@@ -1347,13 +1356,13 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireG
     );
     if (panelResult.rows.length === 0) { res.status(404).json({ error: 'Panel not found' }); return; }
     const panel = panelResult.rows[0] as {
-      id: number; name: string; panel_channel_id: string | null; panel_message_id: string | null;
+      id: number; name: string; description: string | null; panel_channel_id: string | null; panel_message_id: string | null;
       panel_type: string; categories: Array<{ id: number; name: string; emoji: string | null; description: string | null }>;
     };
 
     const components = buildPanelComponents(panel);
     const body = {
-      embeds: [{ color: 5793266, title: '🎫 Open a Ticket', description: panel.name }],
+      embeds: [{ color: 5793266, title: panel.name, description: panel.description || 'Click a button below to open a ticket.' }],
       components,
     };
 
@@ -1921,7 +1930,7 @@ guildsRouter.post(
         }
 
         const srcPanels = await client.query(
-          `SELECT id, name, panel_type, group_id, stack_position, channel_name_template
+          `SELECT id, name, description, panel_type, group_id, stack_position, channel_name_template
            FROM ticket_panels WHERE guild_id = $1`,
           [sourceGuildId],
         );
@@ -1930,13 +1939,13 @@ guildsRouter.post(
           const newGroupId = p.group_id != null ? (panelGroupIdMap.get(p.group_id) ?? null) : null;
           const ins = await client.query(
             `INSERT INTO ticket_panels
-               (guild_id, name, panel_type, group_id, stack_position,
+               (guild_id, name, description, panel_type, group_id, stack_position,
                 panel_channel_id, panel_message_id,
                 category_open_id, category_closed_id, overflow_category_id,
                 channel_name_template)
-             VALUES ($1, $2, $3, $4, $5, NULL, NULL, NULL, NULL, NULL, $6)
+             VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, NULL, NULL, $7)
              RETURNING id`,
-            [targetGuildId, p.name, p.panel_type, newGroupId, p.stack_position, p.channel_name_template],
+            [targetGuildId, p.name, p.description, p.panel_type, newGroupId, p.stack_position, p.channel_name_template],
           );
           panelIdMap.set(p.id as number, ins.rows[0].id as number);
           ticketRows++;

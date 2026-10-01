@@ -145,3 +145,56 @@ test('saving category roles keeps its emoji and description', async (t) => {
   assert.equal(category.emoji, '<:sully:62345678901234567>');
   assert.equal(category.description, 'Renewals');
 });
+
+test('sent panel uses the panel title and description like Ticket Tool', async (t) => {
+  installMocks(t, 0);
+  let posted: any;
+  t.mock.method(globalThis, 'fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/messages')) {
+      posted = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ id: '11345678901234567', channel_id: '12345678901234568' }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ guild_id: guildId, type: 0 }), { status: 200 });
+  });
+  t.mock.method(db, 'query', async (sql: string) => {
+    if (sql.includes('FROM ticket_panels p')) {
+      return { rows: [{
+        id: 1, name: 'OhanaTV Support', description: 'To create a ticket use the appropriate button below:',
+        panel_type: 'buttons', panel_channel_id: null, panel_message_id: null,
+        categories: [{ id: 7, name: 'Renewal Ticket', emoji: '<:sully:62345678901234567>', description: null }],
+      }] } as any;
+    }
+    return { rows: [] } as any;
+  });
+
+  const response = await request(buildApp())
+    .post(`/api/guilds/${guildId}/ticket-panels/1/send`)
+    .send({ channel_id: '12345678901234568' });
+
+  assert.equal(response.status, 200);
+  assert.equal(posted.embeds[0].title, 'OhanaTV Support');
+  assert.equal(posted.embeds[0].description, 'To create a ticket use the appropriate button below:');
+  assert.deepEqual(posted.components[0].components[0].emoji, { id: '62345678901234567', name: 'sully', animated: false });
+});
+
+test('panel description saves without touching the title, and titles cannot be blank', async (t) => {
+  installMocks(t, 4);
+  let params: any[] = [];
+  t.mock.method(db, 'query', async (sql: string, p: any[] = []) => {
+    if (sql.includes('UPDATE ticket_panels')) params = p;
+    return { rows: [{ id: 1 }] } as any;
+  });
+
+  const ok = await request(buildApp())
+    .put(`/api/guilds/${guildId}/ticket-panels/1`)
+    .send({ description: '  Pick a button  ' });
+  assert.equal(ok.status, 200);
+  assert.equal(params[2], undefined); // name untouched (COALESCE keeps it)
+  assert.equal(params[11], 'Pick a button');
+  assert.equal(params[12], true);
+
+  const blank = await request(buildApp())
+    .put(`/api/guilds/${guildId}/ticket-panels/1`)
+    .send({ name: '   ' });
+  assert.equal(blank.status, 400);
+});
