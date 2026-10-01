@@ -1073,6 +1073,68 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAc
   }),
 );
 
+// POST /guilds/:guildId/ticket-panels/:panelId/clone
+// Copies the panel, its categories (roles, emoji, colour) and form questions in one
+// transaction. The clone starts unsent and ungrouped.
+guildsRouter.post('/:guildId/ticket-panels/:panelId/clone', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 10, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const { guildId, panelId } = req.params;
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const panelResult = await client.query(
+        `INSERT INTO ticket_panels
+           (guild_id, name, description, panel_type, category_open_id, category_closed_id,
+            overflow_category_id, channel_name_template)
+         SELECT guild_id, LEFT(name || ' (copy)', 100), description, panel_type, category_open_id,
+                category_closed_id, overflow_category_id, channel_name_template
+         FROM ticket_panels WHERE id = $1 AND guild_id = $2
+         RETURNING *`,
+        [panelId, guildId],
+      );
+      if (!panelResult.rows[0]) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: 'Panel not found' });
+        return;
+      }
+      const clone = panelResult.rows[0];
+      const sourceCategories = await client.query(
+        'SELECT * FROM ticket_categories WHERE panel_id = $1 AND guild_id = $2 ORDER BY position, id',
+        [panelId, guildId],
+      );
+      const categories = [];
+      for (const cat of sourceCategories.rows) {
+        const catResult = await client.query(
+          `INSERT INTO ticket_categories
+             (panel_id, guild_id, name, emoji, description, support_role_ids, observer_role_ids, position, button_style)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING *`,
+          [clone.id, guildId, cat.name, cat.emoji, cat.description, cat.support_role_ids, cat.observer_role_ids,
+            cat.position, cat.button_style],
+        );
+        const fields = await client.query(
+          `INSERT INTO ticket_form_fields (category_id, label, placeholder, min_length, max_length, style, required, position)
+           SELECT $1, label, placeholder, min_length, max_length, style, required, position
+           FROM ticket_form_fields WHERE category_id = $2
+           ORDER BY position, id
+           RETURNING *`,
+          [catResult.rows[0].id, cat.id],
+        );
+        categories.push({ ...catResult.rows[0], form_fields: fields.rows.sort((a, b) => a.position - b.position) });
+      }
+      await client.query('COMMIT');
+      res.json({ ...clone, categories });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error cloning ticket panel:', { guildId, panelId, error });
+      res.status(500).json({ error: 'Failed to clone panel' });
+    } finally {
+      client.release();
+    }
+  }),
+);
+
 // DELETE /guilds/:guildId/ticket-panels/:panelId
 guildsRouter.delete('/:guildId/ticket-panels/:panelId', requireAuth, requireGuildAccess,
   rateLimitByGuild({ max: 10, windowSeconds: 60 }),

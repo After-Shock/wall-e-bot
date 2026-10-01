@@ -209,3 +209,51 @@ test('category button colour must be one Discord supports', async (t) => {
   const bad = await request(buildApp()).put(`/api/guilds/${guildId}/ticket-categories/7`).send({ button_style: 'purple' });
   assert.equal(bad.status, 400);
 });
+
+function mockTransaction(t: test.TestContext, handle: (sql: string, params: any[]) => any) {
+  const statements: string[] = [];
+  const client = {
+    query: async (sql: string, params: any[] = []) => {
+      statements.push(sql.trim().split(/\s+/).slice(0, 3).join(' '));
+      return handle(sql, params) ?? { rows: [] };
+    },
+    release: () => {},
+  };
+  t.mock.method(db, 'connect', async () => client as any);
+  return statements;
+}
+
+test('clone copies the panel, its categories and their questions', async (t) => {
+  installMocks(t, 4);
+  let categoryInsert: any[] = [];
+  const statements = mockTransaction(t, (sql, params) => {
+    if (sql.includes('INSERT INTO ticket_panels')) return { rows: [{ id: 2, name: 'OhanaTV Support (copy)' }] };
+    if (sql.includes('SELECT * FROM ticket_categories')) {
+      return { rows: [{ id: 7, name: 'Renewal', emoji: '🔄', description: null, support_role_ids: ['714306406890864670'],
+        observer_role_ids: [], position: 0, button_style: 'success' }] };
+    }
+    if (sql.includes('INSERT INTO ticket_categories')) { categoryInsert = params; return { rows: [{ id: 8, name: 'Renewal' }] }; }
+    if (sql.includes('INSERT INTO ticket_form_fields')) {
+      return { rows: [{ id: 21, label: 'Months?', position: 1 }, { id: 20, label: 'User name?', position: 0 }] };
+    }
+  });
+
+  const response = await request(buildApp()).post(`/api/guilds/${guildId}/ticket-panels/1/clone`);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.name, 'OhanaTV Support (copy)');
+  assert.deepEqual(categoryInsert, [2, guildId, 'Renewal', '🔄', null, ['714306406890864670'], [], 0, 'success']);
+  assert.deepEqual(response.body.categories[0].form_fields.map((f: any) => f.label), ['User name?', 'Months?']);
+  assert.equal(statements.at(-1), 'COMMIT');
+});
+
+test('cloning a panel from another guild is a 404 and rolls back', async (t) => {
+  installMocks(t, 4);
+  const statements = mockTransaction(t, () => ({ rows: [] }));
+
+  const response = await request(buildApp()).post(`/api/guilds/${guildId}/ticket-panels/99/clone`);
+
+  assert.equal(response.status, 404);
+  assert.ok(statements.includes('ROLLBACK'));
+  assert.ok(!statements.includes('COMMIT'));
+});

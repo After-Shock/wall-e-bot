@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ticket, Save, Plus, Trash2, Hash, Clock,
-  ChevronDown, ChevronRight, FileText, Loader2, Send, Pencil
+  ChevronDown, ChevronRight, FileText, Loader2, Send, Pencil, Copy
 } from 'lucide-react';
 import { ticketApi, api } from '../../services/api';
 import { EmojiPicker, type ServerEmoji } from '../../components/EmojiPicker';
@@ -565,13 +565,34 @@ export default function TicketsPage() {
     setPanels(prev => prev.map(p => p.id === panelId ? { ...p, _expanded: !p._expanded } : p));
   };
 
-  const savePanel = async (panelId: number, data: Record<string, unknown>) => {
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
+
+  const renamePanel = async () => {
+    if (!renaming) return;
+    const name = renaming.name.trim();
+    if (!name) return;
+    if (await savePanel(renaming.id, { name })) setRenaming(null);
+  };
+
+  const clonePanel = async (panelId: number) => {
     if (!guildId) return;
+    try {
+      const clone = await ticketApi.clonePanel(guildId, panelId);
+      setPanels(prev => [...prev, { ...clone, _expanded: true }]);
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to clone panel');
+    }
+  };
+
+  const savePanel = async (panelId: number, data: Record<string, unknown>) => {
+    if (!guildId) return false;
     try {
       const updated = await ticketApi.updatePanel(guildId, panelId, data);
       setPanels(prev => prev.map(p => p.id === panelId ? { ...p, ...updated } : p));
+      return true;
     } catch (e: any) {
       setError(e?.response?.data?.error || 'Failed to save panel');
+      return false;
     }
   };
 
@@ -838,6 +859,24 @@ export default function TicketsPage() {
               <div key={panel.id} className="card">
                 {/* Panel header */}
                 <div className="flex items-center gap-3">
+                  {renaming && renaming.id === panel.id ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        autoFocus
+                        value={renaming.name}
+                        maxLength={100}
+                        onChange={e => setRenaming({ id: renaming.id, name: e.target.value })}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') void renamePanel();
+                          if (e.key === 'Escape') setRenaming(null);
+                        }}
+                        className="input flex-1"
+                        aria-label="Panel title"
+                      />
+                      <button onClick={() => void renamePanel()} disabled={!renaming.name.trim()} className="btn btn-primary text-xs">Save</button>
+                      <button onClick={() => setRenaming(null)} className="btn btn-secondary text-xs">Cancel</button>
+                    </div>
+                  ) : (
                   <button onClick={() => panel.id && togglePanel(panel.id)} className="flex items-center gap-2 flex-1 text-left">
                     {panel._expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     <span className="font-semibold">{panel.name}</span>
@@ -847,6 +886,23 @@ export default function TicketsPage() {
                     <span className="text-xs text-discord-light">
                       {panel.categories?.length || 0} categories
                     </span>
+                  </button>
+                  )}
+                  <button
+                    onClick={() => panel.id && setRenaming({ id: panel.id, name: panel.name })}
+                    className="p-2 text-discord-light hover:text-white transition-colors"
+                    title="Rename panel"
+                    aria-label={`Rename panel ${panel.name}`}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => panel.id && clonePanel(panel.id)}
+                    className="p-2 text-discord-light hover:text-white transition-colors"
+                    title="Clone panel"
+                    aria-label={`Clone panel ${panel.name}`}
+                  >
+                    <Copy className="w-4 h-4" />
                   </button>
                   <select
                     value=""
@@ -873,20 +929,6 @@ export default function TicketsPage() {
                   <div className="mt-4 space-y-4 border-t border-discord-dark pt-4">
                     {/* Panel message: what users see above the buttons */}
                     <div className="space-y-3 text-sm">
-                      <div>
-                        <label className="block font-medium mb-1" htmlFor={`panel-title-${panel.id}`}>Panel title</label>
-                        <input
-                          id={`panel-title-${panel.id}`}
-                          defaultValue={panel.name}
-                          maxLength={100}
-                          onBlur={e => {
-                            const name = e.target.value.trim();
-                            if (panel.id && name && name !== panel.name) void savePanel(panel.id, { name });
-                          }}
-                          className="input w-full"
-                          placeholder="OhanaTV Support"
-                        />
-                      </div>
                       <div>
                         <label className="block font-medium mb-1" htmlFor={`panel-description-${panel.id}`}>Description</label>
                         <textarea

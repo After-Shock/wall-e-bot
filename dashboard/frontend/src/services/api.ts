@@ -30,6 +30,8 @@ export const ticketApi = {
 
   createPanel: (guildId: string, data: any) =>
     api.post(`/api/guilds/${guildId}/ticket-panels`, data).then(r => r.data),
+  clonePanel: (guildId: string, panelId: number) =>
+    api.post(`/api/guilds/${guildId}/ticket-panels/${panelId}/clone`).then(r => r.data),
 
   updatePanel: (guildId: string, panelId: number, data: any) =>
     api.put(`/api/guilds/${guildId}/ticket-panels/${panelId}`, data).then(r => r.data),
