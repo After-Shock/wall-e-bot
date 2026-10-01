@@ -950,11 +950,17 @@ guildsRouter.get('/:guildId/ticket-panels', requireAuth, requireGuildAccess, asy
       'SELECT * FROM ticket_categories WHERE panel_id = ANY($1::int[]) ORDER BY panel_id, position',
       [panelIds],
     );
+    const fields = await db.query(
+      'SELECT * FROM ticket_form_fields WHERE category_id = ANY($1::int[]) ORDER BY category_id, position, id',
+      [cats.rows.map((c: any) => c.id)],
+    );
+    const fieldsByCategory: Record<number, any[]> = {};
+    for (const field of fields.rows) (fieldsByCategory[field.category_id] ??= []).push(field);
     // Group categories by panel_id
     const catsByPanel: Record<number, any[]> = {};
     for (const cat of cats.rows) {
       if (!catsByPanel[cat.panel_id]) catsByPanel[cat.panel_id] = [];
-      catsByPanel[cat.panel_id].push(cat);
+      catsByPanel[cat.panel_id].push({ ...cat, form_fields: fieldsByCategory[cat.id] || [] });
     }
     const result = panels.rows.map((p: any) => ({ ...p, categories: catsByPanel[p.id] || [] }));
     res.json(result);
@@ -1469,6 +1475,13 @@ guildsRouter.delete('/:guildId/ticket-categories/:categoryId', requireAuth, requ
 );
 
 // GET /guilds/:guildId/ticket-categories/:categoryId/form-fields
+// Discord modal limits: question labels 45 characters, placeholders 100.
+function formFieldLimitError(label: unknown, placeholder: unknown): string | null {
+  if (typeof label === 'string' && label.length > 45) return 'Question must be 45 characters or fewer (Discord limit)';
+  if (typeof placeholder === 'string' && placeholder.length > 100) return 'Placeholder must be 100 characters or fewer (Discord limit)';
+  return null;
+}
+
 guildsRouter.get('/:guildId/ticket-categories/:categoryId/form-fields', requireAuth, requireGuildAccess,
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
@@ -1510,6 +1523,8 @@ guildsRouter.post('/:guildId/ticket-categories/:categoryId/form-fields', require
       }
       const { label, placeholder, min_length = 0, max_length = 1024, style = 'short', required = true } = req.body;
       if (!label) { res.status(400).json({ error: 'label is required' }); return; }
+      const limitError = formFieldLimitError(label, placeholder);
+      if (limitError) { res.status(400).json({ error: limitError }); return; }
       const posResult = await db.query(
         'SELECT COALESCE(MAX(position),-1)+1 as next FROM ticket_form_fields WHERE category_id=$1',
         [categoryId],
@@ -1533,10 +1548,12 @@ guildsRouter.put('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGu
   asyncHandler(async (req, res) => {
     const { guildId, fieldId } = req.params;
     const { label, placeholder, min_length, max_length, style, required, position } = req.body;
+    const limitError = formFieldLimitError(label, placeholder);
+    if (limitError) { res.status(400).json({ error: limitError }); return; }
     try {
       const r = await db.query(
         `UPDATE ticket_form_fields SET
-           label=COALESCE($2,label), placeholder=$3,
+           label=COALESCE($2,label), placeholder=CASE WHEN $10 THEN $3 ELSE placeholder END,
            min_length=COALESCE($4,min_length), max_length=COALESCE($5,max_length),
            style=COALESCE($6,style), required=COALESCE($7,required), position=COALESCE($8,position)
          WHERE id=$1
@@ -1546,7 +1563,7 @@ guildsRouter.put('/:guildId/ticket-form-fields/:fieldId', requireAuth, requireGu
              WHERE tp.guild_id = $9
            )
          RETURNING *`,
-        [fieldId, label, placeholder||null, min_length, max_length, style, required, position, guildId],
+        [fieldId, label, placeholder||null, min_length, max_length, style, required, position, guildId, 'placeholder' in req.body],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Field not found' }); return; }
       res.json(r.rows[0]);

@@ -72,3 +72,43 @@ test('a panel category must be a Discord category', async (t) => {
   assert.equal(response.body.error, NOT_A_CATEGORY);
   assert.equal(panel.category_open_id, openCategoryId);
 });
+
+test('panel list includes each category\'s questions', async (t) => {
+  installMocks(t, 4);
+  t.mock.method(db, 'query', async (sql: string) => {
+    if (sql.includes('FROM ticket_panels')) return { rows: [{ id: 1, guild_id: guildId }] } as any;
+    if (sql.includes('FROM ticket_categories')) return { rows: [{ id: 7, panel_id: 1 }] } as any;
+    if (sql.includes('FROM ticket_form_fields')) {
+      return { rows: [{ id: 3, category_id: 7, label: 'User name?', placeholder: 'jsmith42', position: 0 }] } as any;
+    }
+    return { rows: [] } as any;
+  });
+
+  const response = await request(buildApp()).get(`/api/guilds/${guildId}/ticket-panels`);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body[0].categories[0].form_fields.map((f: any) => f.placeholder), ['jsmith42']);
+});
+
+test('updating a question only changes its placeholder when one is sent', async (t) => {
+  installMocks(t, 4);
+  const field = { id: 3, label: 'User name?', placeholder: 'jsmith42' as string | null };
+  t.mock.method(db, 'query', async (sql: string, params: any[] = []) => {
+    if (!sql.includes('UPDATE ticket_form_fields')) return { rows: [] } as any;
+    if (params[1] != null) field.label = params[1];
+    if (params[9]) field.placeholder = params[2];
+    return { rows: [{ ...field }] } as any;
+  });
+
+  const relabel = await request(buildApp())
+    .put(`/api/guilds/${guildId}/ticket-form-fields/3`)
+    .send({ label: 'OhanaTV user name?' });
+  assert.equal(relabel.status, 200);
+  assert.equal(field.placeholder, 'jsmith42');
+
+  const tooLong = await request(buildApp())
+    .put(`/api/guilds/${guildId}/ticket-form-fields/3`)
+    .send({ placeholder: 'x'.repeat(101) });
+  assert.equal(tooLong.status, 400);
+  assert.equal(field.placeholder, 'jsmith42');
+});

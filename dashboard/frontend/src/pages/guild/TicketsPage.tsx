@@ -480,6 +480,22 @@ export default function TicketsPage() {
     }
   };
 
+  const saveFormField = async (fieldId: number, categoryId: number, panelId: number, data: Partial<FormField>) => {
+    if (!guildId) return;
+    try {
+      const updated = await ticketApi.updateFormField(guildId, fieldId, data);
+      setPanels(prev => prev.map(p => p.id === panelId ? {
+        ...p,
+        categories: (p.categories || []).map(c => c.id === categoryId
+          ? { ...c, form_fields: (c.form_fields || []).map(f => f.id === fieldId ? { ...f, ...updated } : f) }
+          : c
+        ),
+      } : p));
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to save question');
+    }
+  };
+
   const deleteFormField = async (fieldId: number, categoryId: number, panelId: number) => {
     if (!guildId) return;
     try {
@@ -885,11 +901,26 @@ export default function TicketsPage() {
                                 </p>
                                 {(cat.form_fields || []).map(field => (
                                   <div key={field.id} className="flex items-center gap-2 bg-discord-mid rounded p-2">
-                                    <div className="flex-1">
-                                      <span className="text-sm font-medium">{field.label}</span>
-                                      <span className="text-xs text-discord-light ml-2">
-                                        ({field.style}, {field.required ? 'required' : 'optional'})
-                                      </span>
+                                    <div className="flex-1 space-y-1">
+                                      <div>
+                                        <span className="text-sm font-medium">{field.label}</span>
+                                        <span className="text-xs text-discord-light ml-2">
+                                          ({field.style}, {field.required ? 'required' : 'optional'})
+                                        </span>
+                                      </div>
+                                      <input
+                                        defaultValue={field.placeholder || ''}
+                                        maxLength={100}
+                                        onBlur={e => {
+                                          const placeholder = e.target.value.trim();
+                                          if (field.id && cat.id && panel.id && placeholder !== (field.placeholder || '')) {
+                                            void saveFormField(field.id, cat.id, panel.id, { placeholder });
+                                          }
+                                        }}
+                                        className="input w-full text-xs"
+                                        placeholder="Placeholder hint shown in the empty box (e.g. jsmith42)"
+                                        aria-label={`Placeholder for ${field.label}`}
+                                      />
                                     </div>
                                     <button
                                       onClick={() => guildId && field.id && cat.id && panel.id && deleteFormField(field.id, cat.id, panel.id)}
