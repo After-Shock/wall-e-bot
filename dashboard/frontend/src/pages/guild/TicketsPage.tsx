@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronRight, FileText, Loader2, Send, Pencil
 } from 'lucide-react';
 import { ticketApi, api } from '../../services/api';
+import { EmojiPicker, type ServerEmoji } from '../../components/EmojiPicker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -462,6 +463,12 @@ export default function TicketsPage() {
   const { data: roles = [] } = useQuery<DiscordRole[]>({
     queryKey: ['roles', guildId],
     queryFn: () => api.get(`/api/guilds/${guildId}/roles`).then(r => r.data),
+    enabled: !!guildId,
+  });
+
+  const { data: serverEmojis = [] } = useQuery<ServerEmoji[]>({
+    queryKey: ['emojis', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/emojis`).then(r => r.data),
     enabled: !!guildId,
   });
 
@@ -970,15 +977,10 @@ export default function TicketsPage() {
                                   </div>
                                   <div>
                                     <label className="block text-xs text-discord-light mb-1">Emoji</label>
-                                    <input
+                                    <EmojiPicker
                                       value={cat.emoji || ''}
-                                      onChange={e => setPanels(prev => prev.map(p => p.id === panel.id ? {
-                                        ...p,
-                                        categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, emoji: e.target.value } : c),
-                                      } : p))}
-                                      onBlur={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { emoji: e.target.value })}
-                                      className="input w-full"
-                                      placeholder="🎫"
+                                      serverEmojis={serverEmojis}
+                                      onChange={emoji => panel.id && cat.id && updateCategory(panel.id, cat.id, { emoji })}
                                     />
                                   </div>
                                   <div className="md:col-span-2">

@@ -9,7 +9,7 @@ import { guildConfigService, validationService } from '../services/index.js';
 import * as analyticsService from '../services/analyticsService.js';
 import * as backupService from '../services/backupService.js';
 import { z } from 'zod';
-import { reactionRoleBody, buildReactionRoleMessage, type ReactionRoleEntry } from '../utils/reactionRoles.js';
+import { reactionRoleBody, buildReactionRoleMessage, parseEmoji, type ReactionRoleEntry } from '../utils/reactionRoles.js';
 import { resolveUsers } from '../utils/discordUsers.js';
 import { findCategoryInGuild } from '../utils/ticketScope.js';
 import {
@@ -1204,7 +1204,7 @@ function buildPanelComponents(panel: {
         options: cats.map(c => ({
           label: c.name,
           value: String(c.id),
-          ...(c.emoji ? { emoji: { name: c.emoji } } : {}),
+          ...(c.emoji ? { emoji: parseEmoji(c.emoji) } : {}),
           ...(c.description ? { description: c.description } : {}),
         })),
       }],
@@ -1220,7 +1220,7 @@ function buildPanelComponents(panel: {
         style: 1,
         label: c.name,
         custom_id: `ticket_open:${panel.id}:${c.id}`,
-        ...(c.emoji ? { emoji: { name: c.emoji } } : {}),
+        ...(c.emoji ? { emoji: parseEmoji(c.emoji) } : {}),
       })),
     });
   }
@@ -1384,6 +1384,7 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
   asyncHandler(async (req, res) => {
     const { guildId, panelId } = req.params;
     const { name, emoji, description, support_role_ids = [], observer_role_ids = [] } = req.body;
+    if (typeof emoji === 'string' && emoji.length > 100) { res.status(400).json({ error: 'Emoji is too long' }); return; }
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
     const normalizedSupportRoleIds = [...new Set(support_role_ids as string[])];
     const normalizedObserverRoleIds = [...new Set(observer_role_ids as string[])].filter(id => !normalizedSupportRoleIds.includes(id));
@@ -1421,6 +1422,7 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
     const { name, emoji, description, support_role_ids, observer_role_ids, position } = req.body;
+    if (typeof emoji === 'string' && emoji.length > 100) { res.status(400).json({ error: 'Emoji is too long' }); return; }
     const normalizedSupportRoleIds = support_role_ids === undefined ? undefined : [...new Set(support_role_ids as string[])];
     const normalizedObserverRoleIds = observer_role_ids === undefined
       ? undefined
@@ -1442,12 +1444,15 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
     try {
       const r = await db.query(
         `UPDATE ticket_categories SET
-           name=COALESCE($3,name), emoji=$4, description=$5,
+           name=COALESCE($3,name),
+           emoji=CASE WHEN $9 THEN $4 ELSE emoji END,
+           description=CASE WHEN $10 THEN $5 ELSE description END,
            support_role_ids=COALESCE($6,support_role_ids),
            observer_role_ids=COALESCE($7,observer_role_ids),
            position=COALESCE($8,position)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
-        [categoryId, guildId, name, emoji||null, description||null, normalizedSupportRoleIds, normalizedObserverRoleIds, position],
+        [categoryId, guildId, name, emoji||null, description||null, normalizedSupportRoleIds, normalizedObserverRoleIds, position,
+          'emoji' in req.body, 'description' in req.body],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
       res.json(r.rows[0]);
@@ -2071,6 +2076,17 @@ guildsRouter.get('/:guildId/roles', requireAuth, requireGuildAccess, asyncHandle
 }));
 
 // GET /api/guilds/:guildId/channels — returns text channels for dropdowns
+// GET /guilds/:guildId/emojis — the server's custom emoji, formatted as Discord expects them in text.
+guildsRouter.get('/:guildId/emojis', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
+  const { guildId } = req.params;
+  const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/emojis`, { headers: botAuth() });
+  if (!response.ok) { res.status(502).json({ error: 'Failed to fetch server emojis' }); return; }
+  const emojis = await response.json() as { id: string; name: string; animated?: boolean; available?: boolean }[];
+  res.json(emojis
+    .filter(e => e.available !== false)
+    .map(e => ({ id: e.id, name: e.name, animated: !!e.animated, value: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })));
+}));
+
 guildsRouter.get('/:guildId/channels', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   const { guildId } = req.params;
   const token = process.env.DISCORD_TOKEN;

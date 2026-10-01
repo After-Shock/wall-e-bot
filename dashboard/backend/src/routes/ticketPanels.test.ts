@@ -112,3 +112,36 @@ test('updating a question only changes its placeholder when one is sent', async 
   assert.equal(tooLong.status, 400);
   assert.equal(field.placeholder, 'jsmith42');
 });
+
+test('server emoji list is formatted for Discord text and skips unavailable ones', async (t) => {
+  installMocks(t, 4);
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify([
+    { id: '62345678901234567', name: 'sully', animated: false },
+    { id: '72345678901234567', name: 'dance', animated: true },
+    { id: '82345678901234567', name: 'boosted', available: false },
+  ]), { status: 200 }));
+
+  const response = await request(buildApp()).get(`/api/guilds/${guildId}/emojis`);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.map((e: any) => e.value), ['<:sully:62345678901234567>', '<a:dance:72345678901234567>']);
+});
+
+test('saving category roles keeps its emoji and description', async (t) => {
+  installMocks(t, 4);
+  const category = { id: 7, emoji: '<:sully:62345678901234567>' as string | null, description: 'Renewals' as string | null };
+  t.mock.method(db, 'query', async (sql: string, params: any[] = []) => {
+    if (!sql.includes('UPDATE ticket_categories')) return { rows: [] } as any;
+    if (params[8]) category.emoji = params[3];
+    if (params[9]) category.description = params[4];
+    return { rows: [{ ...category }] } as any;
+  });
+
+  const response = await request(buildApp())
+    .put(`/api/guilds/${guildId}/ticket-categories/7`)
+    .send({ support_role_ids: ['92345678901234567'] });
+
+  assert.equal(response.status, 200);
+  assert.equal(category.emoji, '<:sully:62345678901234567>');
+  assert.equal(category.description, 'Renewals');
+});

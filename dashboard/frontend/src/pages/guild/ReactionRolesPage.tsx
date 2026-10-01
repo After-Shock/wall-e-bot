@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
+import { EmojiPreview } from '../../components/EmojiPicker';
 import { Smile, Plus, Trash2, Save, Hash, Edit } from 'lucide-react';
 
 interface ReactionRole {
@@ -31,22 +32,6 @@ interface GuildRole {
   id: string;
   name: string;
   color: number;
-}
-
-// Custom emoji arrive as <:name:id> / <a:name:id>; render them from the CDN so
-// the preview matches what Discord will actually show.
-const CUSTOM_EMOJI = /^<(a?):([\w~]+):(\d{17,20})>$/;
-
-function EmojiPreview({ emoji }: { emoji: string }) {
-  const custom = CUSTOM_EMOJI.exec(emoji.trim());
-  if (!custom) return <span>{emoji}</span>;
-  return (
-    <img
-      src={`https://cdn.discordapp.com/emojis/${custom[3]}.${custom[1] ? 'gif' : 'png'}?size=32`}
-      alt={`:${custom[2]}:`}
-      className="w-5 h-5 inline-block"
-    />
-  );
 }
 
 const blank = (): ReactionRoleMessage => ({
