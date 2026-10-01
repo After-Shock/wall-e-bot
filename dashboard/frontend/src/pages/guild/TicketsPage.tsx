@@ -30,9 +30,19 @@ interface Category {
   support_role_ids: string[];
   observer_role_ids: string[];
   position: number;
+  button_style?: ButtonStyleName;
   form_fields?: FormField[];
   _expanded?: boolean;
 }
+
+type ButtonStyleName = 'primary' | 'success' | 'secondary' | 'danger';
+// Labels match how Discord renders each button style.
+const BUTTON_COLOURS: { value: ButtonStyleName; label: string; swatch: string }[] = [
+  { value: 'primary', label: 'Blue', swatch: 'bg-[#5865F2]' },
+  { value: 'success', label: 'Green', swatch: 'bg-[#248046]' },
+  { value: 'secondary', label: 'Grey', swatch: 'bg-[#4E5058]' },
+  { value: 'danger', label: 'Red', swatch: 'bg-[#DA373C]' },
+];
 
 interface Panel {
   id?: number;
@@ -1019,6 +1029,26 @@ export default function TicketsPage() {
                                       serverEmojis={serverEmojis}
                                       onChange={emoji => panel.id && cat.id && updateCategory(panel.id, cat.id, { emoji })}
                                     />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-discord-light mb-1" htmlFor={`button-colour-${cat.id}`}>Button colour</label>
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className={`w-4 h-4 rounded shrink-0 ${BUTTON_COLOURS.find(c => c.value === (cat.button_style || 'primary'))?.swatch}`}
+                                        aria-hidden="true"
+                                      />
+                                      <select
+                                        id={`button-colour-${cat.id}`}
+                                        value={cat.button_style || 'primary'}
+                                        onChange={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { button_style: e.target.value as ButtonStyleName })}
+                                        className="input w-full"
+                                      >
+                                        {BUTTON_COLOURS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                      </select>
+                                    </div>
+                                    {panel.panel_type === 'dropdown' && (
+                                      <p className="text-xs text-discord-light mt-1">Dropdown panels have no button colours.</p>
+                                    )}
                                   </div>
                                   <div className="md:col-span-2">
                                     <label className="block text-xs text-discord-light mb-1">Description</label>

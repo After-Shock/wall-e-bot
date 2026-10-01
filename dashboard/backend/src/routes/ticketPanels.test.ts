@@ -161,7 +161,7 @@ test('sent panel uses the panel title and description like Ticket Tool', async (
       return { rows: [{
         id: 1, name: 'OhanaTV Support', description: 'To create a ticket use the appropriate button below:',
         panel_type: 'buttons', panel_channel_id: null, panel_message_id: null,
-        categories: [{ id: 7, name: 'Renewal Ticket', emoji: '<:sully:62345678901234567>', description: null }],
+        categories: [{ id: 7, name: 'Renewal Ticket', emoji: '<:sully:62345678901234567>', description: null, button_style: 'success' }],
       }] } as any;
     }
     return { rows: [] } as any;
@@ -175,6 +175,7 @@ test('sent panel uses the panel title and description like Ticket Tool', async (
   assert.equal(posted.embeds[0].title, 'OhanaTV Support');
   assert.equal(posted.embeds[0].description, 'To create a ticket use the appropriate button below:');
   assert.deepEqual(posted.components[0].components[0].emoji, { id: '62345678901234567', name: 'sully', animated: false });
+  assert.equal(posted.components[0].components[0].style, 3); // green
 });
 
 test('panel description saves without touching the title, and titles cannot be blank', async (t) => {
@@ -197,4 +198,14 @@ test('panel description saves without touching the title, and titles cannot be b
     .put(`/api/guilds/${guildId}/ticket-panels/1`)
     .send({ name: '   ' });
   assert.equal(blank.status, 400);
+});
+
+test('category button colour must be one Discord supports', async (t) => {
+  installMocks(t, 4);
+  t.mock.method(db, 'query', async () => ({ rows: [{ id: 7, button_style: 'success' }] }) as any);
+
+  const ok = await request(buildApp()).put(`/api/guilds/${guildId}/ticket-categories/7`).send({ button_style: 'success' });
+  assert.equal(ok.status, 200);
+  const bad = await request(buildApp()).put(`/api/guilds/${guildId}/ticket-categories/7`).send({ button_style: 'purple' });
+  assert.equal(bad.status, 400);
 });

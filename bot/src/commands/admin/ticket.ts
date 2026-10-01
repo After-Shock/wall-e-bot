@@ -14,6 +14,14 @@ import type { Command } from '../../structures/Command.js';
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
 import { COLORS } from '@wall-e/shared';
 
+// Category button colours as stored by the dashboard.
+const BUTTON_STYLES: Record<string, ButtonStyle> = {
+  primary: ButtonStyle.Primary,
+  secondary: ButtonStyle.Secondary,
+  success: ButtonStyle.Success,
+  danger: ButtonStyle.Danger,
+};
+
 const command: Command = {
   data: new SlashCommandBuilder()
     .setName('ticket')
@@ -217,7 +225,7 @@ const command: Command = {
                   .setCustomId(`ticket_open:${p.id}:${c.id}`)
                   .setLabel(c.name.substring(0, 80))
                   .setEmoji(c.emoji || '🎫')
-                  .setStyle(ButtonStyle.Primary),
+                  .setStyle(BUTTON_STYLES[c.button_style] ?? ButtonStyle.Primary),
               );
               components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons));
             } else {

@@ -1186,10 +1186,14 @@ guildsRouter.put('/:guildId/ticket-panels/:panelId/group', requireAuth, requireG
   }),
 );
 
+// Discord button styles; categories store the name so the dashboard stays readable.
+const BUTTON_STYLES: Record<string, number> = { primary: 1, secondary: 2, success: 3, danger: 4 };
+const invalidButtonStyle = (style: unknown) => style !== undefined && !(typeof style === 'string' && style in BUTTON_STYLES);
+
 function buildPanelComponents(panel: {
   id: number;
   panel_type: string;
-  categories: Array<{ id: number; name: string; emoji: string | null; description: string | null }> | null;
+  categories: Array<{ id: number; name: string; emoji: string | null; description: string | null; button_style?: string }> | null;
 }): object[] {
   const cats = panel.categories ?? [];
   if (cats.length === 0) {
@@ -1226,7 +1230,7 @@ function buildPanelComponents(panel: {
       type: 1,
       components: cats.slice(i, i + 5).map(c => ({
         type: 2,
-        style: 1,
+        style: BUTTON_STYLES[c.button_style ?? 'primary'] ?? 1,
         label: c.name,
         custom_id: `ticket_open:${panel.id}:${c.id}`,
         ...(c.emoji ? { emoji: parseEmoji(c.emoji) } : {}),
@@ -1392,8 +1396,9 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, panelId } = req.params;
-    const { name, emoji, description, support_role_ids = [], observer_role_ids = [] } = req.body;
+    const { name, emoji, description, support_role_ids = [], observer_role_ids = [], button_style } = req.body;
     if (typeof emoji === 'string' && emoji.length > 100) { res.status(400).json({ error: 'Emoji is too long' }); return; }
+    if (invalidButtonStyle(button_style)) { res.status(400).json({ error: 'Invalid button colour' }); return; }
     if (!name) { res.status(400).json({ error: 'name is required' }); return; }
     const normalizedSupportRoleIds = [...new Set(support_role_ids as string[])];
     const normalizedObserverRoleIds = [...new Set(observer_role_ids as string[])].filter(id => !normalizedSupportRoleIds.includes(id));
@@ -1413,9 +1418,10 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/categories', requireAuth, re
         [panelId],
       );
       const r = await db.query(
-        `INSERT INTO ticket_categories (panel_id,guild_id,name,emoji,description,support_role_ids,observer_role_ids,position)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [panelId, guildId, name, emoji||null, description||null, normalizedSupportRoleIds, normalizedObserverRoleIds, posResult.rows[0].next],
+        `INSERT INTO ticket_categories (panel_id,guild_id,name,emoji,description,support_role_ids,observer_role_ids,position,button_style)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [panelId, guildId, name, emoji||null, description||null, normalizedSupportRoleIds, normalizedObserverRoleIds, posResult.rows[0].next,
+          button_style ?? 'primary'],
       );
       res.json(r.rows[0]);
     } catch (error) {
@@ -1430,8 +1436,9 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
   rateLimitByGuild({ max: 20, windowSeconds: 60 }),
   asyncHandler(async (req, res) => {
     const { guildId, categoryId } = req.params;
-    const { name, emoji, description, support_role_ids, observer_role_ids, position } = req.body;
+    const { name, emoji, description, support_role_ids, observer_role_ids, position, button_style } = req.body;
     if (typeof emoji === 'string' && emoji.length > 100) { res.status(400).json({ error: 'Emoji is too long' }); return; }
+    if (invalidButtonStyle(button_style)) { res.status(400).json({ error: 'Invalid button colour' }); return; }
     const normalizedSupportRoleIds = support_role_ids === undefined ? undefined : [...new Set(support_role_ids as string[])];
     const normalizedObserverRoleIds = observer_role_ids === undefined
       ? undefined
@@ -1458,10 +1465,11 @@ guildsRouter.put('/:guildId/ticket-categories/:categoryId', requireAuth, require
            description=CASE WHEN $10 THEN $5 ELSE description END,
            support_role_ids=COALESCE($6,support_role_ids),
            observer_role_ids=COALESCE($7,observer_role_ids),
-           position=COALESCE($8,position)
+           position=COALESCE($8,position),
+           button_style=COALESCE($11,button_style)
          WHERE id=$1 AND guild_id=$2 RETURNING *`,
         [categoryId, guildId, name, emoji||null, description||null, normalizedSupportRoleIds, normalizedObserverRoleIds, position,
-          'emoji' in req.body, 'description' in req.body],
+          'emoji' in req.body, 'description' in req.body, button_style],
       );
       if (!r.rows[0]) { res.status(404).json({ error: 'Category not found' }); return; }
       res.json(r.rows[0]);
@@ -1952,7 +1960,7 @@ guildsRouter.post(
         }
 
         const srcCats = await client.query(
-          `SELECT id, panel_id, name, emoji, description, support_role_ids, observer_role_ids, position
+          `SELECT id, panel_id, name, emoji, description, support_role_ids, observer_role_ids, position, button_style
            FROM ticket_categories WHERE guild_id = $1`,
           [sourceGuildId],
         );
@@ -1961,10 +1969,10 @@ guildsRouter.post(
           const newPanelId = panelIdMap.get(cat.panel_id) ?? null;
           const ins = await client.query(
             `INSERT INTO ticket_categories
-               (panel_id, guild_id, name, emoji, description, support_role_ids, observer_role_ids, position)
-             VALUES ($1, $2, $3, $4, $5, '{}', '{}', $6)
+               (panel_id, guild_id, name, emoji, description, support_role_ids, observer_role_ids, position, button_style)
+             VALUES ($1, $2, $3, $4, $5, '{}', '{}', $6, $7)
              RETURNING id`,
-            [newPanelId, targetGuildId, cat.name, cat.emoji, cat.description, cat.position],
+            [newPanelId, targetGuildId, cat.name, cat.emoji, cat.description, cat.position, cat.button_style],
           );
           categoryIdMap.set(cat.id as number, ins.rows[0].id as number);
           ticketRows++;
