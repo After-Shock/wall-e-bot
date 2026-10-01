@@ -226,6 +226,50 @@ function AddQuestionsForm({ remaining, onSave }: {
   );
 }
 
+// Inline like AddQuestionsForm, so the name can be pasted from another tab.
+function AddCategoryForm({ onAdd }: { onAdd: (name: string) => Promise<boolean> }) {
+  const [name, setName] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  if (name === null) {
+    return (
+      <button onClick={() => setName('')} className="btn btn-secondary text-xs flex items-center gap-1">
+        <Plus className="w-3 h-3" /> Add Category
+      </button>
+    );
+  }
+
+  const submit = async () => {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    const added = await onAdd(name.trim());
+    setSaving(false);
+    if (added) setName(null);
+  };
+
+  return (
+    <div className="flex gap-2 items-center">
+      <input
+        autoFocus
+        value={name}
+        maxLength={80}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') void submit();
+          if (e.key === 'Escape') setName(null);
+        }}
+        className="input text-xs w-48"
+        placeholder="Category name (button label)"
+        aria-label="New category name"
+      />
+      <button onClick={() => setName(null)} className="btn btn-secondary text-xs">Cancel</button>
+      <button onClick={() => void submit()} disabled={!name.trim() || saving} className="btn btn-primary text-xs">
+        {saving ? 'Adding…' : 'Add'}
+      </button>
+    </div>
+  );
+}
+
 function PanelSendButton({ panel, channels, guildId, onAfterSend }: {
   panel: Panel; channels: DiscordChannel[]; guildId: string; onAfterSend?: () => void;
 }) {
@@ -513,18 +557,18 @@ export default function TicketsPage() {
     }
   };
 
-  const addCategory = async (panelId: number) => {
-    if (!guildId) return;
-    const name = prompt('Category name:');
-    if (!name?.trim()) return;
+  const addCategory = async (panelId: number, name: string) => {
+    if (!guildId) return false;
     try {
       const cat = await ticketApi.createCategory(guildId, panelId, { name, emoji: '🎫', description: '' });
       setPanels(prev => prev.map(p => p.id === panelId
         ? { ...p, categories: [...(p.categories || []), { ...cat, form_fields: [] }] }
         : p
       ));
+      return true;
     } catch (e: any) {
       setError(e?.response?.data?.error || 'Failed to add category');
+      return false;
     }
   };
 
@@ -869,12 +913,7 @@ export default function TicketsPage() {
                         <h4 className="font-semibold text-sm">
                           Categories ({panel.categories?.length || 0}/5)
                         </h4>
-                        <button
-                          onClick={() => panel.id && addCategory(panel.id)}
-                          className="btn btn-secondary text-xs flex items-center gap-1"
-                        >
-                          <Plus className="w-3 h-3" /> Add Category
-                        </button>
+                        {panel.id && <AddCategoryForm onAdd={name => addCategory(panel.id!, name)} />}
                       </div>
 
                       <div className="space-y-2">
