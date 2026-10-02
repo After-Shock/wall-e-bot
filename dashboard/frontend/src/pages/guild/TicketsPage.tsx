@@ -471,6 +471,8 @@ export default function TicketsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Panel save errors also show inside that panel: the page banner is off-screen while editing.
+  const [panelErrors, setPanelErrors] = useState<Record<number, string>>({});
 
   const [panels, setPanels] = useState<Panel[]>([]);
   const [config, setConfig] = useState<TicketConfig>({
@@ -617,9 +619,12 @@ export default function TicketsPage() {
     try {
       const updated = await ticketApi.updatePanel(guildId, panelId, data);
       setPanels(prev => prev.map(p => p.id === panelId ? { ...p, ...updated } : p));
+      setPanelErrors(({ [panelId]: _cleared, ...rest }) => rest);
       return true;
     } catch (e: any) {
-      setError(e?.response?.data?.error || 'Failed to save panel');
+      const message = e?.response?.data?.error || 'Failed to save panel';
+      setError(message);
+      setPanelErrors(prev => ({ ...prev, [panelId]: message }));
       return false;
     }
   };
@@ -1005,6 +1010,10 @@ export default function TicketsPage() {
                         </p>
                       </div>
                     </div>
+
+                    {panel.id && panelErrors[panel.id] && (
+                      <p className="text-sm text-red-400" role="alert">Not saved: {panelErrors[panel.id]}</p>
+                    )}
 
                     {/* Panel settings */}
                     <div className="grid grid-cols-2 gap-4 text-sm">
