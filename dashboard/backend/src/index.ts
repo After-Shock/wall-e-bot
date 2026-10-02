@@ -19,6 +19,7 @@ import { customCommandsRouter } from './routes/customCommands.js';
 import { commandGroupsRouter } from './routes/commandGroups.js';
 import { dashboardRolesRouter } from './routes/dashboardRoles.js';
 import { autoDeleteRouter } from './routes/autoDelete.js';
+import { bulkRoleRouter } from './routes/bulkRole.js';
 import healthRouter, { initHealthCheck } from './routes/health.js';
 import statusRouter, { initStatus } from './routes/status.js';
 import { db } from './db/index.js';
@@ -128,6 +129,7 @@ app.use('/api/guilds/:guildId/custom-commands', customCommandsRouter);
 app.use('/api/guilds/:guildId/command-groups', commandGroupsRouter);
 app.use('/api/guilds/:guildId/dashboard-roles', dashboardRolesRouter);
 app.use('/api/guilds/:guildId/auto-delete', autoDeleteRouter);
+app.use('/api/guilds/:guildId/bulk-role', bulkRoleRouter);
 
 // Health checks.
 //

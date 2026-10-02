@@ -5,6 +5,7 @@ import {
   Shield,
   ShieldAlert,
   Smile,
+  UsersRound,
   Terminal,
   Star,
   TrendingUp,
@@ -55,7 +56,6 @@ const getNavItems = (guildId: string): NavItem[] => [
     icon: MessageSquare,
     children: [
       { name: 'Welcome Messages', href: `/dashboard/${guildId}/welcome/messages`, icon: MessageSquare },
-      { name: 'Auto Roles', href: `/dashboard/${guildId}/welcome/autoroles`, icon: Users },
     ],
   },
   {
@@ -80,9 +80,14 @@ const getNavItems = (guildId: string): NavItem[] => [
     ],
   },
   {
-    name: 'Reaction Roles',
-    href: `/dashboard/${guildId}/reaction-roles`,
-    icon: Smile,
+    name: 'Roles',
+    href: `/dashboard/${guildId}/roles`,
+    icon: Users,
+    children: [
+      { name: 'Auto Roles', href: `/dashboard/${guildId}/welcome/autoroles`, icon: Users },
+      { name: 'Reaction Roles', href: `/dashboard/${guildId}/reaction-roles`, icon: Smile },
+      { name: 'Bulk Role', href: `/dashboard/${guildId}/roles/bulk`, icon: UsersRound },
+    ],
   },
   {
     name: 'Custom Commands',

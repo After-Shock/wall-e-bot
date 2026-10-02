@@ -21,6 +21,7 @@ import { sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
 import { recordSchedulerTick } from '../utils/heartbeat.js';
 import { closeTicket } from './TicketService.js';
+import { BulkRoleService } from './BulkRoleService.js';
 
 /**
  * Database row structure for scheduled messages.
@@ -59,7 +60,11 @@ export class SchedulerService {
   private activityInterval: ReturnType<typeof setInterval> | null = null;
   private autoDeleteSubscriber: import('ioredis').Redis | null = null;
 
-  constructor(private client: WallEClient) {}
+  private readonly bulkRoles: BulkRoleService;
+
+  constructor(private client: WallEClient) {
+    this.bulkRoles = new BulkRoleService(client);
+  }
 
   /** Runs the critical scheduled-message, interval-command, and temp-ban checks. */
   async runSchedulerTick(): Promise<void> {
@@ -77,6 +82,13 @@ export class SchedulerService {
       await this.checkTempBans();
     } catch (err) {
       logger.error('[Scheduler] checkTempBans failed:', err);
+    }
+    try {
+      // Starts queued/interrupted bulk role jobs without waiting for them; the
+      // pub/sub trigger normally starts them immediately, this catches missed ones.
+      await this.bulkRoles.startPending();
+    } catch (err) {
+      logger.error('[Scheduler] bulk role start failed:', err);
     }
     // Last: a heartbeat only means something if the work above actually ran.
     await recordSchedulerTick(this.client);
@@ -168,7 +180,18 @@ export class SchedulerService {
       if (err) logger.error('Failed to subscribe to auto-delete:trigger:', err);
       else logger.info('Subscribed to auto-delete:trigger channel');
     });
-    this.autoDeleteSubscriber.on('message', (_channel, message) => {
+    this.autoDeleteSubscriber.subscribe('bulk-role:trigger', (err) => {
+      if (err) logger.error('Failed to subscribe to bulk-role:trigger:', err);
+    });
+    this.autoDeleteSubscriber.on('message', (channel, message) => {
+      if (channel === 'bulk-role:trigger') {
+        try {
+          this.bulkRoles.start((JSON.parse(message) as { jobId: number }).jobId);
+        } catch (e) {
+          logger.error('Failed to parse bulk-role:trigger message:', e);
+        }
+        return;
+      }
       try {
         const payload = JSON.parse(message) as { guildId: string; configId?: number };
         if (payload.configId !== null && payload.configId !== undefined) {

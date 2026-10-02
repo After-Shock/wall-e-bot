@@ -10,6 +10,7 @@ import NotFoundPage from './pages/NotFoundPage';
 // Guild feature pages
 import WelcomeMessagesPage from './pages/guild/WelcomeMessagesPage';
 import AutoRolesPage from './pages/guild/AutoRolesPage';
+import BulkRolePage from './pages/guild/BulkRolePage';
 import ModerationPage from './pages/guild/ModerationPage';
 import WarningsPage from './pages/guild/WarningsPage';
 import TempBansPage from './pages/guild/TempBansPage';
@@ -71,6 +72,8 @@ function App() {
           
           {/* Reaction Roles */}
           <Route path="reaction-roles" element={<ReactionRolesPage />} />
+          <Route path="roles" element={<AutoRolesPage />} />
+          <Route path="roles/bulk" element={<BulkRolePage />} />
           
           {/* Custom Commands */}
           <Route path="commands" element={<CustomCommandsPage />} />
