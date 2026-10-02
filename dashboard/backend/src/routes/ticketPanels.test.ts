@@ -339,3 +339,19 @@ test('sending a panel to a different channel posts there instead of editing the 
   assert.equal(response.status, 200);
   assert.deepEqual(calls.filter(c => !c.startsWith('GET')), ['POST /channels/chan-2/messages']);
 });
+
+test('group rename saves the trimmed name and rejects over-long ones', async (t) => {
+  installMocks(t, 0);
+  let saved: any[] = [];
+  t.mock.method(db, 'query', async (sql: string, params: any[] = []) => {
+    if (sql.includes('UPDATE ticket_panel_groups')) { saved = params; return { rows: [{ id: 3, name: params[0] }] } as any; }
+    return { rows: [] } as any;
+  });
+
+  const ok = await request(buildApp()).put(`/api/guilds/${guildId}/ticket-panel-groups/3`).send({ name: '  Incubus Media ' });
+  assert.equal(ok.status, 200);
+  assert.equal(saved[0], 'Incubus Media');
+
+  const tooLong = await request(buildApp()).put(`/api/guilds/${guildId}/ticket-panel-groups/3`).send({ name: 'x'.repeat(101) });
+  assert.equal(tooLong.status, 400);
+});

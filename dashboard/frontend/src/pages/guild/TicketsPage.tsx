@@ -337,6 +337,8 @@ function GroupCard({
     mutationFn: (name: string) => ticketApi.updateGroup(guildId, group.id, { name }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket-groups', guildId] }); setEditingName(false); },
   });
+  const saveName = () => { if (nameVal.trim() && !updateMutation.isPending) updateMutation.mutate(nameVal.trim()); };
+  const cancelRename = () => { setEditingName(false); setNameVal(group.name); updateMutation.reset(); };
 
   const sendMutation = useMutation({
     mutationFn: (channelId: string) => ticketApi.sendGroup(guildId, group.id, { channel_id: channelId }),
@@ -359,24 +361,41 @@ function GroupCard({
     <div className="card border border-discord-blurple/20 space-y-3">
       <div className="flex items-center gap-2">
         {editingName ? (
-          <input
-            value={nameVal}
-            onChange={e => setNameVal(e.target.value)}
-            className="input flex-1"
-            autoFocus
-            onKeyDown={e => {
-              if (e.key === 'Enter' && nameVal.trim()) updateMutation.mutate(nameVal.trim());
-              if (e.key === 'Escape') { setEditingName(false); setNameVal(group.name); }
-            }}
-          />
+          <>
+            <input
+              value={nameVal}
+              onChange={e => setNameVal(e.target.value)}
+              className="input flex-1"
+              autoFocus
+              maxLength={100}
+              aria-label="Group name"
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveName();
+                if (e.key === 'Escape') cancelRename();
+              }}
+            />
+            <button onClick={saveName} disabled={!nameVal.trim() || updateMutation.isPending} className="btn btn-primary text-xs">
+              {updateMutation.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={cancelRename} className="btn btn-secondary text-xs">Cancel</button>
+          </>
         ) : (
-          <h4 className="font-semibold flex-1">{group.name}</h4>
+          <>
+            <h4 className="font-semibold flex-1">{group.name}</h4>
+            <button
+              onClick={() => { setNameVal(group.name); setEditingName(true); }}
+              className="btn btn-secondary p-1.5"
+              title="Rename group"
+              aria-label={`Rename group ${group.name}`}
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          </>
         )}
-        <button onClick={() => setEditingName(v => !v)} className="btn btn-secondary p-1.5" title="Rename">
-          <Pencil className="w-4 h-4" />
-        </button>
         <button
           onClick={() => setShowSend(true)}
+          disabled={editingName}
+          title={editingName ? 'Save or cancel the rename first' : undefined}
           className="btn btn-primary flex items-center gap-2 text-sm"
         >
           <Send className="w-4 h-4" />
@@ -389,6 +408,12 @@ function GroupCard({
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
+
+      {updateMutation.isError && (
+        <p className="text-sm text-red-400">
+          {(updateMutation.error as any)?.response?.data?.error ?? 'Failed to rename group'}
+        </p>
+      )}
 
       {sorted.length === 0 && (
         <p className="text-sm text-discord-light">No panels yet. Choose this group in a panel's group dropdown below.</p>

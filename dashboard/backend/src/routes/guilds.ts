@@ -1189,6 +1189,7 @@ guildsRouter.put('/:guildId/ticket-panel-groups/:groupId', requireAuth, requireG
     const { guildId, groupId } = req.params;
     const { name } = req.body as { name: string };
     if (!name || !name.trim()) { res.status(400).json({ error: 'name is required' }); return; }
+    if (name.trim().length > 100) { res.status(400).json({ error: 'Group name must be 100 characters or fewer' }); return; }
     const result = await db.query(
       `UPDATE ticket_panel_groups SET name = $1 WHERE id = $2 AND guild_id = $3 RETURNING *`,
       [name.trim(), groupId, guildId],
