@@ -1332,6 +1332,26 @@ async function discordSend(
   return res.json() as Promise<{ id: string; channel_id: string }>;
 }
 
+/**
+ * Edit the previously posted message when re-sending to the same channel; otherwise
+ * post a new one. A deleted message (404) falls back to posting instead of failing.
+ */
+async function sendOrUpdate(
+  channelId: string,
+  lastChannelId: string | null,
+  lastMessageId: string | null,
+  body: object,
+): Promise<{ id: string; channel_id: string }> {
+  if (lastMessageId && lastChannelId === channelId) {
+    try {
+      return await discordSend(channelId, lastMessageId, body);
+    } catch (e) {
+      if (!(e instanceof DiscordAPIError && e.status === 404)) throw e;
+    }
+  }
+  return discordSend(channelId, null, body);
+}
+
 // POST /api/guilds/:guildId/ticket-panel-groups/:groupId/send
 guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, requireGuildAccess,
   rateLimitByGuild({ max: 5, windowSeconds: 60 }),
@@ -1376,8 +1396,7 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
     };
 
     try {
-      const targetChannelId = group.last_message_id ? (group.last_channel_id ?? channel_id) : channel_id;
-      const message = await discordSend(targetChannelId, group.last_message_id, body);
+      const message = await sendOrUpdate(channel_id, group.last_channel_id, group.last_message_id, body);
 
       await db.query(
         `UPDATE ticket_panel_groups SET last_channel_id = $1, last_message_id = $2 WHERE id = $3`,
@@ -1438,8 +1457,7 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireG
     };
 
     try {
-      const targetChannelId = panel.panel_message_id ? (panel.panel_channel_id ?? channel_id) : channel_id;
-      const message = await discordSend(targetChannelId, panel.panel_message_id, body);
+      const message = await sendOrUpdate(channel_id, panel.panel_channel_id, panel.panel_message_id, body);
       await db.query(
         `UPDATE ticket_panels SET panel_channel_id = $1, panel_message_id = $2 WHERE id = $3`,
         [message.channel_id, message.id, panelId],

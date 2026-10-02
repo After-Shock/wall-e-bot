@@ -76,3 +76,33 @@ test('bot owner list is parsed the same way everywhere', () => {
   assert.equal(isBotOwner('333', '111,222'), false);
   assert.equal(isBotOwner(undefined, '111'), false);
 });
+
+test('concurrent lookups for one user share a single Discord call', async (t) => {
+  t.mock.method(redis, 'get', async () => null);
+  t.mock.method(redis, 'setex', async () => 'OK');
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return new Response(JSON.stringify([{ id: 'g1', name: 'G', icon: null, owner: true, permissions: '0' }]), { status: 200 });
+  });
+
+  const results = await Promise.all(Array.from({ length: 7 }, () => getUserGuilds({ id: 'burst', accessToken: 'ok' })));
+
+  assert.equal(calls, 1);
+  assert.ok(results.every(r => r[0].id === 'g1'));
+});
+
+test('a Discord rate limit is retried once after the requested wait', async (t) => {
+  t.mock.method(redis, 'get', async () => null);
+  t.mock.method(redis, 'setex', async () => 'OK');
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    if (calls === 1) return new Response('{}', { status: 429, headers: { 'retry-after': '0.05' } });
+    return new Response('[]', { status: 200 });
+  });
+
+  assert.deepEqual(await getUserGuilds({ id: 'limited', accessToken: 'ok' }), []);
+  assert.equal(calls, 2);
+});

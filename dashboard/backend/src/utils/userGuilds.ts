@@ -50,6 +50,15 @@ export class GuildResolutionError extends Error {
   }
 }
 
+// Concurrent requests for the same user share one Discord call. A page load fires
+// several API requests at once; when the cache had just expired each one asked
+// Discord separately and this endpoint's rate limit turned the extras into 503s.
+// ponytail: in-process only (one backend container); use a Redis lock if the API is scaled out.
+const inflight = new Map<string, Promise<UserGuild[]>>();
+
+/** Longest Discord-requested wait we'll sit through before retrying a 429 once. */
+const MAX_RETRY_WAIT_MS = 2000;
+
 /**
  * Resolve the guilds a user is in.
  *
@@ -68,14 +77,28 @@ export async function getUserGuilds(user: { id: string; accessToken: string }): 
     // Redis unavailable — fall through to Discord.
   }
 
+  const pending = inflight.get(user.id);
+  if (pending) return pending;
+  const request = fetchUserGuilds(user, cacheKey).finally(() => inflight.delete(user.id));
+  inflight.set(user.id, request);
+  return request;
+}
+
+async function fetchUserGuilds(user: { id: string; accessToken: string }, cacheKey: string): Promise<UserGuild[]> {
   let response: Response;
-  try {
-    response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
-      headers: { Authorization: `Bearer ${user.accessToken}` },
-    });
-  } catch (error) {
-    logger.error(`Discord guild fetch failed for user ${user.id}:`, error);
-    throw new GuildResolutionError('unavailable', 'Could not reach Discord');
+  for (let attempt = 0; ; attempt++) {
+    try {
+      response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
+        headers: { Authorization: `Bearer ${user.accessToken}` },
+      });
+    } catch (error) {
+      logger.error(`Discord guild fetch failed for user ${user.id}:`, error);
+      throw new GuildResolutionError('unavailable', 'Could not reach Discord');
+    }
+    if (response.status !== 429 || attempt > 0) break;
+    const waitMs = Math.ceil(Number(response.headers.get('retry-after') ?? 1) * 1000);
+    if (!(waitMs >= 0 && waitMs <= MAX_RETRY_WAIT_MS)) break;
+    await new Promise(resolve => setTimeout(resolve, waitMs));
   }
 
   if (response.status === 401) {

@@ -288,3 +288,54 @@ test('group message stacks each panel title and description under the group name
   assert.equal(posted.embeds[0].description, '**Renewals**\nAlready a member? Renew here.\n\n**New Members**');
   assert.equal(posted.components.length, 2);
 });
+
+test('re-sending a panel whose message was deleted posts a fresh one', async (t) => {
+  installMocks(t, 0);
+  const calls: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    calls.push(`${method} ${String(url).replace('https://discord.com/api/v10', '')}`);
+    if (method === 'PATCH') return new Response('{"message": "Unknown Message", "code": 10008}', { status: 404 });
+    if (method === 'POST') return new Response(JSON.stringify({ id: 'new-message', channel_id: 'chan-1' }), { status: 200 });
+    return new Response(JSON.stringify({ guild_id: guildId, type: 0 }), { status: 200 });
+  });
+  t.mock.method(db, 'query', async (sql: string) => {
+    if (sql.includes('FROM ticket_panels p')) {
+      return { rows: [{ id: 1, name: 'P', description: null, panel_type: 'buttons', panel_channel_id: 'chan-1',
+        panel_message_id: 'deleted-message', categories: [] }] } as any;
+    }
+    return { rows: [] } as any;
+  });
+
+  const response = await request(buildApp()).post(`/api/guilds/${guildId}/ticket-panels/1/send`).send({ channel_id: 'chan-1' });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.message_id, 'new-message');
+  assert.deepEqual(calls.filter(c => !c.startsWith('GET')), [
+    'PATCH /channels/chan-1/messages/deleted-message',
+    'POST /channels/chan-1/messages',
+  ]);
+});
+
+test('sending a panel to a different channel posts there instead of editing the old message', async (t) => {
+  installMocks(t, 0);
+  const calls: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    calls.push(`${method} ${String(url).replace('https://discord.com/api/v10', '')}`);
+    if (method === 'POST') return new Response(JSON.stringify({ id: 'm2', channel_id: 'chan-2' }), { status: 200 });
+    return new Response(JSON.stringify({ guild_id: guildId, type: 0 }), { status: 200 });
+  });
+  t.mock.method(db, 'query', async (sql: string) => {
+    if (sql.includes('FROM ticket_panels p')) {
+      return { rows: [{ id: 1, name: 'P', description: null, panel_type: 'buttons', panel_channel_id: 'chan-1',
+        panel_message_id: 'm1', categories: [] }] } as any;
+    }
+    return { rows: [] } as any;
+  });
+
+  const response = await request(buildApp()).post(`/api/guilds/${guildId}/ticket-panels/1/send`).send({ channel_id: 'chan-2' });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls.filter(c => !c.startsWith('GET')), ['POST /channels/chan-2/messages']);
+});
