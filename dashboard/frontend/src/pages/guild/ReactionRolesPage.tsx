@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
-import { EmojiPreview } from '../../components/EmojiPicker';
+import { EmojiPicker, EmojiPreview, type ServerEmoji } from '../../components/EmojiPicker';
 import { Smile, Plus, Trash2, Save, Hash, Edit } from 'lucide-react';
 
 interface ReactionRole {
@@ -58,6 +58,12 @@ export default function ReactionRolesPage() {
   const { data: channels = [] } = useQuery<DiscordChannel[]>({
     queryKey: ['channels', guildId],
     queryFn: () => api.get(`/api/guilds/${guildId}/channels`).then(r => r.data),
+  });
+
+  const { data: serverEmojis = [] } = useQuery<ServerEmoji[]>({
+    queryKey: ['emojis', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/emojis`).then(r => r.data),
+    enabled: !!guildId,
   });
 
   const { data: guildRoles = [] } = useQuery<GuildRole[]>({
@@ -275,14 +281,13 @@ export default function ReactionRolesPage() {
               <div className="space-y-3">
                 {editing.roles.map((role, index) => (
                   <div key={index} className="bg-discord-dark rounded-lg p-4 flex items-center gap-4">
-                    <div>
-                      <label className="block text-xs text-discord-light mb-1">Emoji</label>
-                      <input
-                        type="text"
+                    <div className="w-36">
+                      <span className="block text-xs text-discord-light mb-1">Emoji</span>
+                      <EmojiPicker
                         value={role.emoji}
-                        onChange={e => updateRole(index, { emoji: e.target.value })}
-                        placeholder="🎮"
-                        className="input w-20 text-center"
+                        serverEmojis={serverEmojis}
+                        fallback="🎮"
+                        onChange={emoji => updateRole(index, { emoji })}
                       />
                     </div>
                     <div className="flex-1">
@@ -324,9 +329,8 @@ export default function ReactionRolesPage() {
               </div>
             )}
             <p className="text-xs text-discord-light mt-3">
-              Emoji can be unicode (🎮) or custom — type <code>\:name:</code> in Discord to get the
-              <code>{'<:name:id>'}</code> form and paste it here. Wall-E's role must sit above every
-              role you hand out.
+              Click an emoji to pick one of this server&apos;s custom emojis, a standard emoji, or paste any.
+              Each role needs a different emoji. Wall-E&apos;s role must sit above every role you hand out.
             </p>
           </div>
 
