@@ -22,6 +22,20 @@ export const reactionRoleBody = z.object({
   { message: 'The same role is listed twice' },
 );
 
+// Drafts may be unfinished: no channel yet, blank role rows. Only limits are enforced.
+export const reactionRoleDraftBody = z.object({
+  channel_id: z.string().regex(SNOWFLAKE).nullable().optional().or(z.literal('')),
+  title: z.string().max(200).default(''),
+  description: z.string().max(2000).default(''),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#5865F2'),
+  type: z.enum(['buttons', 'dropdown']).default('buttons'),
+  roles: z.array(z.object({
+    role_id: z.string().max(20),
+    emoji: z.string().max(100),
+    label: z.string().max(80),
+  })).max(25).default([]),
+});
+
 export type ReactionRoleEntry = { role_id: string; emoji: string; label: string };
 
 /**

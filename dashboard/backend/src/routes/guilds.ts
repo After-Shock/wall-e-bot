@@ -9,7 +9,8 @@ import { guildConfigService, validationService } from '../services/index.js';
 import * as analyticsService from '../services/analyticsService.js';
 import * as backupService from '../services/backupService.js';
 import { z } from 'zod';
-import { reactionRoleBody, buildReactionRoleMessage, parseEmoji, type ReactionRoleEntry } from '../utils/reactionRoles.js';
+import { reactionRoleBody, reactionRoleDraftBody, buildReactionRoleMessage, parseEmoji, type ReactionRoleEntry } from '../utils/reactionRoles.js';
+import { fetchGuildEmojis, resolveCustomEmojis } from '../utils/discordEmojis.js';
 import { resolveUsers } from '../utils/discordUsers.js';
 import { findCategoryInGuild } from '../utils/ticketScope.js';
 import {
@@ -1392,8 +1393,9 @@ guildsRouter.post('/:guildId/ticket-panel-groups/:groupId/send', requireAuth, re
       .map((p: { name: string; description: string | null }) => p.description ? `**${p.name}**\n${p.description}` : `**${p.name}**`)
       .join('\n\n')
       .slice(0, 4096);
+    const emojis = await fetchGuildEmojis(guildId);
     const body = {
-      embeds: [{ color: 5793266, title: group.name, description }],
+      embeds: [{ color: 5793266, title: resolveCustomEmojis(group.name, emojis), description: resolveCustomEmojis(description, emojis) }],
       components,
     };
 
@@ -1453,8 +1455,13 @@ guildsRouter.post('/:guildId/ticket-panels/:panelId/send', requireAuth, requireG
     };
 
     const components = buildPanelComponents(panel);
+    const emojis = await fetchGuildEmojis(guildId);
     const body = {
-      embeds: [{ color: 5793266, title: panel.name, description: panel.description || 'Click a button below to open a ticket.' }],
+      embeds: [{
+        color: 5793266,
+        title: resolveCustomEmojis(panel.name, emojis),
+        description: resolveCustomEmojis(panel.description || 'Click a button below to open a ticket.', emojis),
+      }],
       components,
     };
 
@@ -2261,10 +2268,11 @@ async function replaceRoleRows(
 guildsRouter.get('/:guildId/reaction-roles', requireAuth, requireGuildAccess, asyncHandler(async (req, res) => {
   const result = await db.query(
     `SELECT m.id, m.channel_id, m.message_id, m.title, m.description, m.color, m.type,
-            COALESCE(
-              json_agg(json_build_object('role_id', r.role_id, 'emoji', r.emoji, 'label', r.label) ORDER BY r.id)
-              FILTER (WHERE r.id IS NOT NULL), '[]'
-            ) AS roles
+            CASE WHEN m.message_id IS NULL THEN COALESCE(m.draft_roles, '[]'::jsonb)
+            ELSE COALESCE(
+              jsonb_agg(jsonb_build_object('role_id', r.role_id, 'emoji', r.emoji, 'label', r.label) ORDER BY r.id)
+              FILTER (WHERE r.id IS NOT NULL), '[]'::jsonb
+            ) END AS roles
      FROM reaction_role_messages m
      LEFT JOIN reaction_roles r ON r.message_id = m.message_id
      WHERE m.guild_id = $1
@@ -2290,7 +2298,9 @@ guildsRouter.post('/:guildId/reaction-roles', requireAuth, requireGuildAccess,
     if (roleError) { res.status(400).json({ error: roleError }); return; }
 
     try {
-      const message = await discordSend(body.channel_id, null, buildReactionRoleMessage(body, body.roles));
+      const emojis = await fetchGuildEmojis(guildId);
+      const text = { ...body, title: resolveCustomEmojis(body.title, emojis), description: resolveCustomEmojis(body.description, emojis) };
+      const message = await discordSend(body.channel_id, null, buildReactionRoleMessage(text, body.roles));
       const inserted = await db.query(
         `INSERT INTO reaction_role_messages (guild_id, channel_id, message_id, title, description, color, type)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
@@ -2302,6 +2312,41 @@ guildsRouter.post('/:guildId/reaction-roles', requireAuth, requireGuildAccess,
       logger.error('Reaction role create failed:', e);
       res.status(502).json({ error: (e as Error).message });
     }
+  }),
+);
+
+// POST /api/guilds/:guildId/reaction-roles/drafts — save without posting
+guildsRouter.post('/:guildId/reaction-roles/drafts', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 30, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const parsed = reactionRoleDraftBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+    const d = parsed.data;
+    const result = await db.query(
+      `INSERT INTO reaction_role_messages (guild_id, channel_id, message_id, title, description, color, type, draft_roles)
+       VALUES ($1, $2, NULL, $3, $4, $5, $6, $7) RETURNING id`,
+      [req.params.guildId, d.channel_id || null, d.title, d.description, d.color, d.type, JSON.stringify(d.roles)],
+    );
+    res.status(201).json({ id: result.rows[0].id });
+  }),
+);
+
+// PUT /api/guilds/:guildId/reaction-roles/drafts/:id — update an unposted draft
+guildsRouter.put('/:guildId/reaction-roles/drafts/:id', requireAuth, requireGuildAccess,
+  rateLimitByGuild({ max: 60, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const parsed = reactionRoleDraftBody.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+    const d = parsed.data;
+    const result = await db.query(
+      `UPDATE reaction_role_messages
+       SET channel_id = $3, title = $4, description = $5, color = $6, type = $7, draft_roles = $8
+       WHERE id = $1 AND guild_id = $2 AND message_id IS NULL
+       RETURNING id`,
+      [req.params.id, req.params.guildId, d.channel_id || null, d.title, d.description, d.color, d.type, JSON.stringify(d.roles)],
+    );
+    if (!result.rows[0]) { res.status(404).json({ error: 'Draft not found (it may already be posted)' }); return; }
+    res.json({ id: result.rows[0].id });
   }),
 );
 
@@ -2320,19 +2365,26 @@ guildsRouter.patch('/:guildId/reaction-roles/:id', requireAuth, requireGuildAcce
       [id, guildId],
     );
     if (existing.rows.length === 0) { res.status(404).json({ error: 'Message not found' }); return; }
-    const row = existing.rows[0] as { channel_id: string; message_id: string };
+    const row = existing.rows[0] as { channel_id: string | null; message_id: string | null };
 
     const channelErr = await channelError(body.channel_id, guildId);
     if (channelErr) { res.status(400).json({ error: channelErr }); return; }
     const roleError = await unassignableRoleError(guildId, body.roles.map(r => r.role_id));
     if (roleError) { res.status(400).json({ error: roleError }); return; }
 
-    const payload = buildReactionRoleMessage(body, body.roles);
+    const emojis = await fetchGuildEmojis(guildId);
+    const payload = buildReactionRoleMessage(
+      { ...body, title: resolveCustomEmojis(body.title, emojis), description: resolveCustomEmojis(body.description, emojis) },
+      body.roles,
+    );
     const movedChannel = row.channel_id !== body.channel_id;
 
     try {
       let message: { id: string; channel_id: string };
-      if (movedChannel) {
+      if (!row.message_id || !row.channel_id) {
+        // A draft being posted for the first time.
+        message = await discordSend(body.channel_id, null, payload);
+      } else if (movedChannel) {
         message = await discordSend(body.channel_id, null, payload);
         await deleteDiscordMessage(row.channel_id, row.message_id);
       } else {
@@ -2350,7 +2402,7 @@ guildsRouter.patch('/:guildId/reaction-roles/:id', requireAuth, requireGuildAcce
 
       await db.query(
         `UPDATE reaction_role_messages
-         SET channel_id = $1, message_id = $2, title = $3, description = $4, color = $5, type = $6
+         SET channel_id = $1, message_id = $2, title = $3, description = $4, color = $5, type = $6, draft_roles = NULL
          WHERE id = $7`,
         [message.channel_id, message.id, body.title, body.description, body.color, body.type, id],
       );
@@ -2372,8 +2424,10 @@ guildsRouter.delete('/:guildId/reaction-roles/:id', requireAuth, requireGuildAcc
   );
   if (existing.rows.length === 0) { res.status(404).json({ error: 'Message not found' }); return; }
   const { channel_id, message_id } = existing.rows[0];
-  await db.query('DELETE FROM reaction_roles WHERE message_id = $1', [message_id]);
-  await deleteDiscordMessage(channel_id, message_id);
+  if (message_id) {
+    await db.query('DELETE FROM reaction_roles WHERE message_id = $1', [message_id]);
+    await deleteDiscordMessage(channel_id, message_id);
+  }
   res.json({ success: true });
 }));
 

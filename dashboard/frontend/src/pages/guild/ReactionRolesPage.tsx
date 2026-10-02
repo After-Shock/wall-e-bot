@@ -13,8 +13,8 @@ interface ReactionRole {
 
 interface ReactionRoleMessage {
   id: number | null;
-  channel_id: string;
-  message_id?: string;
+  channel_id: string | null;
+  message_id?: string | null; // null = saved draft, not posted yet
   title: string;
   description: string;
   color: string;
@@ -93,13 +93,36 @@ export default function ReactionRolesPage() {
     onError: apiError,
   });
 
+  const [draftSaved, setDraftSaved] = useState(false);
+  const draftMutation = useMutation({
+    mutationFn: async (m: ReactionRoleMessage) => {
+      const body = {
+        channel_id: m.channel_id || null, title: m.title, description: m.description,
+        color: m.color, type: m.type, roles: m.roles,
+      };
+      const res = m.id === null
+        ? await api.post(`/api/guilds/${guildId}/reaction-roles/drafts`, body)
+        : await api.put(`/api/guilds/${guildId}/reaction-roles/drafts/${m.id}`, body);
+      return res.data as { id: number };
+    },
+    onSuccess: ({ id }) => {
+      // Stay in the editor; later saves update this draft instead of creating another.
+      setEditing(prev => prev ? { ...prev, id, message_id: null } : prev);
+      invalidate();
+      setError(null);
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 3000);
+    },
+    onError: apiError,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/api/guilds/${guildId}/reaction-roles/${id}`),
     onSuccess: () => { invalidate(); setError(null); },
     onError: apiError,
   });
 
-  const channelName = (id: string) => channels.find(c => c.id === id)?.name ?? id;
+  const channelName = (id: string | null) => id ? channels.find(c => c.id === id)?.name ?? id : 'no channel yet';
   const roleName = (id: string) => guildRoles.find(r => r.id === id)?.name ?? 'Unknown role';
 
   const updateRole = (index: number, updates: Partial<ReactionRole>) => {
@@ -153,6 +176,9 @@ export default function ReactionRolesPage() {
                     <div className="flex items-center gap-2 mb-2">
                       <Hash className="w-4 h-4 text-discord-light" />
                       <span className="text-sm text-discord-light">{channelName(message.channel_id)}</span>
+                      {!message.message_id && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-300">Draft — not posted</span>
+                      )}
                     </div>
                     <h3 className="font-semibold text-lg">{message.title}</h3>
                     <p className="text-discord-light text-sm mb-3">{message.description}</p>
@@ -197,7 +223,7 @@ export default function ReactionRolesPage() {
               <div>
                 <label className="block text-sm font-medium mb-2">Channel</label>
                 <select
-                  value={editing.channel_id}
+                  value={editing.channel_id ?? ''}
                   onChange={e => setEditing({ ...editing, channel_id: e.target.value })}
                   className="input w-full"
                 >
@@ -357,10 +383,21 @@ export default function ReactionRolesPage() {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button onClick={() => { setEditing(null); setError(null); }} className="btn btn-secondary">
-              Cancel
+              {editing.message_id ? 'Cancel' : 'Close'}
             </button>
+            {!editing.message_id && (
+              <button
+                onClick={() => draftMutation.mutate(editing)}
+                disabled={draftMutation.isPending}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                {draftMutation.isPending ? 'Saving…' : 'Save draft'}
+              </button>
+            )}
+            {draftSaved && <span className="text-sm text-green-400">Draft saved ✓</span>}
             <button
               onClick={() => saveMutation.mutate(editing)}
               disabled={
@@ -372,7 +409,7 @@ export default function ReactionRolesPage() {
               className="btn btn-primary flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              {saveMutation.isPending ? 'Posting...' : editing.id === null ? 'Post to Discord' : 'Update Message'}
+              {saveMutation.isPending ? 'Posting...' : !editing.message_id ? 'Post to Discord' : 'Update Message'}
             </button>
           </div>
         </div>

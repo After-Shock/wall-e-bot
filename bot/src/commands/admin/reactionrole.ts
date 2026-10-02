@@ -252,7 +252,7 @@ const command: Command = {
           `SELECT rrm.*, COUNT(rr.id) as role_count
            FROM reaction_role_messages rrm
            LEFT JOIN reaction_roles rr ON rrm.message_id = rr.message_id
-           WHERE rrm.guild_id = $1
+           WHERE rrm.guild_id = $1 AND rrm.message_id IS NOT NULL
            GROUP BY rrm.id`,
           [interaction.guild!.id],
         );
