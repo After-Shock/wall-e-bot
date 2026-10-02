@@ -141,6 +141,9 @@ function SendChannelModal({
   );
 }
 
+const sortFields = (fields: FormField[] = []) =>
+  [...fields].sort((a, b) => a.position - b.position || (a.id ?? 0) - (b.id ?? 0));
+
 type NewQuestion = { label: string; placeholder: string; style: 'short' | 'paragraph' };
 const blankQuestion = (): NewQuestion => ({ label: '', placeholder: '', style: 'short' });
 
@@ -681,6 +684,30 @@ export default function TicketsPage() {
     }
   };
 
+  // Renumbers 0..n-1 rather than swapping two values, so gaps or duplicate
+  // positions left by earlier deletes can't make a move do nothing.
+  const moveFormField = async (categoryId: number, panelId: number, fields: FormField[], index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (!guildId || target < 0 || target >= fields.length) return;
+    const reordered = [...fields];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    const renumbered = reordered.map((field, position) => ({ ...field, position }));
+    try {
+      for (const field of renumbered) {
+        if (field.id && fields.find(f => f.id === field.id)?.position !== field.position) {
+          await ticketApi.updateFormField(guildId, field.id, { position: field.position });
+        }
+      }
+      setPanels(prev => prev.map(p => p.id === panelId ? {
+        ...p,
+        categories: (p.categories || []).map(c => c.id === categoryId ? { ...c, form_fields: renumbered } : c),
+      } : p));
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to reorder questions');
+      fetchData();
+    }
+  };
+
   const deleteFormField = async (fieldId: number, categoryId: number, panelId: number) => {
     if (!guildId) return;
     try {
@@ -1153,14 +1180,57 @@ export default function TicketsPage() {
                                 <p className="text-xs text-discord-light mb-2">
                                   Form fields shown to users when they open this ticket type (max 5).
                                 </p>
-                                {(cat.form_fields || []).map(field => (
+                                {sortFields(cat.form_fields).map((field, index, fields) => (
                                   <div key={field.id} className="flex items-center gap-2 bg-discord-mid rounded p-2">
+                                    <div className="flex flex-col">
+                                      <button
+                                        onClick={() => cat.id && panel.id && moveFormField(cat.id, panel.id, fields, index, -1)}
+                                        disabled={index === 0}
+                                        className="text-discord-light hover:text-white disabled:opacity-30 text-xs leading-tight"
+                                        aria-label={`Move "${field.label}" up`}
+                                      >▲</button>
+                                      <button
+                                        onClick={() => cat.id && panel.id && moveFormField(cat.id, panel.id, fields, index, 1)}
+                                        disabled={index === fields.length - 1}
+                                        className="text-discord-light hover:text-white disabled:opacity-30 text-xs leading-tight"
+                                        aria-label={`Move "${field.label}" down`}
+                                      >▼</button>
+                                    </div>
                                     <div className="flex-1 space-y-1">
-                                      <div>
-                                        <span className="text-sm font-medium">{field.label}</span>
-                                        <span className="text-xs text-discord-light ml-2">
-                                          ({field.style}, {field.required ? 'required' : 'optional'})
-                                        </span>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <input
+                                          defaultValue={field.label}
+                                          maxLength={45}
+                                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                          onBlur={e => {
+                                            const label = e.target.value.trim();
+                                            if (!label) { e.target.value = field.label; return; }
+                                            if (field.id && cat.id && panel.id && label !== field.label) {
+                                              void saveFormField(field.id, cat.id, panel.id, { label });
+                                            }
+                                          }}
+                                          className="input flex-1 min-w-[10rem] text-sm font-medium"
+                                          aria-label="Question"
+                                        />
+                                        <select
+                                          value={field.style}
+                                          onChange={e => field.id && cat.id && panel.id &&
+                                            saveFormField(field.id, cat.id, panel.id, { style: e.target.value as FormField['style'] })}
+                                          className="input text-xs w-auto"
+                                          aria-label={`Answer type for ${field.label}`}
+                                        >
+                                          <option value="short">Short answer</option>
+                                          <option value="paragraph">Long answer</option>
+                                        </select>
+                                        <label className="flex items-center gap-1 text-xs text-discord-light">
+                                          <input
+                                            type="checkbox"
+                                            checked={field.required}
+                                            onChange={e => field.id && cat.id && panel.id &&
+                                              saveFormField(field.id, cat.id, panel.id, { required: e.target.checked })}
+                                          />
+                                          Required
+                                        </label>
                                       </div>
                                       <input
                                         defaultValue={field.placeholder || ''}
