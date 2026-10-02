@@ -22,6 +22,26 @@ export function resolveChannelName(
   return result.substring(0, 100);
 }
 
+/**
+ * Show a form answer as a code block so it stands apart from the bold question.
+ * Fences inside the answer are broken up so they can't close the block, and the
+ * result fits Discord's 1024-character field limit.
+ */
+export function formatFormAnswer(answer: string): string {
+  const text = answer.trim();
+  if (!text) return '*(no answer)*';
+  const safe = text.replace(/```/g, '`\u200b``');
+  const max = 1024 - '```\n\n```'.length;
+  const body = safe.length > max ? `${safe.slice(0, max - 1)}…` : safe;
+  return `\`\`\`\n${body}\n\`\`\``;
+}
+
+/** Undo formatFormAnswer for the plain-text transcript. */
+function unfence(value: string): string {
+  const match = /^```\n([\s\S]*)\n```$/.exec(value);
+  return match ? match[1].replace(/`\u200b``/g, '```') : value;
+}
+
 interface TranscriptMessage {
   author: { tag: string };
   content: string;
@@ -55,7 +75,7 @@ export function buildTranscript(
       if (embed.title) transcript += `  ${embed.title}\n`;
       if (embed.description) transcript += `  ${embed.description.replace(/\n/g, '\n  ')}\n`;
       for (const field of embed.fields ?? []) {
-        transcript += `  ${field.name}: ${field.value.replace(/\n/g, '\n    ')}\n`;
+        transcript += `  ${field.name}: ${unfence(field.value).replace(/\n/g, '\n    ')}\n`;
       }
     }
     if (msg.attachments.size > 0 && msg.attachments.map) {

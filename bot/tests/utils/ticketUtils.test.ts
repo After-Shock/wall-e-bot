@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { resolveChannelName, buildTranscript } from '../../src/utils/ticketUtils.js';
+import { resolveChannelName, buildTranscript, formatFormAnswer } from '../../src/utils/ticketUtils.js';
 
 describe('resolveChannelName', () => {
   it('replaces {type} with lowercased hyphenated category name', () => {
@@ -123,5 +123,30 @@ describe('buildTranscript', () => {
     ];
     const result = buildTranscript('ticket-0001', 'u1', new Date(), messages as any);
     expect(result).toContain('https://cdn.discord.com/file.png');
+  });
+});
+
+describe('formatFormAnswer', () => {
+  it('wraps the answer in a code block so it stands apart from the question', () => {
+    expect(formatFormAnswer(' test ')).toBe('```\ntest\n```');
+  });
+
+  it('keeps a typed ``` from closing the block early', () => {
+    const value = formatFormAnswer('a```b');
+    expect(value.slice(3, -3)).not.toContain('```');
+  });
+
+  it('fits Discord\'s 1024-character field limit and marks blank answers', () => {
+    expect(formatFormAnswer('x'.repeat(2000)).length).toBeLessThanOrEqual(1024);
+    expect(formatFormAnswer('   ')).toBe('*(no answer)*');
+  });
+
+  it('shows plain answers in the transcript', () => {
+    const messages = [{
+      author: { tag: 'Wall-E#0001' }, content: '', createdAt: new Date('2026-01-01T10:00:00Z'),
+      attachments: { size: 0, map: () => [] },
+      embeds: [{ fields: [{ name: 'Email?', value: formatFormAnswer('me@example.com') }] }],
+    }];
+    expect(buildTranscript('t-0001', 'u1', new Date(), messages as any)).toContain('  Email?: me@example.com\n');
   });
 });

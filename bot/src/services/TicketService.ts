@@ -14,7 +14,7 @@ import {
 import { COLORS } from '@wall-e/shared';
 import type { PoolClient } from 'pg';
 import type { WallEClient } from '../structures/Client.js';
-import { buildTranscript, resolveChannelName } from '../utils/ticketUtils.js';
+import { buildTranscript, formatFormAnswer, resolveChannelName } from '../utils/ticketUtils.js';
 import { logger } from '../utils/logger.js';
 
 type TicketInteraction = ButtonInteraction | ChatInputCommandInteraction | any;
@@ -198,7 +198,7 @@ function buildTicketWelcomeEmbed(
 
   if (formAnswers && Object.keys(formAnswers).length > 0) {
     for (const [label, value] of Object.entries(formAnswers)) {
-      welcomeEmbed.addFields({ name: label, value: value || '(no answer)', inline: false });
+      welcomeEmbed.addFields({ name: label, value: formatFormAnswer(value || ''), inline: false });
     }
   }
 
