@@ -17,6 +17,13 @@ const command: Command = {
             .setRequired(true)))
     .addSubcommand(subcommand =>
       subcommand
+        .setName('top')
+        .setDescription('Leaderboard of users with the most offenses')
+        .addStringOption(option =>
+          option.setName('command')
+            .setDescription('Only count this command (e.g. rule2); default is all')))
+    .addSubcommand(subcommand =>
+      subcommand
         .setName('reset')
         .setDescription("Clear a user's offense count (admins and mods only)")
         .addUserOption(option =>
@@ -42,6 +49,32 @@ const command: Command = {
     );
     if (!logChannel.rowCount) {
       await interaction.reply({ embeds: [errorEmbed('Wrong Channel', 'Use this command in the mod log channel.')], ephemeral: true });
+      return;
+    }
+
+    if (interaction.options.getSubcommand() === 'top') {
+      const only = interaction.options.getString('command')?.replace(/^!/, '') ?? null;
+      const { rows } = await client.db.pool.query<{ target_id: string; count: number; last: Date }>(
+        `SELECT a.target_id, COUNT(*)::int AS count, MAX(a.created_at) AS last
+         FROM custom_command_actions a
+         JOIN custom_commands c ON c.id = a.command_id
+         WHERE a.guild_id = $1 AND ($2::text IS NULL OR LOWER(c.name) = LOWER($2))
+         GROUP BY a.target_id
+         ORDER BY count DESC, last DESC
+         LIMIT 10`,
+        [guildId, only],
+      );
+      if (rows.length === 0) {
+        await interaction.reply({ embeds: [successEmbed('No Offenses', 'Nobody has any recorded offenses.')] });
+        return;
+      }
+      const embed = new EmbedBuilder()
+        .setColor(COLORS.WARNING)
+        .setTitle(`🛡️ Top Offenders${only ? ` — ${only}` : ''}`)
+        .setDescription(rows.map((r, i) =>
+          `**${i + 1}.** <@${r.target_id}> — **${r.count}** (last <t:${Math.floor(new Date(r.last).getTime() / 1000)}:R>)`,
+        ).join('\n'));
+      await interaction.reply({ embeds: [embed] });
       return;
     }
 
