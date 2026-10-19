@@ -66,7 +66,7 @@ async function logReplyModeration(
   );
   if (!cmd.reply_log_channel_id) return;
 
-  const logChannel = message.guild!.channels.cache.get(cmd.reply_log_channel_id);
+  const logChannel = await message.guild!.channels.fetch(cmd.reply_log_channel_id).catch(() => null);
   if (!logChannel?.isTextBased()) return;
 
   const { rows } = await client.db.pool.query(
