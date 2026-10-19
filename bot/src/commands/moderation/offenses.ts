@@ -18,7 +18,7 @@ const command: Command = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('reset')
-        .setDescription("Clear a user's offense count (admins only)")
+        .setDescription("Clear a user's offense count (admins and mods only)")
         .addUserOption(option =>
           option.setName('user')
             .setDescription('The user to reset')
@@ -48,9 +48,10 @@ const command: Command = {
     const target = interaction.options.getUser('user', true);
 
     if (interaction.options.getSubcommand() === 'reset') {
-      // Discord can't gate a single subcommand, so admin-only is checked here
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-        await interaction.reply({ embeds: [errorEmbed('Missing Permissions', 'Only admins can reset offenses.')], ephemeral: true });
+      // Discord can't gate a single subcommand, so the mod check is here.
+      // Moderate Members (timeout) is what /warn treats as "a moderator".
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)) {
+        await interaction.reply({ embeds: [errorEmbed('Missing Permissions', 'Only admins and moderators can reset offenses.')], ephemeral: true });
         return;
       }
       const only = interaction.options.getString('command')?.replace(/^!/, '') ?? null;
