@@ -18,7 +18,7 @@ const command: Command = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('reset')
-        .setDescription("Clear a user's offense count")
+        .setDescription("Clear a user's offense count (admins only)")
         .addUserOption(option =>
           option.setName('user')
             .setDescription('The user to reset')
@@ -48,6 +48,11 @@ const command: Command = {
     const target = interaction.options.getUser('user', true);
 
     if (interaction.options.getSubcommand() === 'reset') {
+      // Discord can't gate a single subcommand, so admin-only is checked here
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        await interaction.reply({ embeds: [errorEmbed('Missing Permissions', 'Only admins can reset offenses.')], ephemeral: true });
+        return;
+      }
       const only = interaction.options.getString('command')?.replace(/^!/, '') ?? null;
       const { rowCount } = await client.db.pool.query(
         `DELETE FROM custom_command_actions a
