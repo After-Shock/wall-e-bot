@@ -195,7 +195,7 @@ async function handleCustomCommands(
         args,
       });
 
-    const deliver = async (dest: User | import('discord.js').TextChannel) => {
+    const deliver = async (dest: User | import('discord.js').TextChannel, extra: EmbedBuilder[] = []) => {
       if (cmd.cembed_response) {
         const embedData = parseCembed(rendered);
         if (!embedData) {
@@ -212,23 +212,34 @@ async function handleCustomCommands(
           if (embedData.thumbnail) embed.setThumbnail(embedData.thumbnail);
           if (embedData.image) embed.setImage(embedData.image);
           if (embedData.fields?.length) embed.addFields(embedData.fields.map(f => ({ name: f.name, value: f.value, inline: f.inline ?? false })));
-          await dest.send({ embeds: [embed] });
+          await dest.send({ embeds: [embed, ...extra] });
         }
       } else if (cmd.embed_response) {
         const { EmbedBuilder } = await import('discord.js');
         const embed = new EmbedBuilder()
           .setDescription(rendered)
           .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
-        await dest.send({ embeds: [embed] });
+        await dest.send({ embeds: [embed, ...extra] });
       } else {
         await sendLong(dest, rendered, CUSTOM_COMMAND_MENTIONS);
+        if (extra.length) await dest.send({ embeds: extra });
       }
     };
 
     if (target) {
       await target.delete().catch(() => {});
       await message.delete().catch(() => {});
-      const dmed = await deliver(target.author).then(() => true, () => false);
+      // Show them what was removed. DM only: the channel fallback must not repost it.
+      const files = [...target.attachments.values()].map((a) => a.name).join(', ');
+      const original = new EmbedBuilder()
+        .setColor(0x99AAB5)
+        .setTitle('Your removed message')
+        .setDescription((target.content || '*(no text)*').slice(0, 4000))
+        .addFields({ name: 'Channel', value: `<#${channel.id}> in ${guild.name}` })
+        .setTimestamp(target.createdAt);
+      if (files) original.addFields({ name: 'Attachments', value: files.slice(0, 1024) });
+
+      const dmed = await deliver(target.author, [original]).then(() => true, () => false);
       // DMs closed — warn in the channel so the message still reaches them
       if (!dmed) await deliver(channel);
       await logReplyModeration(client, cmd, message, target, dmed)
