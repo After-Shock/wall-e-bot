@@ -41,6 +41,7 @@ interface CustomCommand {
   cooldown: number;
   delete_command: boolean;
   reply_moderation: boolean;
+  reply_log_channel_id: string | null;
   case_sensitive: boolean;
   trigger_on_edit: boolean;
   enabled: boolean;
@@ -68,6 +69,7 @@ const emptyCommand = (): Partial<CustomCommand> => ({
   cooldown: 0,
   delete_command: false,
   reply_moderation: false,
+  reply_log_channel_id: null,
   case_sensitive: false,
   trigger_on_edit: false,
   enabled: true,
@@ -397,6 +399,11 @@ export default function CustomCommandsPage() {
   const { data: roles = [] } = useQuery<{ id: string; name: string }[]>({
     queryKey: ['guild-roles', guildId],
     queryFn: () => api.get(`/api/guilds/${guildId}/roles`).then(r => r.data),
+  });
+
+  const { data: channels = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['channels', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/channels`).then(r => r.data),
   });
 
   // ── UI state ──
@@ -905,6 +912,19 @@ export default function CustomCommandsPage() {
                 <Toggle label="Reply Moderation" description="When a moderator replies with this command, delete the replied-to message and DM its author the response"
                   checked={editingCommand.reply_moderation ?? false}
                   onChange={v => setEditingCommand(prev => prev ? { ...prev, reply_moderation: v } : prev)} />
+                {editingCommand.reply_moderation && (
+                  <div className="py-3">
+                    <label className="block text-sm font-medium mb-1">Mod log channel <span className="text-discord-light font-normal">(deleted message, moderator and offense count are posted here)</span></label>
+                    <select
+                      value={editingCommand.reply_log_channel_id ?? ''}
+                      onChange={e => setEditingCommand(prev => prev ? { ...prev, reply_log_channel_id: e.target.value || null } : prev)}
+                      className="input w-full"
+                    >
+                      <option value="">— None —</option>
+                      {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+                    </select>
+                  </div>
+                )}
               </>
             )}
           </div>

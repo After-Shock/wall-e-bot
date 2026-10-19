@@ -1,4 +1,4 @@
-import { Events, Message, PermissionFlagsBits, type User } from 'discord.js';
+import { EmbedBuilder, Events, Message, PermissionFlagsBits, type User } from 'discord.js';
 import { canExecuteCustomCommand, isSafeCustomCommandRegex } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
@@ -19,6 +19,7 @@ interface MessageCustomCommand {
   embed_color: string | null;
   delete_command: boolean;
   reply_moderation: boolean;
+  reply_log_channel_id: string | null;
   case_sensitive: boolean;
   allowed_roles: string[] | null;
   allowed_channels: string[] | null;
@@ -37,7 +38,7 @@ async function getMessageCommands(client: WallEClient, guildId: string): Promise
 
   const result = await client.db.pool.query(
     `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
-            delete_command, reply_moderation, case_sensitive, allowed_roles, allowed_channels
+            delete_command, reply_moderation, reply_log_channel_id, case_sensitive, allowed_roles, allowed_channels
      FROM custom_commands
      WHERE guild_id = $1
        AND enabled = TRUE
@@ -47,6 +48,46 @@ async function getMessageCommands(client: WallEClient, guildId: string): Promise
 
   client.cache.setJson(cacheKey, result.rows, CUSTOM_COMMANDS_CACHE_TTL).catch(() => {});
   return result.rows as MessageCustomCommand[];
+}
+
+/** Record a reply-moderation action and post it to the command's mod log channel. */
+async function logReplyModeration(
+  client: WallEClient,
+  cmd: MessageCustomCommand,
+  message: Message,
+  target: Message,
+  dmed: boolean,
+) {
+  const guildId = message.guild!.id;
+  await client.db.pool.query(
+    `INSERT INTO custom_command_actions (guild_id, command_id, target_id, moderator_id, message_content)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [guildId, cmd.id, target.author.id, message.author.id, target.content],
+  );
+  if (!cmd.reply_log_channel_id) return;
+
+  const logChannel = message.guild!.channels.cache.get(cmd.reply_log_channel_id);
+  if (!logChannel?.isTextBased()) return;
+
+  const { rows } = await client.db.pool.query(
+    'SELECT COUNT(*)::int AS count FROM custom_command_actions WHERE command_id = $1 AND target_id = $2',
+    [cmd.id, target.author.id],
+  );
+  const attachments = [...target.attachments.values()].map((a) => a.url).join('\n');
+  const embed = new EmbedBuilder()
+    .setColor(0xE74C3C)
+    .setTitle(`🛡️ ${cmd.name} used`)
+    .setDescription((target.content || '*(no text)*').slice(0, 4000))
+    .addFields(
+      { name: 'User', value: `${target.author} (${target.author.id})`, inline: true },
+      { name: 'Moderator', value: `${message.author}`, inline: true },
+      { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
+      { name: `Times hit with ${cmd.name}`, value: String(rows[0].count), inline: true },
+      { name: 'DM', value: dmed ? 'Delivered' : 'DMs closed, posted in channel', inline: true },
+    )
+    .setTimestamp();
+  if (attachments) embed.addFields({ name: 'Attachments', value: attachments.slice(0, 1024) });
+  await logChannel.send({ embeds: [embed] });
 }
 
 async function handleCustomCommands(
@@ -187,8 +228,11 @@ async function handleCustomCommands(
     if (target) {
       await target.delete().catch(() => {});
       await message.delete().catch(() => {});
+      const dmed = await deliver(target.author).then(() => true, () => false);
       // DMs closed — warn in the channel so the message still reaches them
-      await deliver(target.author).catch(() => deliver(channel));
+      if (!dmed) await deliver(channel);
+      await logReplyModeration(client, cmd, message, target, dmed)
+        .catch((e) => logger.warn('Reply moderation log failed:', e));
     } else {
       if (cmd.delete_command) await message.delete().catch(() => {});
       await deliver(channel);
