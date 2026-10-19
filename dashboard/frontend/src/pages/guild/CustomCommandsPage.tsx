@@ -394,6 +394,11 @@ export default function CustomCommandsPage() {
     queryFn: () => api.get(`/api/guilds/${guildId}/command-groups`).then(r => r.data),
   });
 
+  const { data: roles = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['guild-roles', guildId],
+    queryFn: () => api.get(`/api/guilds/${guildId}/roles`).then(r => r.data),
+  });
+
   // ── UI state ──
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
@@ -903,6 +908,29 @@ export default function CustomCommandsPage() {
               </>
             )}
           </div>
+          {editingCommand.trigger_type !== 'interval' && (
+            <div className="pt-3">
+              <label className="block text-sm font-medium mb-1">Allowed roles <span className="text-discord-light font-normal">(empty = everyone can use it)</span></label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(editingCommand.allowed_roles ?? []).map(id => (
+                  <span key={id} className="flex items-center gap-1 bg-discord-darker px-2 py-0.5 rounded text-xs">
+                    {roles.find(r => r.id === id)?.name ?? id}
+                    <button onClick={() => setEditingCommand(prev => prev ? { ...prev, allowed_roles: (prev.allowed_roles ?? []).filter(r => r !== id) } : prev)} className="text-discord-light hover:text-white">×</button>
+                  </span>
+                ))}
+              </div>
+              <select
+                value=""
+                onChange={e => { const id = e.target.value; if (id) setEditingCommand(prev => prev ? { ...prev, allowed_roles: [...(prev.allowed_roles ?? []), id] } : prev); }}
+                className="input w-full"
+              >
+                <option value="">— Add allowed role —</option>
+                {roles.filter(r => !(editingCommand.allowed_roles ?? []).includes(r.id)).map(r => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Save actions */}
