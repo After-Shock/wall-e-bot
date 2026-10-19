@@ -1,4 +1,4 @@
-import { Events, Message } from 'discord.js';
+import { Events, Message, PermissionFlagsBits, type User } from 'discord.js';
 import { canExecuteCustomCommand, isSafeCustomCommandRegex } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
 import { logger } from '../utils/logger.js';
@@ -18,6 +18,7 @@ interface MessageCustomCommand {
   cembed_response: boolean;
   embed_color: string | null;
   delete_command: boolean;
+  reply_moderation: boolean;
   case_sensitive: boolean;
   allowed_roles: string[] | null;
   allowed_channels: string[] | null;
@@ -36,7 +37,7 @@ async function getMessageCommands(client: WallEClient, guildId: string): Promise
 
   const result = await client.db.pool.query(
     `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
-            delete_command, case_sensitive, allowed_roles, allowed_channels
+            delete_command, reply_moderation, case_sensitive, allowed_roles, allowed_channels
      FROM custom_commands
      WHERE guild_id = $1
        AND enabled = TRUE
@@ -129,47 +130,68 @@ async function handleCustomCommands(
     if (!Array.isArray(responses) || responses.length === 0) continue;
     const raw = responses[Math.floor(Math.random() * responses.length)];
 
+    // Reply moderation: a moderator replying with the command deletes the
+    // replied-to message and DMs its author the response instead.
+    const target = cmd.reply_moderation && message.reference?.messageId &&
+      message.member?.permissionsIn(channel).has(PermissionFlagsBits.ManageMessages)
+      ? await message.fetchReference().catch(() => null)
+      : null;
+    const subject = target?.author ?? message.author;
+    const subjectMember = target ? target.member : message.member;
+
     // Embed responses are YAGPDB-style templates that parseCembed reads; Handlebars
     // can't parse them and only logged a warning before falling back to the raw text.
-    const rendered = cmd.cembed_response ? raw : client.template.render(raw, {
-      user: `<@${message.author.id}>`,
-      username: message.member?.displayName ?? message.author.username,
-      userId: message.author.id,
-      server: guild.name,
-      memberCount: guild.memberCount,
-      channel: `#${'name' in message.channel ? (message.channel as { name: string }).name : ''}`,
-      channelId: message.channel.id,
-      args,
-    });
+    const rendered = cmd.cembed_response
+      ? raw.replace(/\.User\.Mention\b/g, JSON.stringify(`<@${subject.id}>`))
+      : client.template.render(raw, {
+        user: `<@${subject.id}>`,
+        username: subjectMember?.displayName ?? subject.username,
+        userId: subject.id,
+        server: guild.name,
+        memberCount: guild.memberCount,
+        channel: `#${'name' in message.channel ? (message.channel as { name: string }).name : ''}`,
+        channelId: message.channel.id,
+        args,
+      });
 
-    if (cmd.delete_command) await message.delete().catch(() => {});
-
-    if (cmd.cembed_response) {
-      const embedData = parseCembed(rendered);
-      if (!embedData) {
-        await channel.send('⚠️ Failed to parse embed.');
-      } else {
+    const deliver = async (dest: User | import('discord.js').TextChannel) => {
+      if (cmd.cembed_response) {
+        const embedData = parseCembed(rendered);
+        if (!embedData) {
+          await dest.send('⚠️ Failed to parse embed.');
+        } else {
+          const { EmbedBuilder } = await import('discord.js');
+          const embed = new EmbedBuilder();
+          if (embedData.title) embed.setTitle(embedData.title);
+          if (embedData.description) embed.setDescription(embedData.description);
+          if (embedData.color !== undefined) embed.setColor(embedData.color);
+          if (embedData.url) embed.setURL(embedData.url);
+          if (embedData.author?.name) embed.setAuthor({ name: embedData.author.name, iconURL: embedData.author.icon_url, url: embedData.author.url });
+          if (embedData.footer?.text) embed.setFooter({ text: embedData.footer.text, iconURL: embedData.footer.icon_url });
+          if (embedData.thumbnail) embed.setThumbnail(embedData.thumbnail);
+          if (embedData.image) embed.setImage(embedData.image);
+          if (embedData.fields?.length) embed.addFields(embedData.fields.map(f => ({ name: f.name, value: f.value, inline: f.inline ?? false })));
+          await dest.send({ embeds: [embed] });
+        }
+      } else if (cmd.embed_response) {
         const { EmbedBuilder } = await import('discord.js');
-        const embed = new EmbedBuilder();
-        if (embedData.title) embed.setTitle(embedData.title);
-        if (embedData.description) embed.setDescription(embedData.description);
-        if (embedData.color !== undefined) embed.setColor(embedData.color);
-        if (embedData.url) embed.setURL(embedData.url);
-        if (embedData.author?.name) embed.setAuthor({ name: embedData.author.name, iconURL: embedData.author.icon_url, url: embedData.author.url });
-        if (embedData.footer?.text) embed.setFooter({ text: embedData.footer.text, iconURL: embedData.footer.icon_url });
-        if (embedData.thumbnail) embed.setThumbnail(embedData.thumbnail);
-        if (embedData.image) embed.setImage(embedData.image);
-        if (embedData.fields?.length) embed.addFields(embedData.fields.map(f => ({ name: f.name, value: f.value, inline: f.inline ?? false })));
-        await channel.send({ embeds: [embed] });
+        const embed = new EmbedBuilder()
+          .setDescription(rendered)
+          .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
+        await dest.send({ embeds: [embed] });
+      } else {
+        await sendLong(dest, rendered, CUSTOM_COMMAND_MENTIONS);
       }
-    } else if (cmd.embed_response) {
-      const { EmbedBuilder } = await import('discord.js');
-      const embed = new EmbedBuilder()
-        .setDescription(rendered)
-        .setColor((cmd.embed_color ?? '#5865F2') as `#${string}`);
-      await channel.send({ embeds: [embed] });
+    };
+
+    if (target) {
+      await target.delete().catch(() => {});
+      await message.delete().catch(() => {});
+      // DMs closed — warn in the channel so the message still reaches them
+      await deliver(target.author).catch(() => deliver(channel));
     } else {
-      await sendLong(channel, rendered, CUSTOM_COMMAND_MENTIONS);
+      if (cmd.delete_command) await message.delete().catch(() => {});
+      await deliver(channel);
     }
 
     client.db.pool.query(

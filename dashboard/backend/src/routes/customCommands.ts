@@ -26,6 +26,7 @@ const CommandSchema = z.object({
   embed_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
   cooldown: z.number().int().min(0).max(3600).default(0),
   delete_command: z.boolean().default(false),
+  reply_moderation: z.boolean().default(false),
   case_sensitive: z.boolean().default(false),
   trigger_on_edit: z.boolean().default(false),
   enabled: z.boolean().default(true),
@@ -64,7 +65,7 @@ function validateCommand(data: z.infer<typeof CommandSchema>): string | null {
 
 const SELECT_COLS = `
   id, guild_id, name, description, trigger_type, group_id, responses,
-  embed_response, cembed_response, embed_color, cooldown, delete_command,
+  embed_response, cembed_response, embed_color, cooldown, delete_command, reply_moderation,
   case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
   interval_cron, interval_channel_id, interval_next_run,
   reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
@@ -112,8 +113,8 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
         case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
         interval_cron, interval_channel_id,
         reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
-        created_by)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+        created_by, reply_moderation)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
      RETURNING ${SELECT_COLS}`,
     [
       guildId, d.name, d.description ?? null, d.trigger_type, d.group_id ?? null,
@@ -125,6 +126,7 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
       d.reaction_message_id ?? null, d.reaction_channel_id ?? null,
       d.reaction_emoji ?? null, d.reaction_type ?? null,
       (req as { user?: { discord_id?: string } }).user?.discord_id ?? 'dashboard',
+      d.reply_moderation,
     ],
   );
   logger.info(`Custom command created: ${d.name} (${d.trigger_type}) in ${guildId}`);

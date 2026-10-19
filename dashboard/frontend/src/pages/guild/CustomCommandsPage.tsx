@@ -40,6 +40,7 @@ interface CustomCommand {
   embed_color: string | null;
   cooldown: number;
   delete_command: boolean;
+  reply_moderation: boolean;
   case_sensitive: boolean;
   trigger_on_edit: boolean;
   enabled: boolean;
@@ -66,6 +67,7 @@ const emptyCommand = (): Partial<CustomCommand> => ({
   embed_color: null,
   cooldown: 0,
   delete_command: false,
+  reply_moderation: false,
   case_sensitive: false,
   trigger_on_edit: false,
   enabled: true,
@@ -895,6 +897,9 @@ export default function CustomCommandsPage() {
                 <Toggle label="Delete Trigger Message" description="Delete the user's message on trigger"
                   checked={editingCommand.delete_command ?? false}
                   onChange={v => setEditingCommand(prev => prev ? { ...prev, delete_command: v } : prev)} />
+                <Toggle label="Reply Moderation" description="When a moderator replies with this command, delete the replied-to message and DM its author the response"
+                  checked={editingCommand.reply_moderation ?? false}
+                  onChange={v => setEditingCommand(prev => prev ? { ...prev, reply_moderation: v } : prev)} />
               </>
             )}
           </div>

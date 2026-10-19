@@ -27,6 +27,8 @@ const OBJ_TOK = `\\{(?:[^{}"']|${STR_TOK})*\\}`;
 // JSON array (string-aware)
 const ARR_TOK = `\\[(?:[^\\[\\]"']|${STR_TOK})*\\]`;
 
+const JOINSTR_RE = new RegExp(`\\(joinStr\\s+(${STR_TOK})((?:\\s+${STR_TOK})*)\\s*\\)`, 'g');
+const STR_RE = new RegExp(STR_TOK, 'g');
 const SDICT_RE = new RegExp(`\\(sdict(${SDICT_KV}+)\\s*\\)`, 'g');
 const SDICT_KV_RE = new RegExp(`"([^"]+)"\\s+(${STR_TOK}|${BARE_TOK})`, 'g');
 const CSLICE_RE = new RegExp(`\\(cslice((?:\\s*${OBJ_TOK})+)\\s*\\)`, 'g');
@@ -38,6 +40,12 @@ export function parseCembed(code: string): EmbedData | null {
     const cembedMatch = code.match(/cembed\s+([\s\S]*?)(?:\n\s*\}\}|$)/);
     if (!cembedMatch) return null;
     let body = cembedMatch[1].trim();
+
+    // Replace (joinStr "sep" "a" "b" ...) with the single joined string
+    body = body.replace(JOINSTR_RE, (_match, sep, inner) => {
+      const parts = (inner.match(STR_RE) ?? []).map((t: string) => JSON.parse(t) as string);
+      return JSON.stringify(parts.join(JSON.parse(sep)));
+    });
 
     // Replace (sdict "k" v ...) with {"k": v, ...}
     // The explicit KV pattern means ) inside string values never terminates the match early
