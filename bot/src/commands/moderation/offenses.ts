@@ -6,11 +6,26 @@ import { COLORS } from '@wall-e/shared';
 const command: Command = {
   data: new SlashCommandBuilder()
     .setName('offenses')
-    .setDescription('Show reply-moderation actions taken against a user')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('The user to check')
-        .setRequired(true))
+    .setDescription('Reply-moderation offense history')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('view')
+        .setDescription('Show reply-moderation actions taken against a user')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('The user to check')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reset')
+        .setDescription("Clear a user's offense count")
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('The user to reset')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('command')
+            .setDescription('Only reset this command (e.g. rule2); default is all')))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
   permissions: [PermissionFlagsBits.ManageMessages],
@@ -31,6 +46,23 @@ const command: Command = {
     }
 
     const target = interaction.options.getUser('user', true);
+
+    if (interaction.options.getSubcommand() === 'reset') {
+      const only = interaction.options.getString('command')?.replace(/^!/, '') ?? null;
+      const { rowCount } = await client.db.pool.query(
+        `DELETE FROM custom_command_actions a
+         USING custom_commands c
+         WHERE c.id = a.command_id AND a.guild_id = $1 AND a.target_id = $2
+           AND ($3::text IS NULL OR LOWER(c.name) = LOWER($3))`,
+        [guildId, target.id, only],
+      );
+      // Public reply so other mods in the log channel see who reset what
+      await interaction.reply({
+        embeds: [successEmbed('Offenses Reset', `${interaction.user} cleared **${rowCount ?? 0}** ${only ? `**${only}** ` : ''}offense(s) for ${target} (${target.id}).`)],
+      });
+      return;
+    }
+
     const { rows } = await client.db.pool.query<{ name: string; moderator_id: string; message_content: string | null; created_at: Date }>(
       `SELECT c.name, a.moderator_id, a.message_content, a.created_at
        FROM custom_command_actions a
