@@ -42,6 +42,7 @@ interface CustomCommand {
   delete_command: boolean;
   reply_moderation: boolean;
   reply_log_channel_id: string | null;
+  reply_dm_failed_notice: string | null;
   case_sensitive: boolean;
   trigger_on_edit: boolean;
   enabled: boolean;
@@ -70,6 +71,7 @@ const emptyCommand = (): Partial<CustomCommand> => ({
   delete_command: false,
   reply_moderation: false,
   reply_log_channel_id: null,
+  reply_dm_failed_notice: null,
   case_sensitive: false,
   trigger_on_edit: false,
   enabled: true,
@@ -923,6 +925,15 @@ export default function CustomCommandsPage() {
                       <option value="">— None —</option>
                       {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
                     </select>
+                    <label className="block text-sm font-medium mb-1 mt-3">DM failed notice <span className="text-discord-light font-normal">(posted in the channel after the user's mention when their DMs are closed)</span></label>
+                    <input
+                      type="text"
+                      value={editingCommand.reply_dm_failed_notice ?? ''}
+                      onChange={e => setEditingCommand(prev => prev ? { ...prev, reply_dm_failed_notice: e.target.value || null } : prev)}
+                      className="input w-full"
+                      placeholder="a moderator removed your message."
+                      maxLength={1000}
+                    />
                   </div>
                 )}
               </>

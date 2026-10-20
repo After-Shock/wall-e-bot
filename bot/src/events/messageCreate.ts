@@ -20,6 +20,7 @@ interface MessageCustomCommand {
   delete_command: boolean;
   reply_moderation: boolean;
   reply_log_channel_id: string | null;
+  reply_dm_failed_notice: string | null;
   case_sensitive: boolean;
   allowed_roles: string[] | null;
   allowed_channels: string[] | null;
@@ -38,7 +39,7 @@ async function getMessageCommands(client: WallEClient, guildId: string): Promise
 
   const result = await client.db.pool.query(
     `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
-            delete_command, reply_moderation, reply_log_channel_id, case_sensitive, allowed_roles, allowed_channels
+            delete_command, reply_moderation, reply_log_channel_id, reply_dm_failed_notice, case_sensitive, allowed_roles, allowed_channels
      FROM custom_commands
      WHERE guild_id = $1
        AND enabled = TRUE
@@ -243,7 +244,7 @@ async function handleCustomCommands(
       // DMs closed — short public notice only; the full warning stays private
       if (!dmed) {
         await channel.send({
-          content: `${target.author}, a moderator removed your message under \`${prefix}${cmd.name}\`.`,
+          content: `${target.author}, ${cmd.reply_dm_failed_notice || 'a moderator removed your message.'}`,
           allowedMentions: { users: [target.author.id] },
         });
       }
