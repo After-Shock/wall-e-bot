@@ -83,7 +83,7 @@ async function logReplyModeration(
       { name: 'Moderator', value: `${message.author}`, inline: true },
       { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
       { name: `Times hit with ${cmd.name}`, value: String(rows[0].count), inline: true },
-      { name: 'DM', value: dmed ? 'Delivered' : 'DMs closed, posted in channel', inline: true },
+      { name: 'DM', value: dmed ? '✅ Delivered' : '❌ Failed (user has DMs closed); short notice posted in channel', inline: dmed },
     )
     .setTimestamp();
   if (attachments) embed.addFields({ name: 'Attachments', value: attachments.slice(0, 1024) });
@@ -240,8 +240,13 @@ async function handleCustomCommands(
       if (files) original.addFields({ name: 'Attachments', value: files.slice(0, 1024) });
 
       const dmed = await deliver(target.author, [original]).then(() => true, () => false);
-      // DMs closed — warn in the channel so the message still reaches them
-      if (!dmed) await deliver(channel);
+      // DMs closed — short public notice only; the full warning stays private
+      if (!dmed) {
+        await channel.send({
+          content: `${target.author}, a moderator removed your message under \`${prefix}${cmd.name}\`.`,
+          allowedMentions: { users: [target.author.id] },
+        });
+      }
       await logReplyModeration(client, cmd, message, target, dmed)
         .catch((e) => logger.warn('Reply moderation log failed:', e));
     } else {
