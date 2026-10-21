@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { CUSTOM_COMMAND_MENTIONS, sendLong } from '../utils/sendLong.js';
 import { parseCembed } from '../utils/parseCembed.js';
 import { isGuildAllowed } from '../utils/whitelist.js';
+import { escalationFor } from '../utils/replyEscalation.js';
 
 /** Seconds to cache a guild's custom command list (dashboard/bot edits apply within this window). */
 const CUSTOM_COMMANDS_CACHE_TTL = 60;
@@ -21,6 +22,8 @@ interface MessageCustomCommand {
   reply_moderation: boolean;
   reply_log_channel_id: string | null;
   reply_dm_failed_notice: string | null;
+  reply_escalation: boolean;
+  reply_escalation_channel_id: string | null;
   case_sensitive: boolean;
   allowed_roles: string[] | null;
   allowed_channels: string[] | null;
@@ -39,7 +42,8 @@ async function getMessageCommands(client: WallEClient, guildId: string): Promise
 
   const result = await client.db.pool.query(
     `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
-            delete_command, reply_moderation, reply_log_channel_id, reply_dm_failed_notice, case_sensitive, allowed_roles, allowed_channels
+            delete_command, reply_moderation, reply_log_channel_id, reply_dm_failed_notice,
+            reply_escalation, reply_escalation_channel_id, case_sensitive, allowed_roles, allowed_channels
      FROM custom_commands
      WHERE guild_id = $1
        AND enabled = TRUE
@@ -51,29 +55,55 @@ async function getMessageCommands(client: WallEClient, guildId: string): Promise
   return result.rows as MessageCustomCommand[];
 }
 
-/** Record a reply-moderation action and post it to the command's mod log channel. */
-async function logReplyModeration(
+/** Record a reply-moderation offense; returns the user's active and all-time counts for the command. */
+async function recordOffense(client: WallEClient, cmd: MessageCustomCommand, message: Message, target: Message) {
+  await client.db.pool.query(
+    `INSERT INTO custom_command_actions (guild_id, command_id, target_id, moderator_id, message_content)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [message.guild!.id, cmd.id, target.author.id, message.author.id, target.content],
+  );
+  const { rows } = await client.db.pool.query<{ active: number; total: number }>(
+    `SELECT COUNT(*) FILTER (WHERE active)::int AS active, COUNT(*)::int AS total
+     FROM custom_command_actions WHERE command_id = $1 AND target_id = $2`,
+    [cmd.id, target.author.id],
+  );
+  return rows[0];
+}
+
+/** Time the user out for their offense step; returns a line describing what happened. */
+async function escalate(
   client: WallEClient,
   cmd: MessageCustomCommand,
   message: Message,
   target: Message,
-  dmed: boolean,
-) {
-  const guildId = message.guild!.id;
-  await client.db.pool.query(
-    `INSERT INTO custom_command_actions (guild_id, command_id, target_id, moderator_id, message_content)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [guildId, cmd.id, target.author.id, message.author.id, target.content],
-  );
-  if (!cmd.reply_log_channel_id) return;
+  active: number,
+): Promise<{ text: string; duration: string; timedOut: boolean; needsManualAction: boolean }> {
+  const { ms, label: duration, needsManualAction } = escalationFor(active);
+  const reason = `${cmd.name} offense #${active} (by ${message.author.tag})`;
+  const member = target.member ?? await message.guild!.members.fetch(target.author.id).catch(() => null);
+  const timedOut = !!member && await member.timeout(ms, reason).then(() => true, () => false);
+  if (timedOut) {
+    client.db.logModAction(message.guild!.id, target.author.id, message.author.id, 'timeout', reason, ms).catch(() => {});
+  }
+  return {
+    text: timedOut ? `⏱️ Timed out for ${duration}` : `❌ ${duration} timeout failed (Wall-E needs Timeout Members and a role above the user)`,
+    duration,
+    timedOut,
+    needsManualAction,
+  };
+}
 
+/** Post a reply-moderation action to the command's mod log channel. */
+async function logReplyModeration(
+  cmd: MessageCustomCommand,
+  message: Message,
+  target: Message,
+  details: { dmed: boolean; active: number; total: number; action: string | null },
+) {
+  if (!cmd.reply_log_channel_id) return;
   const logChannel = await message.guild!.channels.fetch(cmd.reply_log_channel_id).catch(() => null);
   if (!logChannel?.isTextBased()) return;
 
-  const { rows } = await client.db.pool.query(
-    'SELECT COUNT(*)::int AS count FROM custom_command_actions WHERE command_id = $1 AND target_id = $2',
-    [cmd.id, target.author.id],
-  );
   const attachments = [...target.attachments.values()].map((a) => a.url).join('\n');
   const embed = new EmbedBuilder()
     .setColor(0xE74C3C)
@@ -83,12 +113,31 @@ async function logReplyModeration(
       { name: 'User', value: `${target.author} (${target.author.id})`, inline: true },
       { name: 'Moderator', value: `${message.author}`, inline: true },
       { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-      { name: `Times hit with ${cmd.name}`, value: String(rows[0].count), inline: true },
-      { name: 'DM', value: dmed ? '✅ Delivered' : '❌ Failed (user has DMs closed); short notice posted in channel', inline: dmed },
+      { name: `Active ${cmd.name} offenses`, value: String(details.active), inline: true },
+      { name: 'All-time', value: String(details.total), inline: true },
     )
     .setTimestamp();
+  if (details.action) embed.addFields({ name: 'Action', value: details.action });
+  embed.addFields({ name: 'DM', value: details.dmed ? '✅ Delivered' : '❌ Failed (user has DMs closed); short notice posted in channel' });
   if (attachments) embed.addFields({ name: 'Attachments', value: attachments.slice(0, 1024) });
   await logChannel.send({ embeds: [embed] });
+}
+
+/** Tell mods a user has hit the top of the ladder and needs a human decision. */
+async function alertManualAction(cmd: MessageCustomCommand, message: Message, target: Message, active: number, action: string) {
+  if (!cmd.reply_escalation_channel_id) return;
+  const alertChannel = await message.guild!.channels.fetch(cmd.reply_escalation_channel_id).catch(() => null);
+  if (!alertChannel?.isTextBased()) return;
+  const embed = new EmbedBuilder()
+    .setColor(0xE74C3C)
+    .setTitle('🚨 Manual action needed')
+    .setDescription(`${target.author} (${target.author.id}) has **${active}** active ${cmd.name} offenses.\n${action}\n\nPlease review for further action.`)
+    .addFields(
+      { name: 'Latest offense', value: `<#${message.channel.id}>, actioned by ${message.author}` },
+      ...(cmd.reply_log_channel_id ? [{ name: 'History', value: `<#${cmd.reply_log_channel_id}> or \`/offenses view\`` }] : []),
+    )
+    .setTimestamp();
+  await alertChannel.send({ embeds: [embed] });
 }
 
 async function handleCustomCommands(
@@ -240,6 +289,15 @@ async function handleCustomCommands(
         .setTimestamp(target.createdAt);
       if (files) original.addFields({ name: 'Attachments', value: files.slice(0, 1024) });
 
+      const counts = await recordOffense(client, cmd, message, target)
+        .catch((e) => { logger.warn('Recording reply moderation offense failed:', e); return null; });
+      const escalation = cmd.reply_escalation && counts
+        ? await escalate(client, cmd, message, target, counts.active)
+        : null;
+      if (escalation?.timedOut) {
+        original.addFields({ name: 'Action taken', value: `You have been timed out for ${escalation.duration}.` });
+      }
+
       const dmed = await deliver(target.author, [original]).then(() => true, () => false);
       // DMs closed — short public notice only; the full warning stays private
       if (!dmed) {
@@ -248,8 +306,14 @@ async function handleCustomCommands(
           allowedMentions: { users: [target.author.id] },
         });
       }
-      await logReplyModeration(client, cmd, message, target, dmed)
-        .catch((e) => logger.warn('Reply moderation log failed:', e));
+      if (counts) {
+        await logReplyModeration(cmd, message, target, { dmed, ...counts, action: escalation?.text ?? null })
+          .catch((e) => logger.warn('Reply moderation log failed:', e));
+      }
+      if (escalation?.needsManualAction && counts) {
+        await alertManualAction(cmd, message, target, counts.active, escalation.text)
+          .catch((e) => logger.warn('Manual action alert failed:', e));
+      }
     } else {
       if (cmd.delete_command) await message.delete().catch(() => {});
       await deliver(channel);

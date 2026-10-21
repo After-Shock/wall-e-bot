@@ -54,13 +54,14 @@ const command: Command = {
 
     if (interaction.options.getSubcommand() === 'top') {
       const only = interaction.options.getString('command')?.replace(/^!/, '') ?? null;
-      const { rows } = await client.db.pool.query<{ target_id: string; count: number; last: Date }>(
-        `SELECT a.target_id, COUNT(*)::int AS count, MAX(a.created_at) AS last
+      const { rows } = await client.db.pool.query<{ target_id: string; active: number; total: number; last: Date }>(
+        `SELECT a.target_id, COUNT(*) FILTER (WHERE a.active)::int AS active, COUNT(*)::int AS total,
+                MAX(a.created_at) AS last
          FROM custom_command_actions a
          JOIN custom_commands c ON c.id = a.command_id
          WHERE a.guild_id = $1 AND ($2::text IS NULL OR LOWER(c.name) = LOWER($2))
          GROUP BY a.target_id
-         ORDER BY count DESC, last DESC
+         ORDER BY active DESC, total DESC, last DESC
          LIMIT 10`,
         [guildId, only],
       );
@@ -72,7 +73,7 @@ const command: Command = {
         .setColor(COLORS.WARNING)
         .setTitle(`🛡️ Top Offenders${only ? ` — ${only}` : ''}`)
         .setDescription(rows.map((r, i) =>
-          `**${i + 1}.** <@${r.target_id}> — **${r.count}** (last <t:${Math.floor(new Date(r.last).getTime() / 1000)}:R>)`,
+          `**${i + 1}.** <@${r.target_id}> — **${r.active}** active, ${r.total} all-time (last <t:${Math.floor(new Date(r.last).getTime() / 1000)}:R>)`,
         ).join('\n'));
       await interaction.reply({ embeds: [embed] });
       return;
@@ -89,21 +90,21 @@ const command: Command = {
       }
       const only = interaction.options.getString('command')?.replace(/^!/, '') ?? null;
       const { rowCount } = await client.db.pool.query(
-        `DELETE FROM custom_command_actions a
-         USING custom_commands c
-         WHERE c.id = a.command_id AND a.guild_id = $1 AND a.target_id = $2
+        `UPDATE custom_command_actions a SET active = FALSE
+         FROM custom_commands c
+         WHERE c.id = a.command_id AND a.active AND a.guild_id = $1 AND a.target_id = $2
            AND ($3::text IS NULL OR LOWER(c.name) = LOWER($3))`,
         [guildId, target.id, only],
       );
       // Public reply so other mods in the log channel see who reset what
       await interaction.reply({
-        embeds: [successEmbed('Offenses Reset', `${interaction.user} cleared **${rowCount ?? 0}** ${only ? `**${only}** ` : ''}offense(s) for ${target} (${target.id}).`)],
+        embeds: [successEmbed('Offenses Reset', `${interaction.user} cleared **${rowCount ?? 0}** active ${only ? `**${only}** ` : ''}offense(s) for ${target} (${target.id}). All-time history is kept.`)],
       });
       return;
     }
 
-    const { rows } = await client.db.pool.query<{ name: string; moderator_id: string; message_content: string | null; created_at: Date }>(
-      `SELECT c.name, a.moderator_id, a.message_content, a.created_at
+    const { rows } = await client.db.pool.query<{ name: string; active: boolean; moderator_id: string; message_content: string | null; created_at: Date }>(
+      `SELECT c.name, a.active, a.moderator_id, a.message_content, a.created_at
        FROM custom_command_actions a
        JOIN custom_commands c ON c.id = a.command_id
        WHERE a.guild_id = $1 AND a.target_id = $2
@@ -116,19 +117,25 @@ const command: Command = {
       return;
     }
 
-    const counts = new Map<string, number>();
-    for (const row of rows) counts.set(row.name, (counts.get(row.name) ?? 0) + 1);
+    const counts = new Map<string, { active: number; total: number }>();
+    for (const row of rows) {
+      const c = counts.get(row.name) ?? { active: 0, total: 0 };
+      c.total++;
+      if (row.active) c.active++;
+      counts.set(row.name, c);
+    }
+    const activeTotal = rows.filter((r) => r.active).length;
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.WARNING)
       .setTitle(`🛡️ Offenses for ${target.tag}`)
-      .setDescription(`Total: **${rows.length}**\n${[...counts].map(([name, n]) => `**${name}**: ${n}`).join('\n')}`)
+      .setDescription(`Active: **${activeTotal}** · All-time: **${rows.length}**\n${[...counts].map(([name, c]) => `**${name}**: ${c.active} active, ${c.total} all-time`).join('\n')}`)
       .setThumbnail(target.displayAvatarURL());
 
     for (const row of rows.slice(0, 10)) {
       const snippet = (row.message_content || '(no text)').replace(/\s+/g, ' ').slice(0, 200);
       embed.addFields({
-        name: row.name,
+        name: row.active ? row.name : `${row.name} (inactive)`,
         value: `<t:${Math.floor(new Date(row.created_at).getTime() / 1000)}:R> by <@${row.moderator_id}>\n> ${snippet}`,
       });
     }

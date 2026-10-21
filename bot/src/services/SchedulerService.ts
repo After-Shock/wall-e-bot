@@ -58,6 +58,7 @@ export class SchedulerService {
   private autoCloseInterval: ReturnType<typeof setInterval> | null = null;
   private autoDeleteInterval: ReturnType<typeof setInterval> | null = null;
   private activityInterval: ReturnType<typeof setInterval> | null = null;
+  private offenseExpiryInterval: ReturnType<typeof setInterval> | null = null;
   private autoDeleteSubscriber: import('ioredis').Redis | null = null;
 
   private readonly bulkRoles: BulkRoleService;
@@ -161,6 +162,10 @@ export class SchedulerService {
     this.autoDeleteInterval = setInterval(() => { this.checkAutoDelete(); }, 60 * 60 * 1000);
     this.checkAutoDelete(); // run on start too
 
+    // Expire reply-moderation offenses a year after the user's latest one
+    this.offenseExpiryInterval = setInterval(() => { this.expireOffenses(); }, 60 * 60 * 1000);
+    this.expireOffenses();
+
     // Subscribe to Redis pub/sub for on-demand auto-delete triggers.
     //
     // duplicate() inherits the cache client's options, and those are tuned for
@@ -235,6 +240,10 @@ export class SchedulerService {
     if (this.autoDeleteInterval) {
       clearInterval(this.autoDeleteInterval);
       this.autoDeleteInterval = null;
+    }
+    if (this.offenseExpiryInterval) {
+      clearInterval(this.offenseExpiryInterval);
+      this.offenseExpiryInterval = null;
     }
     if (this.activityInterval) {
       clearInterval(this.activityInterval);
@@ -615,6 +624,22 @@ export class SchedulerService {
       );
     } catch (error) {
       logger.error(`Error firing interval command ${cmd.id}:`, error);
+    }
+  }
+
+  /** Deactivate a user's offenses for a command once their latest one is a year old (history is kept). */
+  private async expireOffenses() {
+    try {
+      const { rowCount } = await this.client.db.pool.query(
+        `UPDATE custom_command_actions a SET active = FALSE
+         FROM (SELECT command_id, target_id FROM custom_command_actions
+               WHERE active GROUP BY command_id, target_id
+               HAVING MAX(created_at) < NOW() - INTERVAL '1 year') stale
+         WHERE a.active AND a.command_id = stale.command_id AND a.target_id = stale.target_id`,
+      );
+      if (rowCount) logger.info(`Expired ${rowCount} reply-moderation offense(s)`);
+    } catch (error) {
+      logger.error('Error in expireOffenses:', error);
     }
   }
 

@@ -43,6 +43,8 @@ interface CustomCommand {
   reply_moderation: boolean;
   reply_log_channel_id: string | null;
   reply_dm_failed_notice: string | null;
+  reply_escalation: boolean;
+  reply_escalation_channel_id: string | null;
   case_sensitive: boolean;
   trigger_on_edit: boolean;
   enabled: boolean;
@@ -72,6 +74,8 @@ const emptyCommand = (): Partial<CustomCommand> => ({
   reply_moderation: false,
   reply_log_channel_id: null,
   reply_dm_failed_notice: null,
+  reply_escalation: false,
+  reply_escalation_channel_id: null,
   case_sensitive: false,
   trigger_on_edit: false,
   enabled: true,
@@ -934,6 +938,22 @@ export default function CustomCommandsPage() {
                       placeholder="a moderator removed your message."
                       maxLength={1000}
                     />
+                    <Toggle label="Escalating Timeouts" description="Time the user out 1 hour, then 1 day, then 1 week per active offense"
+                      checked={editingCommand.reply_escalation ?? false}
+                      onChange={v => setEditingCommand(prev => prev ? { ...prev, reply_escalation: v } : prev)} />
+                    {editingCommand.reply_escalation && (
+                      <>
+                        <label className="block text-sm font-medium mb-1">Manual action channel <span className="text-discord-light font-normal">(alerted when a user reaches the 1 week timeout)</span></label>
+                        <select
+                          value={editingCommand.reply_escalation_channel_id ?? ''}
+                          onChange={e => setEditingCommand(prev => prev ? { ...prev, reply_escalation_channel_id: e.target.value || null } : prev)}
+                          className="input w-full"
+                        >
+                          <option value="">— None —</option>
+                          {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+                        </select>
+                      </>
+                    )}
                   </div>
                 )}
               </>

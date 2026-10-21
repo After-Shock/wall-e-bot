@@ -29,6 +29,8 @@ const CommandSchema = z.object({
   reply_moderation: z.boolean().default(false),
   reply_log_channel_id: z.string().max(20).nullable().optional(),
   reply_dm_failed_notice: z.string().max(1000).nullable().optional(),
+  reply_escalation: z.boolean().default(false),
+  reply_escalation_channel_id: z.string().max(20).nullable().optional(),
   case_sensitive: z.boolean().default(false),
   trigger_on_edit: z.boolean().default(false),
   enabled: z.boolean().default(true),
@@ -68,7 +70,7 @@ function validateCommand(data: z.infer<typeof CommandSchema>): string | null {
 const SELECT_COLS = `
   id, guild_id, name, description, trigger_type, group_id, responses,
   embed_response, cembed_response, embed_color, cooldown, delete_command, reply_moderation, reply_log_channel_id, reply_dm_failed_notice,
-  case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
+  reply_escalation, reply_escalation_channel_id, case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
   interval_cron, interval_channel_id, interval_next_run,
   reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
   uses, created_by, created_at, updated_at
@@ -115,8 +117,9 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
         case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
         interval_cron, interval_channel_id,
         reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
-        created_by, reply_moderation, reply_log_channel_id, reply_dm_failed_notice)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+        created_by, reply_moderation, reply_log_channel_id, reply_dm_failed_notice,
+        reply_escalation, reply_escalation_channel_id)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
      RETURNING ${SELECT_COLS}`,
     [
       guildId, d.name, d.description ?? null, d.trigger_type, d.group_id ?? null,
@@ -129,6 +132,7 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
       d.reaction_emoji ?? null, d.reaction_type ?? null,
       (req as { user?: { discord_id?: string } }).user?.discord_id ?? 'dashboard',
       d.reply_moderation, d.reply_log_channel_id || null, d.reply_dm_failed_notice || null,
+      d.reply_escalation, d.reply_escalation_channel_id || null,
     ],
   );
   logger.info(`Custom command created: ${d.name} (${d.trigger_type}) in ${guildId}`);
