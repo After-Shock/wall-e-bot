@@ -77,8 +77,8 @@ async function escalate(
   message: Message,
   target: Message,
   active: number,
-): Promise<{ text: string; duration: string; timedOut: boolean; needsManualAction: boolean }> {
-  const { ms, label: duration, needsManualAction } = escalationFor(active);
+): Promise<{ text: string; duration: string; notice: string | null; timedOut: boolean; needsManualAction: boolean }> {
+  const { ms, label: duration, notice, needsManualAction } = escalationFor(active);
   const reason = `${cmd.name} offense #${active} (by ${message.author.tag})`;
   const member = target.member ?? await message.guild!.members.fetch(target.author.id).catch(() => null);
   const timedOut = !!member && await member.timeout(ms, reason).then(() => true, () => false);
@@ -88,6 +88,7 @@ async function escalate(
   return {
     text: timedOut ? `⏱️ Timed out for ${duration}` : `❌ ${duration} timeout failed (Wall-E needs Timeout Members and a role above the user)`,
     duration,
+    notice,
     timedOut,
     needsManualAction,
   };
@@ -294,9 +295,11 @@ async function handleCustomCommands(
       const escalation = cmd.reply_escalation && counts
         ? await escalate(client, cmd, message, target, counts.active)
         : null;
-      if (escalation?.timedOut) {
-        original.addFields({ name: 'Action taken', value: `You have been timed out for ${escalation.duration}.` });
-      }
+      const actionTaken = [
+        escalation?.timedOut ? `You have been timed out for ${escalation.duration}.` : null,
+        escalation?.notice ? `**${escalation.notice}**` : null,
+      ].filter(Boolean).join('\n');
+      if (actionTaken) original.addFields({ name: 'Action taken', value: actionTaken });
 
       const dmed = await deliver(target.author, [original]).then(() => true, () => false);
       // DMs closed — short public notice only; the full warning stays private

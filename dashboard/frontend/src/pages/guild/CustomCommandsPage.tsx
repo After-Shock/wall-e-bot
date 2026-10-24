@@ -938,12 +938,12 @@ export default function CustomCommandsPage() {
                       placeholder="a moderator removed your message."
                       maxLength={1000}
                     />
-                    <Toggle label="Escalating Timeouts" description="Time the user out 1 hour, then 1 day, then 1 week per active offense"
+                    <Toggle label="Escalating Timeouts" description="Time the user out 10 minutes, then 1 hour, then 1 day per active offense"
                       checked={editingCommand.reply_escalation ?? false}
                       onChange={v => setEditingCommand(prev => prev ? { ...prev, reply_escalation: v } : prev)} />
                     {editingCommand.reply_escalation && (
                       <>
-                        <label className="block text-sm font-medium mb-1">Manual action channel <span className="text-discord-light font-normal">(alerted when a user reaches the 1 week timeout)</span></label>
+                        <label className="block text-sm font-medium mb-1">Manual action channel <span className="text-discord-light font-normal">(alerted from a user's 3rd active offense)</span></label>
                         <select
                           value={editingCommand.reply_escalation_channel_id ?? ''}
                           onChange={e => setEditingCommand(prev => prev ? { ...prev, reply_escalation_channel_id: e.target.value || null } : prev)}
