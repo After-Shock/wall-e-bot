@@ -12,6 +12,7 @@
 import { Events, Collection, type Interaction } from 'discord.js';
 import { isBotOwner } from '@wall-e/shared';
 import type { WallEClient } from '../structures/Client.js';
+import type { Command } from '../structures/Command.js';
 import { errorEmbed } from '../utils/embeds.js';
 import { logger } from '../utils/logger.js';
 import { getWhitelistStatus } from '../utils/whitelist.js';
@@ -23,6 +24,7 @@ const DEFAULT_COOLDOWN = 3;
 const COOLDOWN_CATEGORIES: Record<string, number> = {
   // Moderation commands - shorter cooldown for rapid response
   'ban': 2,
+  'tempban': 2,
   'kick': 2,
   'timeout': 2,
   'warn': 2,
@@ -36,6 +38,11 @@ const COOLDOWN_CATEGORIES: Record<string, number> = {
   'rank': 5,
   'leaderboard': 10,
 };
+
+/** Effective cooldown: command-specific > category > default. Shared with /help. */
+export function getCooldownSeconds(command: Command): number {
+  return command.cooldown ?? COOLDOWN_CATEGORIES[command.data.name] ?? DEFAULT_COOLDOWN;
+}
 
 export default {
   name: Events.InteractionCreate,
@@ -216,11 +223,7 @@ export default {
     // Cooldown Enforcement (Redis-backed for cross-shard support)
     // =========================================================================
     
-    // Get cooldown duration (command-specific > category > default)
-    const cooldownSeconds = 
-      command.cooldown ?? 
-      COOLDOWN_CATEGORIES[interaction.commandName] ?? 
-      DEFAULT_COOLDOWN;
+    const cooldownSeconds = getCooldownSeconds(command);
     
     // Use Redis for cross-shard cooldowns (production)
     // Fall back to in-memory for local development

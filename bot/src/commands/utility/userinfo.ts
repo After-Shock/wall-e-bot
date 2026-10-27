@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, GuildMember } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, GuildMember } from 'discord.js';
 import type { Command } from '../../structures/Command.js';
 import { COLORS } from '@wall-e/shared';
 
@@ -9,7 +9,8 @@ const command: Command = {
     .addUserOption(option =>
       option.setName('user')
         .setDescription('The user to get info for')
-        .setRequired(false)),
+        .setRequired(false))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
   async execute(client, interaction) {
     const user = interaction.options.getUser('user') || interaction.user;

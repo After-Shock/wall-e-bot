@@ -216,6 +216,7 @@ export class WallEClient extends Client {
         
         // Validate command structure before registering
         if ('data' in command && 'execute' in command) {
+          command.category = folder;
           this.commands.set(command.data.name, command);
           logger.info(`Loaded command: ${command.data.name}`);
         }

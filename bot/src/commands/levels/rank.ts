@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import type { Command } from '../../structures/Command.js';
 import { errorEmbed } from '../../utils/embeds.js';
 import { COLORS, ordinal, formatNumber } from '@wall-e/shared';
@@ -10,7 +10,8 @@ const command: Command = {
     .addUserOption(option =>
       option.setName('user')
         .setDescription('The user to check')
-        .setRequired(false)),
+        .setRequired(false))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
   
   guildOnly: true,
   cooldown: 5,

@@ -1,11 +1,12 @@
-import { SlashCommandBuilder, EmbedBuilder, ChannelType } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType } from 'discord.js';
 import type { Command } from '../../structures/Command.js';
 import { COLORS, formatNumber } from '@wall-e/shared';
 
 const command: Command = {
   data: new SlashCommandBuilder()
     .setName('serverinfo')
-    .setDescription('Get information about the server'),
+    .setDescription('Get information about the server')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
   
   guildOnly: true,
 

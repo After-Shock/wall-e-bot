@@ -12,6 +12,7 @@ import {
 } from 'discord.js';
 import type { Command } from '../../structures/Command.js';
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
+import { canCloseTicket } from '../../services/TicketService.js';
 import { COLORS } from '@wall-e/shared';
 
 // Category button colours as stored by the dashboard.
@@ -119,6 +120,13 @@ const command: Command = {
   async execute(client, interaction) {
     const group = interaction.options.getSubcommandGroup(false);
     const subcommand = interaction.options.getSubcommand();
+
+    // setDefaultMemberPermissions only sets a default: a server admin can open /ticket
+    // to support roles in Integrations, so the real gates live here.
+    if (group && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      await interaction.reply({ embeds: [errorEmbed('Missing Permissions', 'Managing ticket panels requires Manage Server.')], ephemeral: true });
+      return;
+    }
 
     if (group === 'panel') {
       switch (subcommand) {
@@ -381,22 +389,35 @@ const command: Command = {
     }
 
     // ---- Ticket management subcommands ----
+    const ticketResult = await client.db.pool.query(
+      `SELECT t.*, tcat.support_role_ids
+       FROM tickets t
+       LEFT JOIN ticket_categories tcat ON t.category_id = tcat.id
+       WHERE t.guild_id = $1 AND t.channel_id = $2 AND t.status IN ('open','claimed')`,
+      [interaction.guild!.id, interaction.channel!.id],
+    );
+    if (ticketResult.rows.length === 0) {
+      await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
+      return;
+    }
+    const ticket = ticketResult.rows[0];
+
+    // Same rule as the ticket buttons: support roles for this category, or Administrator.
+    const member = interaction.member;
+    const memberRoleIds = Array.isArray(member?.roles) ? member.roles : [...(member?.roles.cache.keys() ?? [])];
+    const isAdministrator = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+    if (!canCloseTicket(memberRoleIds, ticket.support_role_ids ?? [], isAdministrator)) {
+      await interaction.reply({ embeds: [errorEmbed('Error', 'Only support staff can manage this ticket.')], ephemeral: true });
+      return;
+    }
+
     switch (subcommand) {
       case 'close': {
-        const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
-          [interaction.guild!.id, interaction.channel!.id],
-        );
-        if (ticket.rows.length === 0) {
-          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
-          return;
-        }
-
         const reason = interaction.options.getString('reason') || '';
         const encodedReason = encodeURIComponent(reason).slice(0, 80);
 
         const confirmBtn = new ButtonBuilder()
-          .setCustomId(`ticket_close_confirm:${ticket.rows[0].id}:${encodedReason}`)
+          .setCustomId(`ticket_close_confirm:${ticket.id}:${encodedReason}`)
           .setLabel('Confirm Close')
           .setEmoji('🔒')
           .setStyle(ButtonStyle.Danger);
@@ -417,14 +438,6 @@ const command: Command = {
       }
 
       case 'add': {
-        const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
-          [interaction.guild!.id, interaction.channel!.id],
-        );
-        if (ticket.rows.length === 0) {
-          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
-          return;
-        }
         const user = interaction.options.getUser('user', true);
         const ch = interaction.channel as TextChannel;
         await ch.permissionOverwrites.create(user, {
@@ -437,14 +450,6 @@ const command: Command = {
       }
 
       case 'remove': {
-        const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
-          [interaction.guild!.id, interaction.channel!.id],
-        );
-        if (ticket.rows.length === 0) {
-          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
-          return;
-        }
         const user = interaction.options.getUser('user', true);
         await (interaction.channel as TextChannel).permissionOverwrites.delete(user);
         await interaction.reply({ embeds: [successEmbed('User Removed', `${user} has been removed from this ticket.`)] });
@@ -452,14 +457,6 @@ const command: Command = {
       }
 
       case 'rename': {
-        const ticket = await client.db.pool.query(
-          'SELECT * FROM tickets WHERE guild_id = $1 AND channel_id = $2 AND status IN (\'open\', \'claimed\')',
-          [interaction.guild!.id, interaction.channel!.id],
-        );
-        if (ticket.rows.length === 0) {
-          await interaction.reply({ embeds: [errorEmbed('Error', 'This is not an open ticket channel.')], ephemeral: true });
-          return;
-        }
         const name = interaction.options.getString('name', true);
         await (interaction.channel as TextChannel).setName(`ticket-${name}`);
         await interaction.reply({ embeds: [successEmbed('Ticket Renamed', `Renamed to \`ticket-${name}\`.`)] });

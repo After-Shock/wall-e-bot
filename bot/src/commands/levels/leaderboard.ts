@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import type { Command } from '../../structures/Command.js';
 import { errorEmbed } from '../../utils/embeds.js';
 import { COLORS, formatNumber, ordinal } from '@wall-e/shared';
@@ -11,7 +11,8 @@ const command: Command = {
       option.setName('page')
         .setDescription('Page number')
         .setMinValue(1)
-        .setRequired(false)),
+        .setRequired(false))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
   
   guildOnly: true,
   cooldown: 10,

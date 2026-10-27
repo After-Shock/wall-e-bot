@@ -19,5 +19,6 @@ export interface Command {
   permissions?: PermissionResolvable[];
   ownerOnly?: boolean;
   guildOnly?: boolean;
+  category?: string; // commands/<folder>, set by the loader
   execute: (client: WallEClient, interaction: ChatInputCommandInteraction) => Promise<void>;
 }
