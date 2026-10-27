@@ -3,6 +3,10 @@ import type { Command } from '../../structures/Command.js';
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
 import { COLORS } from '@wall-e/shared';
 
+// messageCreate passes embed_color straight to EmbedBuilder.setColor, which throws on bad input.
+const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
+const normalizeHex = (color: string) => `#${color.replace(/^#/, '').toUpperCase()}`;
+
 const command: Command = {
   data: new SlashCommandBuilder()
     .setName('customcommand')
@@ -69,9 +73,19 @@ const command: Command = {
           opt.setName('embed')
             .setDescription('Send as embed?')
             .setRequired(false))
+        .addStringOption(opt =>
+          opt.setName('embed_color')
+            .setDescription('New embed color (hex, e.g. #5865F2)')
+            .setRequired(false))
         .addIntegerOption(opt =>
           opt.setName('cooldown')
-            .setDescription('New cooldown')
+            .setDescription('New cooldown in seconds')
+            .setMinValue(0)
+            .setMaxValue(3600)
+            .setRequired(false))
+        .addBooleanOption(opt =>
+          opt.setName('delete_trigger')
+            .setDescription('Delete the command message?')
             .setRequired(false)))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
@@ -90,6 +104,11 @@ const command: Command = {
         const cooldown = interaction.options.getInteger('cooldown') ?? 0;
         const deleteTrigger = interaction.options.getBoolean('delete_trigger') ?? false;
 
+        if (embedColor !== null && !HEX_COLOR.test(embedColor)) {
+          await interaction.reply({ embeds: [errorEmbed('Error', 'Embed color must be a hex code like `#5865F2`.')], ephemeral: true });
+          return;
+        }
+
         // Check if command already exists
         const existing = await client.db.pool.query(
           'SELECT id FROM custom_commands WHERE guild_id = $1 AND name = $2',
@@ -107,7 +126,7 @@ const command: Command = {
         await client.db.pool.query(
           `INSERT INTO custom_commands (guild_id, name, response, embed_response, embed_color, cooldown, delete_command, created_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [interaction.guild!.id, name, response, embed, embedColor, cooldown, deleteTrigger, interaction.user.id],
+          [interaction.guild!.id, name, response, embed, embedColor && normalizeHex(embedColor), cooldown, deleteTrigger, interaction.user.id],
         );
 
         const guildConfig = await client.db.getGuildConfig(interaction.guild!.id);
@@ -203,7 +222,14 @@ const command: Command = {
         const name = interaction.options.getString('name', true).toLowerCase();
         const response = interaction.options.getString('response');
         const embed = interaction.options.getBoolean('embed');
+        const embedColor = interaction.options.getString('embed_color');
         const cooldown = interaction.options.getInteger('cooldown');
+        const deleteTrigger = interaction.options.getBoolean('delete_trigger');
+
+        if (embedColor !== null && !HEX_COLOR.test(embedColor)) {
+          await interaction.reply({ embeds: [errorEmbed('Error', 'Embed color must be a hex code like `#5865F2`.')], ephemeral: true });
+          return;
+        }
 
         const updates: string[] = [];
         const values: any[] = [interaction.guild!.id, name];
@@ -223,6 +249,16 @@ const command: Command = {
           paramCount++;
           updates.push(`cooldown = $${paramCount}`);
           values.push(cooldown);
+        }
+        if (embedColor !== null) {
+          paramCount++;
+          updates.push(`embed_color = $${paramCount}`);
+          values.push(normalizeHex(embedColor));
+        }
+        if (deleteTrigger !== null) {
+          paramCount++;
+          updates.push(`delete_command = $${paramCount}`);
+          values.push(deleteTrigger);
         }
 
         if (updates.length === 0) {
