@@ -119,7 +119,10 @@ async function logReplyModeration(
     )
     .setTimestamp();
   if (details.action) embed.addFields({ name: 'Action', value: details.action });
-  embed.addFields({ name: 'DM', value: details.dmed ? '✅ Delivered' : '❌ Failed (user has DMs closed); short notice posted in channel' });
+  const dmFailed = cmd.reply_dm_failed_notice
+    ? '❌ Failed (user has DMs closed); short notice posted in channel'
+    : '❌ Failed (user has DMs closed); nothing posted publicly';
+  embed.addFields({ name: 'DM', value: details.dmed ? '✅ Delivered' : dmFailed });
   if (attachments) embed.addFields({ name: 'Attachments', value: attachments.slice(0, 1024) });
   await logChannel.send({ embeds: [embed] });
 }
@@ -302,10 +305,11 @@ async function handleCustomCommands(
       if (actionTaken) original.addFields({ name: 'Action taken', value: actionTaken });
 
       const dmed = await deliver(target.author, [original]).then(() => true, () => false);
-      // DMs closed — short public notice only; the full warning stays private
-      if (!dmed) {
+      // DMs closed — short public notice only if the command sets one; the full
+      // warning stays private. No notice = nothing public, the mod log records it.
+      if (!dmed && cmd.reply_dm_failed_notice) {
         await channel.send({
-          content: `${target.author}, ${cmd.reply_dm_failed_notice || 'a moderator removed your message.'}`,
+          content: `${target.author}, ${cmd.reply_dm_failed_notice}`,
           allowedMentions: { users: [target.author.id] },
         });
       }

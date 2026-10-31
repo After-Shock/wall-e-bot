@@ -929,13 +929,13 @@ export default function CustomCommandsPage() {
                       <option value="">— None —</option>
                       {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
                     </select>
-                    <label className="block text-sm font-medium mb-1 mt-3">DM failed notice <span className="text-discord-light font-normal">(posted in the channel after the user's mention when their DMs are closed)</span></label>
+                    <label className="block text-sm font-medium mb-1 mt-3">DM failed notice <span className="text-discord-light font-normal">(posted in the channel after the user's mention when their DMs are closed; leave blank to post nothing publicly)</span></label>
                     <input
                       type="text"
                       value={editingCommand.reply_dm_failed_notice ?? ''}
                       onChange={e => setEditingCommand(prev => prev ? { ...prev, reply_dm_failed_notice: e.target.value || null } : prev)}
                       className="input w-full"
-                      placeholder="a moderator removed your message."
+                      placeholder="blank = no public notice, mod log only"
                       maxLength={1000}
                     />
                     <Toggle label="Escalating Timeouts" description="Time the user out 10 minutes, then 1 hour, then 1 day per active offense"
