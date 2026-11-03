@@ -1089,11 +1089,12 @@ export default function CustomCommandsPage() {
         )}
       </div>
       <div className="flex gap-1 shrink-0">
-        <button onClick={() => openEditCommand(cmd)} className="btn btn-secondary p-1.5"><Edit className="w-3.5 h-3.5" /></button>
+        <button onClick={() => openEditCommand(cmd)} title="Edit" className="btn btn-secondary p-2.5 md:p-1.5"><Edit className="w-4 h-4 md:w-3.5 md:h-3.5" /></button>
         <button
           onClick={() => window.confirm(`Delete "${cmd.name}"?`) && deleteCmd.mutate(cmd.id)}
-          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
-        ><Trash2 className="w-3.5 h-3.5" /></button>
+          title="Delete"
+          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-2.5 md:p-1.5"
+        ><Trash2 className="w-4 h-4 md:w-3.5 md:h-3.5" /></button>
       </div>
     </div>
   );
@@ -1213,7 +1214,7 @@ export default function CustomCommandsPage() {
       <div className={`
         ${editingCommand && !isMobile ? 'w-72 border-r border-discord-dark' : 'flex-1'}
         ${editingCommand && isMobile ? 'hidden' : ''}
-        flex flex-col bg-discord-darker
+        min-w-0 flex flex-col bg-discord-darker
       `}>
         {renderLeft()}
       </div>
