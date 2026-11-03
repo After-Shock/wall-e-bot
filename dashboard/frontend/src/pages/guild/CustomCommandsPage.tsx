@@ -31,6 +31,7 @@ interface CustomCommand {
   id: number;
   guild_id: string;
   name: string;
+  aliases: string[];
   description: string | null;
   trigger_type: TriggerType;
   group_id: number | null;
@@ -62,6 +63,7 @@ interface CustomCommand {
 
 const emptyCommand = (): Partial<CustomCommand> => ({
   name: '',
+  aliases: [],
   description: null,
   trigger_type: 'command',
   group_id: null,
@@ -622,6 +624,20 @@ export default function CustomCommandsPage() {
             </div>
           )}
 
+          {editingCommand.trigger_type === 'command' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Aliases <span className="text-discord-light font-normal">(optional, comma-separated, without prefix)</span></label>
+              <input
+                type="text"
+                // Raw split keeps commas and spaces while typing; the backend trims and drops blanks.
+                value={(editingCommand.aliases ?? []).join(',')}
+                onChange={e => setEditingCommand(prev => prev ? { ...prev, aliases: e.target.value.split(',') } : prev)}
+                className="input w-full font-mono"
+                placeholder="nongoals, non_goals"
+              />
+            </div>
+          )}
+
           {/* Reaction fields */}
           {editingCommand.trigger_type === 'reaction' && (
             <div className="space-y-3">
@@ -1056,6 +1072,11 @@ export default function CustomCommandsPage() {
           <span className="text-sm font-mono font-medium truncate">
             {cmd.trigger_type === 'command' ? `${generalConfig?.prefix ?? '!'}${cmd.name}` : cmd.name}
           </span>
+          {cmd.trigger_type === 'command' && cmd.aliases?.length > 0 && (
+            <span className="text-xs font-mono text-discord-light truncate">
+              aka {cmd.aliases.map(a => `${generalConfig?.prefix ?? '!'}${a}`).join(', ')}
+            </span>
+          )}
           {cmd.uses > 0 && <span className="text-xs text-discord-light">{cmd.uses}×</span>}
         </div>
         {cmd.description ? (

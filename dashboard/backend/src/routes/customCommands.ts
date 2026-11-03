@@ -17,6 +17,11 @@ const TriggerTypeEnum = z.enum([
 
 const CommandSchema = z.object({
   name: z.string().min(1).max(100),
+  // Extra names for a 'command' trigger; the dashboard sends the raw comma split.
+  aliases: z.array(z.string().max(100)).max(10)
+    .transform(a => [...new Set(a.map(s => s.trim()).filter(Boolean))])
+    .refine(a => a.every(s => !/\s/.test(s)), 'Aliases cannot contain spaces')
+    .default([]),
   description: z.string().max(500).optional().nullable(),
   trigger_type: TriggerTypeEnum.default('command'),
   group_id: z.number().int().nullable().optional(),
@@ -67,8 +72,20 @@ function validateCommand(data: z.infer<typeof CommandSchema>): string | null {
   return null;
 }
 
+/** Another 'command' trigger already answering to any of these names (name or alias), case-insensitive. */
+async function findNameConflict(guildId: string, names: string[], excludeId: number | string = 0) {
+  const result = await db.query(
+    `SELECT name FROM custom_commands
+     WHERE guild_id = $1 AND trigger_type = 'command' AND id <> $2
+       AND (lower(name) = ANY($3) OR EXISTS (SELECT 1 FROM unnest(aliases) a WHERE lower(a) = ANY($3)))
+     LIMIT 1`,
+    [guildId, excludeId, names.map(n => n.toLowerCase())],
+  );
+  return result.rows[0]?.name as string | undefined;
+}
+
 const SELECT_COLS = `
-  id, guild_id, name, description, trigger_type, group_id, responses,
+  id, guild_id, name, aliases, description, trigger_type, group_id, responses,
   embed_response, cembed_response, embed_color, cooldown, delete_command, reply_moderation, reply_log_channel_id, reply_dm_failed_notice,
   reply_escalation, reply_escalation_channel_id, case_sensitive, trigger_on_edit, enabled, allowed_roles, allowed_channels,
   interval_cron, interval_channel_id, interval_next_run,
@@ -98,14 +115,11 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
   const validErr = validateCommand(d);
   if (validErr) { res.status(400).json({ error: validErr }); return; }
 
-  // For command type, check uniqueness
+  // For command type, the name and aliases must not collide with another command
   if (d.trigger_type === 'command') {
-    const existing = await db.query(
-      'SELECT id FROM custom_commands WHERE guild_id = $1 AND name = $2 AND trigger_type = $3',
-      [guildId, d.name, 'command'],
-    );
-    if (existing.rows.length > 0) {
-      res.status(409).json({ error: `Command "${d.name}" already exists` });
+    const conflict = await findNameConflict(guildId, [d.name, ...d.aliases]);
+    if (conflict) {
+      res.status(409).json({ error: `Command "${conflict}" already uses that name or alias` });
       return;
     }
   }
@@ -118,8 +132,8 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
         interval_cron, interval_channel_id,
         reaction_message_id, reaction_channel_id, reaction_emoji, reaction_type,
         created_by, reply_moderation, reply_log_channel_id, reply_dm_failed_notice,
-        reply_escalation, reply_escalation_channel_id)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+        reply_escalation, reply_escalation_channel_id, aliases)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
      RETURNING ${SELECT_COLS}`,
     [
       guildId, d.name, d.description ?? null, d.trigger_type, d.group_id ?? null,
@@ -132,7 +146,7 @@ customCommandsRouter.post('/', asyncHandler(async (req, res) => {
       d.reaction_emoji ?? null, d.reaction_type ?? null,
       (req as { user?: { discord_id?: string } }).user?.discord_id ?? 'dashboard',
       d.reply_moderation, d.reply_log_channel_id || null, d.reply_dm_failed_notice || null,
-      d.reply_escalation, d.reply_escalation_channel_id || null,
+      d.reply_escalation, d.reply_escalation_channel_id || null, d.aliases,
     ],
   );
   logger.info(`Custom command created: ${d.name} (${d.trigger_type}) in ${guildId}`);
@@ -150,16 +164,23 @@ customCommandsRouter.patch('/:commandId', asyncHandler(async (req, res) => {
   const d = parsed.data;
 
   // Validate if relevant fields present
-  if (d.trigger_type || d.name || d.responses) {
+  if (d.trigger_type || d.name || d.responses || d.aliases) {
     // Fetch current row to merge
     const current = await db.query(
-      'SELECT trigger_type, name, responses FROM custom_commands WHERE id = $1 AND guild_id = $2',
+      'SELECT trigger_type, name, aliases, responses FROM custom_commands WHERE id = $1 AND guild_id = $2',
       [commandId, guildId],
     );
     if (current.rows.length === 0) { res.status(404).json({ error: 'Command not found' }); return; }
     const merged = { ...current.rows[0], ...d } as z.infer<typeof CommandSchema>;
     const validErr = validateCommand(merged);
     if (validErr) { res.status(400).json({ error: validErr }); return; }
+    if (merged.trigger_type === 'command') {
+      const conflict = await findNameConflict(guildId, [merged.name, ...merged.aliases], commandId);
+      if (conflict) {
+        res.status(409).json({ error: `Command "${conflict}" already uses that name or alias` });
+        return;
+      }
+    }
   }
 
   const fieldMap: Record<string, unknown> = { ...d };

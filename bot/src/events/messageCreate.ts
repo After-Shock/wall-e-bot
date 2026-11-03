@@ -13,6 +13,7 @@ const CUSTOM_COMMANDS_CACHE_TTL = 60;
 interface MessageCustomCommand {
   id: number;
   name: string;
+  aliases?: string[]; // optional: rows cached before the column existed lack it
   trigger_type: string;
   responses: string[];
   embed_response: boolean;
@@ -41,7 +42,7 @@ async function getMessageCommands(client: WallEClient, guildId: string): Promise
   }
 
   const result = await client.db.pool.query(
-    `SELECT id, name, trigger_type, responses, embed_response, cembed_response, embed_color,
+    `SELECT id, name, aliases, trigger_type, responses, embed_response, cembed_response, embed_color,
             delete_command, reply_moderation, reply_log_channel_id, reply_dm_failed_notice,
             reply_escalation, reply_escalation_channel_id, case_sensitive, allowed_roles, allowed_channels
      FROM custom_commands
@@ -180,11 +181,14 @@ async function handleCustomCommands(
 
     switch (cmd.trigger_type) {
       case 'command': {
-        const prefixedTrigger = prefix + checkName;
-        if (checkContent.startsWith(prefixedTrigger) &&
-            (checkContent.length === prefixedTrigger.length || checkContent[prefixedTrigger.length] === ' ')) {
-          matched = true;
-          args = content.slice(prefix.length + cmd.name.length).trim().split(/\s+/).filter(Boolean);
+        for (const name of [cmd.name, ...(cmd.aliases ?? [])]) {
+          const prefixedTrigger = prefix + (cmd.case_sensitive ? name : name.toLowerCase());
+          if (checkContent.startsWith(prefixedTrigger) &&
+              (checkContent.length === prefixedTrigger.length || checkContent[prefixedTrigger.length] === ' ')) {
+            matched = true;
+            args = content.slice(prefixedTrigger.length).trim().split(/\s+/).filter(Boolean);
+            break;
+          }
         }
         break;
       }
