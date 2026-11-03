@@ -204,8 +204,12 @@ function useMobile() {
 }
 
 function extractApiError(err: unknown): string {
-  const e = err as { response?: { data?: { error?: string; message?: string } } };
-  return e?.response?.data?.error ?? e?.response?.data?.message ?? 'Failed to save.';
+  const e = err as { response?: { data?: { error?: string; message?: string; details?: { path?: (string | number)[]; message?: string }[] } } };
+  const data = e?.response?.data;
+  // Zod failures come back as a generic "Validation failed" plus per-field details.
+  const detail = data?.details?.[0];
+  const reason = detail?.message ? ` (${detail.path?.join('.') || 'field'}: ${detail.message})` : '';
+  return (data?.error ?? data?.message ?? 'Failed to save.') + reason;
 }
 
 function TriggerBadge({ type }: { type: TriggerType }) {

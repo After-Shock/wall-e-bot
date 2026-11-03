@@ -20,7 +20,6 @@ const CommandSchema = z.object({
   // Extra names for a 'command' trigger; the dashboard sends the raw comma split.
   aliases: z.array(z.string().max(100)).max(10)
     .transform(a => [...new Set(a.map(s => s.trim()).filter(Boolean))])
-    .refine(a => a.every(s => !/\s/.test(s)), 'Aliases cannot contain spaces')
     .default([]),
   description: z.string().max(500).optional().nullable(),
   trigger_type: TriggerTypeEnum.default('command'),
