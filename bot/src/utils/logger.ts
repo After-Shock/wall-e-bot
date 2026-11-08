@@ -5,7 +5,7 @@ const { combine, timestamp, printf, colorize, errors } = winston.format;
 const logDirectory = resolveLogDirectory();
 
 const logFormat = printf(({ level, message, timestamp, stack }) => {
-  return `${timestamp} [${level}]: ${stack || message}`;
+  return `${timestamp} [${level}]: ${message}${stack ? `\n${stack}` : ''}`;
 });
 
 export const logger = winston.createLogger({

@@ -365,7 +365,7 @@ export default {
         await handleCustomCommands(client, message);
       }
     } catch (error) {
-      logger.error('Error in messageCreate handler:', error);
+      logger.error(`Error in messageCreate handler (guild ${message.guildId} channel ${message.channelId} msg ${message.id}):`, error);
     }
 
     if (message.guild) {
