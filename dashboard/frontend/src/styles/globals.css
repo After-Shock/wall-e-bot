@@ -3,51 +3,57 @@
 @tailwind utilities;
 
 @layer base {
+  /* Dark-only theme: shadcn tokens mapped onto the Discord palette. */
+  :root {
+    color-scheme: dark;
+    --background: 210 8% 9%;          /* discord-darkest */
+    --foreground: 0 0% 100%;
+    --card: 206 9% 15%;               /* discord-dark */
+    --card-foreground: 0 0% 100%;
+    --popover: 206 9% 15%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 235 86% 65%;           /* blurple */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 7% 21%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 9% 13%;              /* discord-darker */
+    --muted-foreground: 204 15% 65%;  /* discord-light */
+    --accent: 210 7% 21%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 359 83% 59%;       /* discord-red */
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 7% 21%;
+    --input: 210 7% 24%;
+    --ring: 235 86% 65%;
+    --radius: 0.6rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
   body {
-    @apply bg-discord-darkest text-white min-h-screen;
+    @apply bg-background text-foreground min-h-screen antialiased;
   }
 }
 
+/* Legacy classes kept for markup not yet on shadcn components; they share the same tokens. */
 @layer components {
-  .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
-  }
-
-  .btn-primary {
-    @apply bg-discord-blurple hover:bg-discord-blurple/80 text-white;
-  }
-
-  .btn-secondary {
-    @apply bg-discord-dark hover:bg-discord-darker text-white;
-  }
-
-  .btn-danger {
-    @apply bg-discord-red hover:bg-discord-red/80 text-white;
-  }
-
   .card {
-    @apply bg-discord-dark rounded-xl p-6;
+    @apply rounded-xl border bg-card text-card-foreground shadow p-6;
   }
 
   .input {
-    @apply w-full px-4 py-2 bg-discord-darker rounded-lg border border-discord-dark 
-           focus:border-discord-blurple focus:outline-none transition-colors;
+    @apply w-full rounded-md border border-input bg-muted px-3 py-2 text-sm shadow-sm transition-colors
+           placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+           disabled:cursor-not-allowed disabled:opacity-50;
   }
 
-  .toggle {
-    @apply relative inline-flex h-6 w-11 items-center rounded-full 
-           transition-colors duration-200 focus:outline-none;
-  }
-
-  .toggle-enabled {
-    @apply bg-discord-blurple;
-  }
-
-  .toggle-disabled {
-    @apply bg-discord-dark;
-  }
-
-  .toggle-dot {
-    @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200;
+  /* Native <select> chevron so it matches Input without a custom dropdown. */
+  select.input {
+    @apply appearance-none pr-9 bg-no-repeat;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2399AAB5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='m6 9 6 6 6-6'/%3e%3c/svg%3e");
+    background-position: right 0.6rem center;
+    background-size: 1rem;
   }
 }

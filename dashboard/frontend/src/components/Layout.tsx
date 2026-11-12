@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Bot, LogOut, LayoutDashboard, ShieldAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export default function Layout() {
   const { user, login, logout } = useAuth();
@@ -72,10 +73,10 @@ export default function Layout() {
                       )}
                       <span className="font-medium">{user.username}</span>
                     </div>
-                    <button onClick={logout} className="btn btn-secondary flex items-center gap-2">
+                    <Button variant="secondary" onClick={logout} className="flex items-center gap-2">
                       <LogOut className="w-4 h-4" />
                       Logout
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Mobile: avatar button → dropdown */}
@@ -133,9 +134,9 @@ export default function Layout() {
                   </div>
                 </>
               ) : (
-                <button onClick={login} className="btn btn-primary">
+                <Button onClick={login}>
                   Login with Discord
-                </button>
+                </Button>
               )}
             </div>
           </div>

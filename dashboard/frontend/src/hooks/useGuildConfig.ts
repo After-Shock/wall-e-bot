@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import { AxiosError } from 'axios';
+import { toast } from 'sonner';
 
 /**
  * Reusable hook for managing guild configuration sections
@@ -63,12 +64,12 @@ export function useGuildConfig<T>(guildId: string | undefined, section: string) 
       );
       return response.data;
     },
-    onError: (error) => {
-      console.error(`Failed to update ${section} config:`, error);
-    },
+    // Errors are toasted globally by the MutationCache in main.tsx.
     onSuccess: (result) => {
       // Update the cache with the server response
       queryClient.setQueryData(queryKey, result.data);
+      if (result.warning) toast.warning('Saved, but the bot may take a moment to pick it up', { description: result.warning });
+      else toast.success('Settings saved');
     },
   });
 
@@ -102,9 +103,7 @@ export function useGuildConfig<T>(guildId: string | undefined, section: string) 
 /**
  * Helper hook to get error message from Axios error
  */
-export function useErrorMessage(error: AxiosError | null): string | null {
-  if (!error) return null;
-
+export function getErrorMessage(error: AxiosError): string {
   if (error.response?.data) {
     const data = error.response.data as any;
 
@@ -120,4 +119,8 @@ export function useErrorMessage(error: AxiosError | null): string | null {
   }
 
   return error.message || 'An unexpected error occurred';
+}
+
+export function useErrorMessage(error: AxiosError | null): string | null {
+  return error ? getErrorMessage(error) : null;
 }

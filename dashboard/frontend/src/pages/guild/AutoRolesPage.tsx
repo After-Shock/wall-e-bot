@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, Save, Plus, Trash2, CheckCircle } from 'lucide-react';
 import { api } from '../../services/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface AutoRole {
   role_id: string;
@@ -64,14 +67,14 @@ export default function AutoRolesPage() {
             <p className="text-discord-light">Automatically assign roles to new members</p>
           </div>
         </div>
-        <button
+        <Button
           onClick={() => rows && saveMutation.mutate(rows)}
           disabled={saveMutation.isPending || invalid}
-          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {showSuccess ? <CheckCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
           {saveMutation.isPending ? 'Saving...' : showSuccess ? 'Saved!' : 'Save Changes'}
-        </button>
+        </Button>
       </div>
 
       {error && <div className="card bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -85,17 +88,17 @@ export default function AutoRolesPage() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Auto Roles ({rows.length})</h3>
-          <button
+          <Button variant="secondary"
             onClick={() => setRows([...rows, {
               role_id: guildRoles.find(r => !usedIds.has(r.id))?.id ?? '',
               delay_minutes: 0,
               include_bots: false,
             }])}
             disabled={guildRoles.length === 0 || rows.length >= 50}
-            className="btn btn-secondary flex items-center gap-2"
+            className="flex items-center gap-2"
           >
             <Plus className="w-4 h-4" /> Add Role
-          </button>
+          </Button>
         </div>
 
         {rows.length === 0 ? (
@@ -121,22 +124,17 @@ export default function AutoRolesPage() {
                 </div>
                 <div className="w-32">
                   <label className="block text-xs text-discord-light mb-1">Delay (min)</label>
-                  <input
+                  <Input
                     type="number"
                     min={0}
                     max={10080}
                     value={row.delay_minutes}
                     onChange={e => update(i, { delay_minutes: parseInt(e.target.value) || 0 })}
-                    className="input w-full"
+                    className="w-full"
                   />
                 </div>
                 <label className="flex items-center gap-2 text-sm pb-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={row.include_bots}
-                    onChange={e => update(i, { include_bots: e.target.checked })}
-                    className="w-4 h-4"
-                  />
+                  <Checkbox checked={row.include_bots} onCheckedChange={checked => update(i, { include_bots: checked === true })} />
                   Include bots
                 </label>
                 <button

@@ -6,6 +6,11 @@ import type { ConfigurationSnapshotListItem } from '@wall-e/shared';
 import { api } from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { confirm } from '@/components/ConfirmDialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 
 interface RestoreResponse {
   success: true;
@@ -80,14 +85,14 @@ export default function BackupPage() {
     if (name) createSnapshot(name);
   };
 
-  const handleRestore = (snapshotId: string) => {
-    if (window.confirm('Restore this snapshot? Your current guild JSON configuration will be overwritten.')) {
+  const handleRestore = async (snapshotId: string) => {
+    if (await confirm({ title: 'Restore this snapshot?', description: 'Your current guild configuration will be overwritten.', confirmText: 'Restore' })) {
       restoreSnapshot(snapshotId);
     }
   };
 
-  const handleDelete = (snapshotId: string) => {
-    if (window.confirm('Delete this configuration snapshot? This action cannot be undone.')) {
+  const handleDelete = async (snapshotId: string) => {
+    if (await confirm({ title: 'Delete this snapshot?', description: 'This action cannot be undone.', confirmText: 'Delete' })) {
       deleteSnapshot(snapshotId);
     }
   };
@@ -110,10 +115,10 @@ export default function BackupPage() {
             <p className="text-discord-light">Manual snapshots of this guild&apos;s JSON configuration only.</p>
           </div>
         </div>
-        <button onClick={() => setShowCreateModal(true)} className="btn btn-primary flex items-center gap-2">
+        <Button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2">
           <Plus className="w-4 h-4" />
           Create snapshot
-        </button>
+        </Button>
       </div>
 
       <div className="card text-sm text-discord-light space-y-2">
@@ -182,15 +187,15 @@ export default function BackupPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
+                    <Button variant="secondary"
                       onClick={() => handleRestore(snapshot.id)}
                       disabled={isRestoring}
-                      className="btn btn-secondary flex items-center gap-2 disabled:opacity-50"
+                      className="flex items-center gap-2 disabled:opacity-50"
                       title="Restore this configuration snapshot"
                     >
                       <Upload className="w-4 h-4" />
                       Restore
-                    </button>
+                    </Button>
                     <button
                       onClick={() => handleDelete(snapshot.id)}
                       disabled={isDeleting}
@@ -207,42 +212,43 @@ export default function BackupPage() {
         )}
       </div>
 
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-discord-gray rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold mb-4">Create configuration snapshot</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Snapshot name</label>
-              <input
-                type="text"
-                value={newSnapshotName}
-                onChange={event => setNewSnapshotName(event.target.value)}
-                className="input w-full"
-                placeholder="e.g., Before major changes"
-                autoFocus
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={handleCreate}
-                disabled={isCreating || !newSnapshotName.trim()}
-                className="btn btn-primary flex-1 disabled:opacity-50"
-              >
-                {isCreating ? 'Creating...' : 'Create snapshot'}
-              </button>
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setNewSnapshotName('');
-                }}
-                className="btn btn-secondary"
-              >
-                Cancel
-              </button>
-            </div>
+      <Dialog
+        open={showCreateModal}
+        onOpenChange={open => {
+          setShowCreateModal(open);
+          if (!open) setNewSnapshotName('');
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create configuration snapshot</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="snapshot-name">Snapshot name</Label>
+            <Input
+              id="snapshot-name"
+              value={newSnapshotName}
+              onChange={event => setNewSnapshotName(event.target.value)}
+              placeholder="e.g., Before major changes"
+              autoFocus
+            />
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowCreateModal(false);
+                setNewSnapshotName('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={isCreating || !newSnapshotName.trim()}>
+              {isCreating ? 'Creating...' : 'Create snapshot'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Settings, Plus, Check } from 'lucide-react';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface Guild {
   id: string;
@@ -51,9 +53,9 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <h2 className="text-2xl font-bold">Please login to continue</h2>
-        <button onClick={login} className="btn btn-primary">
+        <Button onClick={login}>
           Login with Discord
-        </button>
+        </Button>
       </div>
     );
   }
@@ -103,19 +105,19 @@ export default function DashboardPage() {
             {guild.botPresent ? (
               <Link
                 to={`/dashboard/${guild.id}`}
-                className="btn btn-primary flex items-center gap-2"
+                className={cn(buttonVariants(), 'flex items-center gap-2')}
               >
                 <Settings className="w-4 h-4" />
                 Manage
               </Link>
             ) : (
-              <button
+              <Button variant="secondary"
                 onClick={() => openAddBot(inviteUrl)}
-                className="btn btn-secondary flex items-center gap-2"
+                className="flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 Add Bot
-              </button>
+              </Button>
             )}
           </div>
         ))}
@@ -128,7 +130,7 @@ export default function DashboardPage() {
             href={inviteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-primary"
+            className={buttonVariants()}
           >
             Add Wall-E to a Server
           </a>

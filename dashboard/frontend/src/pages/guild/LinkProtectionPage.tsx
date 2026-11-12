@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Link2, Save, Plus, Trash2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Link2, Save, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { AutoModConfig } from '@wall-e/shared';
 import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 
 export default function LinkProtectionPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const [localConfig, setLocalConfig] = useState<AutoModConfig | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
   const [newDomain, setNewDomain] = useState('');
 
   const {
@@ -18,12 +20,10 @@ export default function LinkProtectionPage() {
     error,
     update,
     isUpdating,
-    updateError,
-    updateWarning,
     refetch
   } = useGuildConfig<AutoModConfig>(guildId, 'automod');
 
-  const errorMessage = useErrorMessage(error || updateError);
+  const errorMessage = useErrorMessage(error);
 
   useEffect(() => {
     if (data) {
@@ -92,8 +92,6 @@ export default function LinkProtectionPage() {
         ignoredChannels: localConfig.ignoredChannels,
         ignoredRoles: localConfig.ignoredRoles,
       });
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save config:', err);
     }
@@ -112,20 +110,15 @@ export default function LinkProtectionPage() {
             <p className="text-discord-light">Control which links can be posted</p>
           </div>
         </div>
-        <button
+        <Button
           onClick={handleSave}
           disabled={isUpdating || !!localConfigIssue}
-          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               Saving...
-            </>
-          ) : showSuccess ? (
-            <>
-              <CheckCircle className="w-4 h-4" />
-              Saved!
             </>
           ) : (
             <>
@@ -133,31 +126,11 @@ export default function LinkProtectionPage() {
               Save Changes
             </>
           )}
-        </button>
+        </Button>
       </div>
-
-      {/* Update Error Alert */}
-      {updateError && (
-        <ErrorAlert
-          message="Failed to save configuration"
-          details={errorMessage || undefined}
-          onRetry={handleSave}
-          variant="error"
-        />
-      )}
-
-      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {localConfigIssue && (
         <ErrorAlert message="Unsupported link protection configuration" details={localConfigIssue} variant="error" />
-      )}
-
-      {/* Success Message */}
-      {showSuccess && (
-        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <p className="text-green-400">Configuration saved successfully!</p>
-        </div>
       )}
 
       {/* Enable Toggle */}
@@ -169,18 +142,7 @@ export default function LinkProtectionPage() {
               Automatically filter messages containing disallowed links
             </p>
           </div>
-          <button
-            onClick={() => updateLinkFilter({ enabled: !localConfig.linkFilter.enabled })}
-            className={`relative w-12 h-6 rounded-full transition-colors ${
-              localConfig.linkFilter.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
-            }`}
-          >
-            <span
-              className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                localConfig.linkFilter.enabled ? 'translate-x-7' : 'translate-x-1'
-              }`}
-            />
-          </button>
+          <Switch checked={localConfig.linkFilter.enabled} onCheckedChange={() => updateLinkFilter({ enabled: !localConfig.linkFilter.enabled })} />
         </div>
       </div>
 
@@ -213,22 +175,22 @@ export default function LinkProtectionPage() {
           <div className="card">
             <h3 className="font-semibold mb-4">Add Allowed Domain</h3>
             <div className="flex gap-2">
-              <input
+              <Input
                 type="text"
                 value={newDomain}
                 onChange={e => setNewDomain(e.target.value)}
                 onKeyPress={e => e.key === 'Enter' && addDomain()}
-                className="input flex-1"
+                className="flex-1"
                 placeholder="Enter domain to allow (e.g., youtube.com)..."
               />
-              <button
+              <Button
                 onClick={addDomain}
                 disabled={!newDomain.trim()}
-                className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
+                className="flex items-center gap-2 disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
                 Add Domain
-              </button>
+              </Button>
             </div>
             <p className="text-xs text-discord-light mt-2">
               Press Enter or click Add Domain to add to the allowed list

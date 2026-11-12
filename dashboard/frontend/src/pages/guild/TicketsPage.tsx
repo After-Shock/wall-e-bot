@@ -7,6 +7,14 @@ import {
 } from 'lucide-react';
 import { ticketApi, api } from '../../services/api';
 import { EmojiPicker, type ServerEmoji } from '../../components/EmojiPicker';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { confirm } from '@/components/ConfirmDialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -115,29 +123,27 @@ function SendChannelModal({
   const [channelId, setChannelId] = useState(defaultChannelId ?? '');
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="card w-full max-w-md space-y-4">
-        <h3 className="font-semibold">Send to Channel</h3>
-        <div>
-          <label className="block text-sm font-medium mb-1">Channel</label>
-          <select value={channelId} onChange={e => setChannelId(e.target.value)} className="input w-full">
+    <Dialog open onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Send to Channel</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="send-channel">Channel</Label>
+          <select id="send-channel" value={channelId} onChange={e => setChannelId(e.target.value)} className="input w-full">
             <option value="">— Select channel —</option>
             {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
           </select>
         </div>
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="btn btn-secondary">Cancel</button>
-          <button
-            onClick={() => { if (channelId) onSend(channelId); }}
-            disabled={!channelId || isPending}
-            className="btn btn-primary"
-          >
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => { if (channelId) onSend(channelId); }} disabled={!channelId || isPending}>
             {isPending ? 'Sending…' : 'Send'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -158,12 +164,12 @@ function AddQuestionsForm({ remaining, onSave }: {
   if (remaining <= 0) return null;
   if (!rows) {
     return (
-      <button
+      <Button variant="secondary"
         onClick={() => setRows([blankQuestion()])}
-        className="btn btn-secondary text-xs w-full flex items-center justify-center gap-1"
+        className="text-xs w-full flex items-center justify-center gap-1"
       >
         <Plus className="w-3 h-3" /> Add Questions
-      </button>
+      </Button>
     );
   }
 
@@ -186,19 +192,19 @@ function AddQuestionsForm({ remaining, onSave }: {
     <div className="space-y-2 border border-discord-mid rounded p-2">
       {rows.map((row, i) => (
         <div key={i} className="flex flex-wrap gap-2 items-center">
-          <input
+          <Input
             value={row.label}
             maxLength={45}
             onChange={e => update(i, { label: e.target.value })}
-            className="input flex-1 min-w-[10rem] text-xs"
+            className="flex-1 min-w-[10rem] text-xs"
             placeholder={`Question ${i + 1} (max 45 characters)`}
             aria-label={`Question ${i + 1}`}
           />
-          <input
+          <Input
             value={row.placeholder}
             maxLength={100}
             onChange={e => update(i, { placeholder: e.target.value })}
-            className="input flex-1 min-w-[10rem] text-xs"
+            className="flex-1 min-w-[10rem] text-xs"
             placeholder="Placeholder hint (optional)"
             aria-label={`Placeholder for question ${i + 1}`}
           />
@@ -222,20 +228,20 @@ function AddQuestionsForm({ remaining, onSave }: {
       ))}
       <div className="flex flex-wrap gap-2 items-center">
         {rows.length < remaining && (
-          <button
+          <Button variant="secondary"
             onClick={() => setRows([...rows, blankQuestion()])}
-            className="btn btn-secondary text-xs flex items-center gap-1"
+            className="text-xs flex items-center gap-1"
           >
             <Plus className="w-3 h-3" /> Add another
-          </button>
+          </Button>
         )}
         <span className="text-xs text-discord-light flex-1">
           {remaining - rows.length} more slot{remaining - rows.length === 1 ? '' : 's'} (Discord allows 5 per form)
         </span>
-        <button onClick={() => setRows(null)} className="btn btn-secondary text-xs">Cancel</button>
-        <button onClick={save} disabled={!filled.length || saving} className="btn btn-primary text-xs">
+        <Button variant="secondary" onClick={() => setRows(null)} className="text-xs">Cancel</Button>
+        <Button onClick={save} disabled={!filled.length || saving} className="text-xs">
           {saving ? 'Saving…' : `Save ${filled.length} question${filled.length === 1 ? '' : 's'}`}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -248,9 +254,9 @@ function AddCategoryForm({ onAdd }: { onAdd: (name: string) => Promise<boolean> 
 
   if (name === null) {
     return (
-      <button onClick={() => setName('')} className="btn btn-secondary text-xs flex items-center gap-1">
+      <Button variant="secondary" onClick={() => setName('')} className="text-xs flex items-center gap-1">
         <Plus className="w-3 h-3" /> Add Category
-      </button>
+      </Button>
     );
   }
 
@@ -264,7 +270,7 @@ function AddCategoryForm({ onAdd }: { onAdd: (name: string) => Promise<boolean> 
 
   return (
     <div className="flex gap-2 items-center">
-      <input
+      <Input
         autoFocus
         value={name}
         maxLength={80}
@@ -273,14 +279,14 @@ function AddCategoryForm({ onAdd }: { onAdd: (name: string) => Promise<boolean> 
           if (e.key === 'Enter') void submit();
           if (e.key === 'Escape') setName(null);
         }}
-        className="input text-xs w-48"
+        className="text-xs w-48"
         placeholder="Category name (button label)"
         aria-label="New category name"
       />
-      <button onClick={() => setName(null)} className="btn btn-secondary text-xs">Cancel</button>
-      <button onClick={() => void submit()} disabled={!name.trim() || saving} className="btn btn-primary text-xs">
+      <Button variant="secondary" onClick={() => setName(null)} className="text-xs">Cancel</Button>
+      <Button onClick={() => void submit()} disabled={!name.trim() || saving} className="text-xs">
         {saving ? 'Adding…' : 'Add'}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -300,9 +306,9 @@ function PanelSendButton({ panel, channels, guildId, onAfterSend }: {
   });
   return (
     <>
-      <button onClick={() => setShowSend(true)} className="btn btn-secondary p-1.5" title="Send to channel">
+      <Button variant="secondary" onClick={() => setShowSend(true)} className="p-1.5" title="Send to channel">
         <Send className="w-4 h-4" />
-      </button>
+      </Button>
       {showSend && (
         <SendChannelModal
           key={panel.panel_channel_id ?? 'new'}
@@ -362,10 +368,10 @@ function GroupCard({
       <div className="flex items-center gap-2">
         {editingName ? (
           <>
-            <input
+            <Input
               value={nameVal}
               onChange={e => setNameVal(e.target.value)}
-              className="input flex-1"
+              className="flex-1"
               autoFocus
               maxLength={100}
               aria-label="Group name"
@@ -374,39 +380,39 @@ function GroupCard({
                 if (e.key === 'Escape') cancelRename();
               }}
             />
-            <button onClick={saveName} disabled={!nameVal.trim() || updateMutation.isPending} className="btn btn-primary text-xs">
+            <Button onClick={saveName} disabled={!nameVal.trim() || updateMutation.isPending} className="text-xs">
               {updateMutation.isPending ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={cancelRename} className="btn btn-secondary text-xs">Cancel</button>
+            </Button>
+            <Button variant="secondary" onClick={cancelRename} className="text-xs">Cancel</Button>
           </>
         ) : (
           <>
             <h4 className="font-semibold flex-1">{group.name}</h4>
-            <button
+            <Button variant="secondary"
               onClick={() => { setNameVal(group.name); setEditingName(true); }}
-              className="btn btn-secondary p-1.5"
+              className="p-1.5"
               title="Rename group"
               aria-label={`Rename group ${group.name}`}
             >
               <Pencil className="w-4 h-4" />
-            </button>
+            </Button>
           </>
         )}
-        <button
+        <Button
           onClick={() => setShowSend(true)}
           disabled={editingName}
           title={editingName ? 'Save or cancel the rename first' : undefined}
-          className="btn btn-primary flex items-center gap-2 text-sm"
+          className="flex items-center gap-2 text-sm"
         >
           <Send className="w-4 h-4" />
           {group.last_channel_id ? 'Re-send' : 'Send to Channel'}
-        </button>
-        <button
-          onClick={() => window.confirm(`Disband "${group.name}"? Panels will become ungrouped.`) && onDelete()}
-          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
+        </Button>
+        <Button variant="ghost"
+          onClick={async () => (await confirm({ title: `Disband "${group.name}"?`, description: 'Panels will become ungrouped.', confirmText: 'Disband' })) && onDelete()}
+          className="bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
         >
           <Trash2 className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
 
       {updateMutation.isError && (
@@ -438,10 +444,10 @@ function GroupCard({
           <span className="text-xs text-discord-light">
             {panel.panel_type} · {panel.categories?.length ?? 0} categories
           </span>
-          <button
+          <Button variant="secondary"
             onClick={() => onRemovePanel(panel.id!)}
-            className="btn btn-secondary text-xs py-0.5 px-2"
-          >Remove</button>
+            className="text-xs py-0.5 px-2"
+          >Remove</Button>
         </div>
       ))}
 
@@ -582,7 +588,7 @@ export default function TicketsPage() {
 
   const deletePanel = async (panelId: number) => {
     if (!guildId) return;
-    if (!confirm('Delete this panel? This cannot be undone.')) return;
+    if (!(await confirm({ title: 'Delete this panel?', description: 'This cannot be undone.', confirmText: 'Delete' }))) return;
     try {
       await ticketApi.deletePanel(guildId, panelId);
       setPanels(prev => prev.filter(p => p.id !== panelId));
@@ -645,7 +651,7 @@ export default function TicketsPage() {
   };
 
   const deleteCategory = async (guildId_: string, categoryId: number, panelId: number) => {
-    if (!confirm('Delete this category?')) return;
+    if (!(await confirm({ title: 'Delete this category?', confirmText: 'Delete' }))) return;
     try {
       await ticketApi.deleteCategory(guildId_, categoryId);
       setPanels(prev => prev.map(p => p.id === panelId
@@ -791,10 +797,10 @@ export default function TicketsPage() {
           </div>
         </div>
         {activeTab === 'settings' && (
-          <button onClick={saveConfig} disabled={saving} className="btn btn-primary flex items-center gap-2">
+          <Button onClick={saveConfig} disabled={saving} className="flex items-center gap-2">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Save Settings
-          </button>
+          </Button>
         )}
       </div>
 
@@ -805,22 +811,15 @@ export default function TicketsPage() {
         </div>
       )}
 
-      {/* Tab Bar */}
-      <div className="flex gap-1 border-b border-discord-dark pb-0">
-        {(['panels', 'settings', 'tickets'] as Tab[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
-              activeTab === tab
-                ? 'border-discord-blurple text-white'
-                : 'border-transparent text-discord-light hover:text-white'
-            }`}
-          >
-            {tab === 'tickets' ? `Active Tickets (${activeTickets.length})` : tab}
-          </button>
-        ))}
-      </div>
+      <Tabs value={activeTab} onValueChange={v => setActiveTab(v as Tab)}>
+        <TabsList>
+          {(['panels', 'settings', 'tickets'] as Tab[]).map(tab => (
+            <TabsTrigger key={tab} value={tab} className="capitalize">
+              {tab === 'tickets' ? `Active Tickets (${activeTickets.length})` : tab}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {/* ── PANELS TAB ── */}
       {activeTab === 'panels' && (
@@ -829,33 +828,33 @@ export default function TicketsPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-discord-light uppercase tracking-wider">Groups</h3>
-              <button
+              <Button variant="secondary"
                 onClick={() => setShowNewGroup(true)}
-                className="btn btn-secondary flex items-center gap-1 text-xs py-1 px-2"
+                className="flex items-center gap-1 text-xs py-1 px-2"
               >
                 <Plus className="w-3 h-3" /> New Group
-              </button>
+              </Button>
             </div>
 
             {showNewGroup && (
               <div className="card flex items-center gap-2 border border-discord-blurple/30">
-                <input
+                <Input
                   value={newGroupName}
                   onChange={e => setNewGroupName(e.target.value)}
                   placeholder="Group name"
-                  className="input flex-1"
+                  className="flex-1"
                   autoFocus
                   onKeyDown={e => {
                     if (e.key === 'Enter' && newGroupName.trim()) createGroupMutation.mutate(newGroupName.trim());
                     if (e.key === 'Escape') { setShowNewGroup(false); setNewGroupName(''); }
                   }}
                 />
-                <button
+                <Button
                   onClick={() => { if (newGroupName.trim()) createGroupMutation.mutate(newGroupName.trim()); }}
                   disabled={!newGroupName.trim() || createGroupMutation.isPending}
-                  className="btn btn-primary text-sm"
-                >Create</button>
-                <button onClick={() => { setShowNewGroup(false); setNewGroupName(''); }} className="btn btn-secondary text-sm">Cancel</button>
+                  className="text-sm"
+                >Create</Button>
+                <Button variant="secondary" onClick={() => { setShowNewGroup(false); setNewGroupName(''); }} className="text-sm">Cancel</Button>
               </div>
             )}
 
@@ -888,23 +887,23 @@ export default function TicketsPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-discord-light uppercase tracking-wider">Panels</h3>
-              <button onClick={() => setShowNewPanel(true)} className="btn btn-primary flex items-center gap-2">
+              <Button onClick={() => setShowNewPanel(true)} className="flex items-center gap-2">
                 <Plus className="w-4 h-4" /> New Panel
-              </button>
+              </Button>
             </div>
 
             {showNewPanel && (
               <div className="card flex gap-3 items-center">
-                <input
+                <Input
                   value={newPanelName}
                   onChange={e => setNewPanelName(e.target.value)}
-                  className="input flex-1"
+                  className="flex-1"
                   placeholder="Panel name (e.g. Support, Appeals, Partnerships)"
                   onKeyDown={e => e.key === 'Enter' && createPanel()}
                   autoFocus
                 />
-                <button onClick={createPanel} className="btn btn-primary">Create</button>
-                <button onClick={() => setShowNewPanel(false)} className="btn btn-secondary">Cancel</button>
+                <Button onClick={createPanel}>Create</Button>
+                <Button variant="secondary" onClick={() => setShowNewPanel(false)}>Cancel</Button>
               </div>
             )}
 
@@ -919,7 +918,7 @@ export default function TicketsPage() {
                 <div className="flex items-center gap-3">
                   {renaming && renaming.id === panel.id ? (
                     <div className="flex items-center gap-2 flex-1">
-                      <input
+                      <Input
                         autoFocus
                         value={renaming.name}
                         maxLength={100}
@@ -928,11 +927,11 @@ export default function TicketsPage() {
                           if (e.key === 'Enter') void renamePanel();
                           if (e.key === 'Escape') setRenaming(null);
                         }}
-                        className="input flex-1"
+                        className="flex-1"
                         aria-label="Panel title"
                       />
-                      <button onClick={() => void renamePanel()} disabled={!renaming.name.trim()} className="btn btn-primary text-xs">Save</button>
-                      <button onClick={() => setRenaming(null)} className="btn btn-secondary text-xs">Cancel</button>
+                      <Button onClick={() => void renamePanel()} disabled={!renaming.name.trim()} className="text-xs">Save</Button>
+                      <Button variant="secondary" onClick={() => setRenaming(null)} className="text-xs">Cancel</Button>
                     </div>
                   ) : (
                   <button onClick={() => panel.id && togglePanel(panel.id)} className="flex items-center gap-2 flex-1 text-left">
@@ -993,7 +992,7 @@ export default function TicketsPage() {
                     <div className="space-y-3 text-sm">
                       <div>
                         <label className="block font-medium mb-1" htmlFor={`panel-description-${panel.id}`}>Description</label>
-                        <textarea
+                        <Textarea
                           id={`panel-description-${panel.id}`}
                           defaultValue={panel.description || ''}
                           maxLength={4000}
@@ -1002,7 +1001,7 @@ export default function TicketsPage() {
                             const description = e.target.value.trim();
                             if (panel.id && description !== (panel.description || '')) void savePanel(panel.id, { description });
                           }}
-                          className="input w-full"
+                          className="w-full"
                           placeholder="To create a ticket use the appropriate button below: ..."
                         />
                         <p className="text-xs text-discord-light mt-1">
@@ -1030,10 +1029,10 @@ export default function TicketsPage() {
                       </div>
                       <div>
                         <label className="block font-medium mb-1">Channel Name Template</label>
-                        <input
+                        <Input
                           defaultValue={panel.channel_name_template}
                           onBlur={e => { if (panel.id) void savePanel(panel.id, { channel_name_template: e.target.value }); }}
-                          className="input w-full"
+                          className="w-full"
                           placeholder="{type}-{number}"
                         />
                         <p className="text-xs text-discord-light mt-1">
@@ -1042,28 +1041,28 @@ export default function TicketsPage() {
                       </div>
                       <div>
                         <label className="block font-medium mb-1">Open Category ID</label>
-                        <input
+                        <Input
                           defaultValue={panel.category_open_id}
                           onBlur={e => { if (panel.id) void savePanel(panel.id, { category_open_id: e.target.value.trim() || null }); }}
-                          className="input w-full"
+                          className="w-full"
                           placeholder="Discord category ID"
                         />
                       </div>
                       <div>
                         <label className="block font-medium mb-1">Closed Category ID</label>
-                        <input
+                        <Input
                           defaultValue={panel.category_closed_id}
                           onBlur={e => { if (panel.id) void savePanel(panel.id, { category_closed_id: e.target.value.trim() || null }); }}
-                          className="input w-full"
+                          className="w-full"
                           placeholder="Discord category ID (for archived tickets)"
                         />
                       </div>
                       <div>
                         <label className="block font-medium mb-1">Overflow Category ID</label>
-                        <input
+                        <Input
                           defaultValue={panel.overflow_category_id}
                           onBlur={e => { if (panel.id) void savePanel(panel.id, { overflow_category_id: e.target.value.trim() || null }); }}
-                          className="input w-full"
+                          className="w-full"
                           placeholder="Used when open category hits 50 channels"
                         />
                       </div>
@@ -1125,14 +1124,14 @@ export default function TicketsPage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                                   <div>
                                     <label className="block text-xs text-discord-light mb-1">Category Name</label>
-                                    <input
+                                    <Input
                                       value={cat.name}
                                       onChange={e => setPanels(prev => prev.map(p => p.id === panel.id ? {
                                         ...p,
                                         categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, name: e.target.value } : c),
                                       } : p))}
                                       onBlur={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { name: e.target.value })}
-                                      className="input w-full"
+                                      className="w-full"
                                     />
                                   </div>
                                   <div>
@@ -1157,14 +1156,14 @@ export default function TicketsPage() {
                                   </div>
                                   <div className="md:col-span-2">
                                     <label className="block text-xs text-discord-light mb-1">Description</label>
-                                    <input
+                                    <Input
                                       value={cat.description || ''}
                                       onChange={e => setPanels(prev => prev.map(p => p.id === panel.id ? {
                                         ...p,
                                         categories: (p.categories || []).map(c => c.id === cat.id ? { ...c, description: e.target.value } : c),
                                       } : p))}
                                       onBlur={e => panel.id && cat.id && updateCategory(panel.id, cat.id, { description: e.target.value })}
-                                      className="input w-full"
+                                      className="w-full"
                                       placeholder="Who should open this ticket?"
                                     />
                                   </div>
@@ -1232,7 +1231,7 @@ export default function TicketsPage() {
                                     </div>
                                     <div className="flex-1 space-y-1">
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <input
+                                        <Input
                                           defaultValue={field.label}
                                           maxLength={45}
                                           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
@@ -1243,7 +1242,7 @@ export default function TicketsPage() {
                                               void saveFormField(field.id, cat.id, panel.id, { label });
                                             }
                                           }}
-                                          className="input flex-1 min-w-[10rem] text-sm font-medium"
+                                          className="flex-1 min-w-[10rem] text-sm font-medium"
                                           aria-label="Question"
                                         />
                                         <select
@@ -1257,16 +1256,11 @@ export default function TicketsPage() {
                                           <option value="paragraph">Long answer</option>
                                         </select>
                                         <label className="flex items-center gap-1 text-xs text-discord-light">
-                                          <input
-                                            type="checkbox"
-                                            checked={field.required}
-                                            onChange={e => field.id && cat.id && panel.id &&
-                                              saveFormField(field.id, cat.id, panel.id, { required: e.target.checked })}
-                                          />
+                                          <Checkbox checked={field.required} onCheckedChange={checked => field.id && cat.id && panel.id && saveFormField(field.id, cat.id, panel.id, { required: checked === true })} />
                                           Required
                                         </label>
                                       </div>
-                                      <input
+                                      <Input
                                         defaultValue={field.placeholder || ''}
                                         maxLength={100}
                                         onBlur={e => {
@@ -1275,7 +1269,7 @@ export default function TicketsPage() {
                                             void saveFormField(field.id, cat.id, panel.id, { placeholder });
                                           }
                                         }}
-                                        className="input w-full text-xs"
+                                        className="w-full text-xs"
                                         placeholder="Placeholder hint shown in the empty box (e.g. jsmith42)"
                                         aria-label={`Placeholder for ${field.label}`}
                                       />
@@ -1322,10 +1316,10 @@ export default function TicketsPage() {
               <label className="block text-sm font-medium mb-2">Transcript Channel ID</label>
               <div className="relative">
                 <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-discord-light" />
-                <input
+                <Input
                   value={config.transcript_channel_id}
                   onChange={e => setConfig(c => ({ ...c, transcript_channel_id: e.target.value }))}
-                  className="input w-full pl-9"
+                  className="w-full pl-9"
                   placeholder="Channel ID for transcripts"
                 />
               </div>
@@ -1333,21 +1327,21 @@ export default function TicketsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Max Tickets Per User</label>
-              <input
+              <Input
                 type="number"
                 value={config.max_tickets_per_user}
                 onChange={e => setConfig(c => ({ ...c, max_tickets_per_user: parseInt(e.target.value) || 1 }))}
-                className="input w-full"
+                className="w-full"
                 min="1" max="10"
               />
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Auto-Close After (hours)</label>
-              <input
+              <Input
                 type="number"
                 value={config.auto_close_hours}
                 onChange={e => setConfig(c => ({ ...c, auto_close_hours: parseInt(e.target.value) || 0 }))}
-                className="input w-full"
+                className="w-full"
                 min="0"
               />
               <p className="text-xs text-discord-light mt-1">0 = never auto-close</p>
@@ -1356,10 +1350,10 @@ export default function TicketsPage() {
 
           <div>
             <label className="block text-sm font-medium mb-2">Welcome Message</label>
-            <textarea
+            <Textarea
               value={config.welcome_message}
               onChange={e => setConfig(c => ({ ...c, welcome_message: e.target.value }))}
-              className="input w-full h-24 resize-none"
+              className="w-full h-24 resize-none"
               placeholder="Message shown when ticket is created..."
             />
           </div>
@@ -1371,9 +1365,9 @@ export default function TicketsPage() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Active Tickets</h3>
-            <button onClick={fetchData} className="btn btn-secondary text-xs flex items-center gap-1">
+            <Button variant="secondary" onClick={fetchData} className="text-xs flex items-center gap-1">
               Refresh
-            </button>
+            </Button>
           </div>
 
           {activeTickets.length === 0 ? (

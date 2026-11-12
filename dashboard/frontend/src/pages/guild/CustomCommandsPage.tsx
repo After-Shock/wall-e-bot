@@ -10,6 +10,11 @@ import {
   Terminal, Plus, Trash2, Search, Save, Edit, Info, ChevronDown, ChevronRight,
   FolderPlus, Folder, Clock, Zap, Hash, AlignLeft, Code2, X,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { confirm } from '@/components/ConfirmDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -230,13 +235,7 @@ function Toggle({ label, description, checked, onChange }: {
         <div className="text-sm font-medium">{label}</div>
         {description && <div className="text-xs text-discord-light">{description}</div>}
       </div>
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={`relative w-10 h-5 rounded-full transition-colors ${checked ? 'bg-green-500' : 'bg-discord-dark'}`}
-      >
-        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
-      </button>
+      <Switch checked={checked} onCheckedChange={() => onChange(!checked)} />
     </div>
   );
 }
@@ -631,12 +630,12 @@ export default function CustomCommandsPage() {
           {editingCommand.trigger_type === 'command' && (
             <div>
               <label className="block text-sm font-medium mb-2">Aliases <span className="text-discord-light font-normal">(optional, comma-separated, without prefix)</span></label>
-              <input
+              <Input
                 type="text"
                 // Raw split keeps commas and spaces while typing; the backend trims and drops blanks.
                 value={(editingCommand.aliases ?? []).join(',')}
                 onChange={e => setEditingCommand(prev => prev ? { ...prev, aliases: e.target.value.split(',') } : prev)}
-                className="input w-full font-mono"
+                className="w-full font-mono"
                 placeholder="nongoals, non_goals"
               />
             </div>
@@ -647,22 +646,22 @@ export default function CustomCommandsPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-2">Display Name</label>
-                <input type="text" value={editingCommand.name ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, name: e.target.value } : prev)} className="input w-full" placeholder="My Reaction Command" />
+                <Input type="text" value={editingCommand.name ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, name: e.target.value } : prev)} className="w-full" placeholder="My Reaction Command" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-2">Message ID</label>
-                  <input type="text" value={editingCommand.reaction_message_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_message_id: e.target.value } : prev)} className="input w-full font-mono" placeholder="1234567890" />
+                  <Input type="text" value={editingCommand.reaction_message_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_message_id: e.target.value } : prev)} className="w-full font-mono" placeholder="1234567890" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Channel ID</label>
-                  <input type="text" value={editingCommand.reaction_channel_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_channel_id: e.target.value } : prev)} className="input w-full font-mono" placeholder="1234567890" />
+                  <Input type="text" value={editingCommand.reaction_channel_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_channel_id: e.target.value } : prev)} className="w-full font-mono" placeholder="1234567890" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-2">Emoji (unicode or ID)</label>
-                  <input type="text" value={editingCommand.reaction_emoji ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_emoji: e.target.value } : prev)} className="input w-full" placeholder="👋 or 123456789" />
+                  <Input type="text" value={editingCommand.reaction_emoji ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, reaction_emoji: e.target.value } : prev)} className="w-full" placeholder="👋 or 123456789" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Trigger On</label>
@@ -681,16 +680,16 @@ export default function CustomCommandsPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-2">Display Name</label>
-                <input type="text" value={editingCommand.name ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, name: e.target.value } : prev)} className="input w-full" placeholder="Daily Announcement" />
+                <Input type="text" value={editingCommand.name ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, name: e.target.value } : prev)} className="w-full" placeholder="Daily Announcement" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Cron Expression</label>
-                <input type="text" value={editingCommand.interval_cron ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, interval_cron: e.target.value } : prev)} className="input w-full font-mono" placeholder="0 9 * * 1  (every Monday at 9am)" />
+                <Input type="text" value={editingCommand.interval_cron ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, interval_cron: e.target.value } : prev)} className="w-full font-mono" placeholder="0 9 * * 1  (every Monday at 9am)" />
                 <p className="text-xs text-discord-light mt-1">Format: minute hour day month weekday (UTC)</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Post to Channel ID</label>
-                <input type="text" value={editingCommand.interval_channel_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, interval_channel_id: e.target.value } : prev)} className="input w-full font-mono" placeholder="1234567890" />
+                <Input type="text" value={editingCommand.interval_channel_id ?? ''} onChange={e => setEditingCommand(prev => prev ? { ...prev, interval_channel_id: e.target.value } : prev)} className="w-full font-mono" placeholder="1234567890" />
               </div>
             </div>
           )}
@@ -698,11 +697,11 @@ export default function CustomCommandsPage() {
           {/* Description */}
           <div>
             <label className="block text-sm font-medium mb-2">Description <span className="text-discord-light font-normal">(optional — internal note)</span></label>
-            <input
+            <Input
               type="text"
               value={editingCommand.description ?? ''}
               onChange={e => setEditingCommand(prev => prev ? { ...prev, description: e.target.value || null } : prev)}
-              className="input w-full"
+              className="w-full"
               placeholder="What does this command do?"
               maxLength={500}
             />
@@ -728,10 +727,10 @@ export default function CustomCommandsPage() {
             <>
               <h3 className="font-semibold">Rich Embed (cembed)</h3>
               <div className="relative">
-                <textarea
+                <Textarea
                   value={(editingCommand.responses ?? [''])[0]}
                   onChange={e => setEditingCommand(prev => prev ? { ...prev, responses: [e.target.value] } : prev)}
-                  className="input w-full h-48 resize-y font-mono text-xs"
+                  className="w-full h-48 resize-y font-mono text-xs"
                   placeholder={'{{ $embed := cembed \n  "title" "My Title"\n  "description" "Hello!"\n  "color" 3066993\n}}'}
                 />
                 <span className={`absolute bottom-1 right-3 text-xs pointer-events-none z-10 ${((editingCommand.responses ?? [''])[0].length) >= 19500 ? 'text-red-400' : 'text-discord-light'}`}>
@@ -810,9 +809,9 @@ export default function CustomCommandsPage() {
                     <span className="ml-2 text-xs text-discord-light font-normal">(picked randomly)</span>
                   )}
                 </h3>
-                <button onClick={addResponse} className="btn btn-secondary text-xs flex items-center gap-1">
+                <Button variant="secondary" onClick={addResponse} className="text-xs flex items-center gap-1">
                   <Plus className="w-3 h-3" /> Add Response
-                </button>
+                </Button>
               </div>
 
               {(editingCommand.responses ?? ['']).map((resp, idx) => (
@@ -827,10 +826,10 @@ export default function CustomCommandsPage() {
                   )}
                   <div className="relative">
                     {isMobile ? (
-                      <textarea
+                      <Textarea
                         value={resp}
                         onChange={e => updateResponse(idx, e.target.value)}
-                        className="input w-full h-32 resize-y font-mono text-sm pb-6"
+                        className="w-full h-32 resize-y font-mono text-sm pb-6"
                         placeholder="Response text… use {{user}} for mentions"
                       />
                     ) : (
@@ -950,11 +949,11 @@ export default function CustomCommandsPage() {
                       {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
                     </select>
                     <label className="block text-sm font-medium mb-1 mt-3">DM failed notice <span className="text-discord-light font-normal">(posted in the channel after the user's mention when their DMs are closed; leave blank to post nothing publicly)</span></label>
-                    <input
+                    <Input
                       type="text"
                       value={editingCommand.reply_dm_failed_notice ?? ''}
                       onChange={e => setEditingCommand(prev => prev ? { ...prev, reply_dm_failed_notice: e.target.value || null } : prev)}
-                      className="input w-full"
+                      className="w-full"
                       placeholder="blank = no public notice, mod log only"
                       maxLength={1000}
                     />
@@ -1007,15 +1006,15 @@ export default function CustomCommandsPage() {
         {/* Save actions */}
         <div className="space-y-2">
           <div className="flex gap-3">
-            <button onClick={() => { setEditingCommand(null); setSaveError(null); }} className="btn btn-secondary">Cancel</button>
-            <button
+            <Button variant="secondary" onClick={() => { setEditingCommand(null); setSaveError(null); }}>Cancel</Button>
+            <Button
               onClick={saveCommand}
               disabled={!editingCommand.name || (editingCommand.cembed_response ? !parseCembed((editingCommand.responses ?? [''])[0] ?? '') : !(editingCommand.responses?.some(r => r.trim()))) || isSaving}
-              className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
+              className="flex items-center gap-2 disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               {isSaving ? 'Saving…' : 'Save Command'}
-            </button>
+            </Button>
           </div>
           {saveError && <p className="text-sm text-red-400">{saveError}</p>}
         </div>
@@ -1042,17 +1041,17 @@ export default function CustomCommandsPage() {
         </div>
         <div>
           <label className="block text-xs font-medium mb-1">Name</label>
-          <input type="text" value={editingGroup.name ?? ''} onChange={e => setEditingGroup(prev => prev ? { ...prev, name: e.target.value } : prev)} className="input w-full" placeholder="My Group" />
+          <Input type="text" value={editingGroup.name ?? ''} onChange={e => setEditingGroup(prev => prev ? { ...prev, name: e.target.value } : prev)} className="w-full" placeholder="My Group" />
         </div>
         <div>
           <label className="block text-xs font-medium mb-1">Description</label>
-          <input type="text" value={editingGroup.description ?? ''} onChange={e => setEditingGroup(prev => prev ? { ...prev, description: e.target.value } : prev)} className="input w-full" placeholder="Optional description" />
+          <Input type="text" value={editingGroup.description ?? ''} onChange={e => setEditingGroup(prev => prev ? { ...prev, description: e.target.value } : prev)} className="w-full" placeholder="Optional description" />
         </div>
         <div className="flex gap-2">
-          <button onClick={() => { setEditingGroup(null); setEditingGroupId(null); }} className="btn btn-secondary text-sm">Cancel</button>
-          <button onClick={saveGroup} disabled={!editingGroup.name || saving} className="btn btn-primary text-sm disabled:opacity-50">
+          <Button variant="secondary" onClick={() => { setEditingGroup(null); setEditingGroupId(null); }} className="text-sm">Cancel</Button>
+          <Button onClick={saveGroup} disabled={!editingGroup.name || saving} className="text-sm disabled:opacity-50">
             {saving ? 'Saving…' : isNew ? 'Create Group' : 'Save'}
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -1064,12 +1063,7 @@ export default function CustomCommandsPage() {
 
   const renderCommandRow = (cmd: CustomCommand) => (
     <div key={cmd.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-discord-dark/50 ${editingCommand && (editingCommand as CustomCommand).id === cmd.id ? 'bg-discord-blurple/10 border border-discord-blurple/30' : ''}`}>
-      <button
-        onClick={() => toggleCmd.mutate({ id: cmd.id, enabled: !cmd.enabled })}
-        className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${cmd.enabled ? 'bg-green-500' : 'bg-discord-dark'}`}
-      >
-        <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${cmd.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-      </button>
+      <Switch checked={cmd.enabled} onCheckedChange={() => toggleCmd.mutate({ id: cmd.id, enabled: !cmd.enabled })} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
           <TriggerBadge type={cmd.trigger_type} />
@@ -1093,12 +1087,12 @@ export default function CustomCommandsPage() {
         )}
       </div>
       <div className="flex gap-1 shrink-0">
-        <button onClick={() => openEditCommand(cmd)} title="Edit" className="btn btn-secondary p-2.5 md:p-1.5"><Edit className="w-4 h-4 md:w-3.5 md:h-3.5" /></button>
-        <button
-          onClick={() => window.confirm(`Delete "${cmd.name}"?`) && deleteCmd.mutate(cmd.id)}
+        <Button variant="secondary" onClick={() => openEditCommand(cmd)} title="Edit" className="p-2.5 md:p-1.5"><Edit className="w-4 h-4 md:w-3.5 md:h-3.5" /></Button>
+        <Button variant="ghost"
+          onClick={async () => (await confirm({ title: `Delete "${cmd.name}"?`, confirmText: 'Delete' })) && deleteCmd.mutate(cmd.id)}
           title="Delete"
-          className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-2.5 md:p-1.5"
-        ><Trash2 className="w-4 h-4 md:w-3.5 md:h-3.5" /></button>
+          className="bg-red-500/20 text-red-400 hover:bg-red-500/30 p-2.5 md:p-1.5"
+        ><Trash2 className="w-4 h-4 md:w-3.5 md:h-3.5" /></Button>
       </div>
     </div>
   );
@@ -1113,18 +1107,18 @@ export default function CustomCommandsPage() {
       <div className="p-3 border-b border-discord-dark space-y-2">
         <div className="flex items-center gap-2">
           <span className="text-xs text-discord-light">Prefix:</span>
-          <input type="text" value={prefixInput} onChange={e => setPrefixInput(e.target.value.slice(0, 5))}
-            className="input w-16 text-center font-mono text-sm py-1" maxLength={5} placeholder="!" />
-          <button onClick={() => savePrefix.mutate(prefixInput)}
+          <Input type="text" value={prefixInput} onChange={e => setPrefixInput(e.target.value.slice(0, 5))}
+            className="w-16 text-center font-mono text-sm py-1" maxLength={5} placeholder="!" />
+          <Button onClick={() => savePrefix.mutate(prefixInput)}
             disabled={savePrefix.isPending || !prefixInput || prefixInput === generalConfig?.prefix}
-            className="btn btn-primary text-xs py-1 px-2 disabled:opacity-50">
+            className="text-xs py-1 px-2 disabled:opacity-50">
             {prefixSaved ? '✓' : 'Save'}
-          </button>
+          </Button>
         </div>
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-light" />
-          <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search commands…" className="input w-full pl-7 text-sm py-1.5" />
+          <Input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search commands…" className="w-full pl-7 text-sm py-1.5" />
         </div>
       </div>
 
@@ -1150,7 +1144,7 @@ export default function CustomCommandsPage() {
                     <div className="hidden group-hover:flex gap-1">
                       <button onClick={() => openNewCommand(group.id)} title="Add command" className="text-discord-light hover:text-white p-0.5"><Plus className="w-3.5 h-3.5" /></button>
                       <button onClick={() => { setEditingGroup({ ...group }); setEditingGroupId(group.id); }} title="Edit group" className="text-discord-light hover:text-white p-0.5"><Edit className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => window.confirm(`Delete group "${group.name}"?`) && deleteGroup.mutate(group.id)} title="Delete group" className="text-red-400 hover:text-red-300 p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={async () => (await confirm({ title: `Delete group "${group.name}"?`, confirmText: 'Delete' })) && deleteGroup.mutate(group.id)} title="Delete group" className="text-red-400 hover:text-red-300 p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                   {editingGroupId === group.id && renderGroupEditor()}
@@ -1193,16 +1187,16 @@ export default function CustomCommandsPage() {
 
       {/* Bottom actions */}
       <div className="p-2 border-t border-discord-dark flex gap-2">
-        <button onClick={() => openNewCommand()} className="btn btn-primary flex-1 flex items-center justify-center gap-1.5 text-sm py-2 max-w-[50%]">
+        <Button onClick={() => openNewCommand()} className="flex-1 flex items-center justify-center gap-1.5 text-sm py-2 max-w-[50%]">
           <Plus className="w-4 h-4 shrink-0" />
           <span>New Command</span>
-        </button>
-        <button
+        </Button>
+        <Button variant="secondary"
           onClick={() => { setEditingGroup(emptyGroup()); setEditingGroupId('new'); }}
-          className="btn btn-secondary flex items-center justify-center text-sm p-2 w-10" title="New Group"
+          className="flex items-center justify-center text-sm p-2 w-10" title="New Group"
         >
           <FolderPlus className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
       {editingGroupId === 'new' && <div className="px-2 pb-2">{renderGroupEditor()}</div>}
     </div>

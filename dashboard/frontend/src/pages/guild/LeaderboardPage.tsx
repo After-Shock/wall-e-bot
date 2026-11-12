@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Trophy, MessageSquare } from 'lucide-react';
 import { api } from '../../services/api';
+import { Button } from '@/components/ui/button';
 
 interface LeaderboardEntry {
   user_id: string;
@@ -79,13 +80,13 @@ export default function LeaderboardPage() {
 
       {maxPage > 1 && (
         <div className="flex items-center justify-center gap-3">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="btn btn-secondary disabled:opacity-50">
+          <Button variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="disabled:opacity-50">
             Previous
-          </button>
+          </Button>
           <span className="text-sm text-discord-light">Page {page} of {maxPage}</span>
-          <button onClick={() => setPage(p => Math.min(maxPage, p + 1))} disabled={page >= maxPage} className="btn btn-secondary disabled:opacity-50">
+          <Button variant="secondary" onClick={() => setPage(p => Math.min(maxPage, p + 1))} disabled={page >= maxPage} className="disabled:opacity-50">
             Next
-          </button>
+          </Button>
         </div>
       )}
     </div>

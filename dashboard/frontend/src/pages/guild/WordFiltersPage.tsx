@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Filter, Save, Plus, Trash2, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Filter, Save, Plus, Trash2, AlertTriangle, Clock } from 'lucide-react';
 import { AutoModConfig } from '@wall-e/shared';
 import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 
 export default function WordFiltersPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const [localConfig, setLocalConfig] = useState<AutoModConfig | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
   const [newWord, setNewWord] = useState('');
 
   // Fetch and update automod config (word filter is part of automod)
@@ -19,12 +21,10 @@ export default function WordFiltersPage() {
     error,
     update,
     isUpdating,
-    updateError,
-    updateWarning,
     refetch
   } = useGuildConfig<AutoModConfig>(guildId, 'automod');
 
-  const errorMessage = useErrorMessage(error || updateError);
+  const errorMessage = useErrorMessage(error);
 
   // Initialize local config when data loads
   useEffect(() => {
@@ -96,8 +96,6 @@ export default function WordFiltersPage() {
         ignoredChannels: localConfig.ignoredChannels,
         ignoredRoles: localConfig.ignoredRoles,
       });
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save config:', err);
     }
@@ -116,20 +114,15 @@ export default function WordFiltersPage() {
             <p className="text-discord-light">Block specific words and phrases</p>
           </div>
         </div>
-        <button
+        <Button
           onClick={handleSave}
           disabled={isUpdating || invalidMuteDuration}
-          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               Saving...
-            </>
-          ) : showSuccess ? (
-            <>
-              <CheckCircle className="w-4 h-4" />
-              Saved!
             </>
           ) : (
             <>
@@ -137,20 +130,8 @@ export default function WordFiltersPage() {
               Save Changes
             </>
           )}
-        </button>
+        </Button>
       </div>
-
-      {/* Update Error Alert */}
-      {updateError && (
-        <ErrorAlert
-          message="Failed to save configuration"
-          details={errorMessage || undefined}
-          onRetry={handleSave}
-          variant="error"
-        />
-      )}
-
-      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {invalidMuteDuration && (
         <ErrorAlert
@@ -158,14 +139,6 @@ export default function WordFiltersPage() {
           details="Mute requires a positive duration before this configuration can be saved."
           variant="error"
         />
-      )}
-
-      {/* Success Message */}
-      {showSuccess && (
-        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <p className="text-green-400">Configuration saved successfully!</p>
-        </div>
       )}
 
       {/* Enable Toggle */}
@@ -177,18 +150,7 @@ export default function WordFiltersPage() {
               Automatically filter messages containing blocked words
             </p>
           </div>
-          <button
-            onClick={() => updateWordFilter({ enabled: !localConfig.wordFilter.enabled })}
-            className={`relative w-12 h-6 rounded-full transition-colors ${
-              localConfig.wordFilter.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
-            }`}
-          >
-            <span
-              className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                localConfig.wordFilter.enabled ? 'translate-x-7' : 'translate-x-1'
-              }`}
-            />
-          </button>
+          <Switch checked={localConfig.wordFilter.enabled} onCheckedChange={() => updateWordFilter({ enabled: !localConfig.wordFilter.enabled })} />
         </div>
       </div>
 
@@ -228,14 +190,14 @@ export default function WordFiltersPage() {
                   <Clock className="w-4 h-4" />
                   Mute Duration (minutes)
                 </label>
-                <input
+                <Input
                   type="number"
                   value={localConfig.wordFilter.muteDuration ?? ''}
                   onChange={e => {
                     const duration = Number.parseInt(e.target.value, 10);
                     updateWordFilter({ muteDuration: Number.isFinite(duration) ? duration : undefined });
                   }}
-                  className="input w-full"
+                  className="w-full"
                   min="1"
                   max="10080"
                 />
@@ -250,22 +212,22 @@ export default function WordFiltersPage() {
           <div className="card">
             <h3 className="font-semibold mb-4">Add Filtered Word</h3>
             <div className="flex gap-2">
-              <input
+              <Input
                 type="text"
                 value={newWord}
                 onChange={e => setNewWord(e.target.value)}
                 onKeyPress={e => e.key === 'Enter' && addWord()}
-                className="input flex-1"
+                className="flex-1"
                 placeholder="Enter a word or phrase to filter..."
               />
-              <button
+              <Button
                 onClick={addWord}
                 disabled={!newWord.trim()}
-                className="btn btn-primary flex items-center gap-2 disabled:opacity-50"
+                className="flex items-center gap-2 disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
                 Add Word
-              </button>
+              </Button>
             </div>
             <p className="text-xs text-discord-light mt-2">
               Press Enter or click Add Word to add to the filter list

@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar, Plus, Trash2, Clock, Hash, Play, Pause } from 'lucide-react';
 import { api } from '../../services/api';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface ScheduledMessage {
   id: number;
@@ -96,9 +99,9 @@ export default function ScheduledMessagesPage() {
           </div>
         </div>
         {!showAdd && (
-          <button onClick={() => { setShowAdd(true); setError(null); }} className="btn btn-primary flex items-center gap-2">
+          <Button onClick={() => { setShowAdd(true); setError(null); }} className="flex items-center gap-2">
             <Plus className="w-4 h-4" /> New Schedule
-          </button>
+          </Button>
         )}
       </div>
 
@@ -128,17 +131,17 @@ export default function ScheduledMessagesPage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-2">Message</label>
-            <textarea
+            <Textarea
               value={form.message}
               onChange={e => setForm({ ...form, message: e.target.value })}
-              className="input w-full h-24 resize-none"
+              className="w-full h-24 resize-none"
               placeholder="Supports {server} and {memberCount}"
               maxLength={2000}
             />
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={form.embed} onChange={e => setForm({ ...form, embed: e.target.checked })} className="w-4 h-4" />
+              <Checkbox checked={form.embed} onCheckedChange={checked => setForm({ ...form, embed: checked === true })} />
               Send as embed
             </label>
             {form.embed && (
@@ -147,14 +150,14 @@ export default function ScheduledMessagesPage() {
           </div>
           <p className="text-xs text-discord-light">First message posts one interval from now.</p>
           <div className="flex gap-3">
-            <button onClick={() => { setShowAdd(false); setError(null); }} className="btn btn-secondary">Cancel</button>
-            <button
+            <Button variant="secondary" onClick={() => { setShowAdd(false); setError(null); }}>Cancel</Button>
+            <Button
               onClick={() => createMutation.mutate()}
               disabled={createMutation.isPending || !form.channel_id || !form.message.trim()}
-              className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              className="disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {createMutation.isPending ? 'Creating...' : 'Create'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -178,19 +181,19 @@ export default function ScheduledMessagesPage() {
                   <p className="whitespace-pre-wrap break-words">{m.message}</p>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button
+                  <Button variant="secondary"
                     onClick={() => toggleMutation.mutate(m)}
-                    className="btn btn-secondary"
+                   
                     title={m.enabled ? 'Pause' : 'Resume'}
                   >
                     {m.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="ghost"
                     onClick={() => deleteMutation.mutate(m.id)}
-                    className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                    className="bg-red-500/20 text-red-400 hover:bg-red-500/30"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, AlertTriangle, X, Loader2 } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
 import { api } from '../../services/api';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const CATEGORIES = [
   { key: 'general',    emoji: '⚙️', name: 'General',         desc: 'Prefix, language, timezone, welcome, leveling' },
@@ -78,29 +80,15 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
   const isLoading = modalState === 'loading';
 
   return (
-    // Backdrop
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={isLoading ? undefined : onClose}
-    >
-      <div
-        className="bg-discord-darker rounded-xl w-full max-w-lg mx-4 overflow-hidden shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between p-6 pb-3">
-          <div>
-            <h2 className="text-lg font-bold text-white">Sync Settings</h2>
-            <p className="text-xs text-discord-light mt-0.5">
-              Copying from <strong className="font-semibold text-white">{sourceName}</strong> → this server
-            </p>
-          </div>
-          {!isLoading && (
-            <button onClick={onClose} className="text-discord-light hover:text-white transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
+    // Closing is blocked while a sync is running.
+    <Dialog open onOpenChange={open => !open && !isLoading && onClose()}>
+      <DialogContent className="max-w-lg gap-0 overflow-hidden bg-muted p-0">
+        <DialogHeader className="p-6 pb-3 text-left">
+          <DialogTitle>Sync Settings</DialogTitle>
+          <DialogDescription className="text-xs">
+            Copying from <strong className="font-semibold text-foreground">{sourceName}</strong> → this server
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Idle / Loading — category grid */}
         {(modalState === 'idle' || modalState === 'loading') && (
@@ -169,8 +157,8 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
               >
                 Cancel
               </button>
-              <button
-                className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              <Button
+                className="flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || selected.size === 0}
                 onClick={handleCopy}
               >
@@ -182,7 +170,7 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
                 ) : (
                   `Copy ${selected.size} ${selected.size === 1 ? 'Category' : 'Categories'} →`
                 )}
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -208,9 +196,9 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
               )}
             </div>
             <div className="flex justify-end">
-              <button className="btn btn-secondary text-sm" onClick={onClose}>
+              <Button variant="secondary" className="text-sm" onClick={onClose}>
                 Done
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -225,16 +213,16 @@ export default function SyncModal({ guildId, sourceGuildId, sourceName, onClose 
               <div className="text-red-400 font-semibold text-sm text-center">{errorMsg}</div>
             </div>
             <div className="flex justify-end gap-2">
-              <button className="text-sm text-discord-light hover:text-white px-4 py-2 rounded" onClick={onClose}>
+              <Button variant="ghost" onClick={onClose}>
                 Cancel
-              </button>
-              <button className="btn btn-primary text-sm" onClick={handleTryAgain}>
+              </Button>
+              <Button className="text-sm" onClick={handleTryAgain}>
                 Try Again
-              </button>
+              </Button>
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

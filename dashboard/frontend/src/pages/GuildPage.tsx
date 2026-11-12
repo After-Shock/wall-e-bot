@@ -3,6 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import { ArrowLeft, Save, Shield, Bot, Settings, Loader2, Image, Activity } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 
 interface ModulesConfig {
   moderation: boolean;
@@ -133,16 +136,11 @@ const updateMutation = useMutation({
                         return (
                           <label key={key} className="flex items-center justify-between">
                             <span className="capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
-                            <button
-                              className={`toggle ${enabled ? 'toggle-enabled' : 'toggle-disabled'}`}
-                              onClick={() => {
+                            <Switch checked={enabled} onCheckedChange={() => {
                                 updateMutation.mutate({
                                   modules: { [key]: !enabled },
                                 });
-                              }}
-                            >
-                              <span className={`toggle-dot ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
-                            </button>
+                              }} />
                           </label>
                         );
                       })}
@@ -241,22 +239,22 @@ function CustomizationTab({ guildId }: { guildId: string }) {
         <div>
           <label className="block text-sm font-medium mb-2">Server Nickname</label>
           <div className="flex items-center gap-3 max-w-sm">
-            <input
+            <Input
               type="text"
               value={nickname}
               onChange={e => setNickname(e.target.value)}
-              className="input flex-1"
+              className="flex-1"
               placeholder="Wall-E"
               maxLength={32}
             />
-            <button
+            <Button
               onClick={saveNickname}
               disabled={nickSaving}
-              className="btn btn-primary flex items-center gap-2 shrink-0"
+              className="flex items-center gap-2 shrink-0"
             >
               {nickSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save
-            </button>
+            </Button>
           </div>
           <p className="text-sm text-discord-light mt-1">
             Changes the bot's name only in this server. Leave blank to clear the nickname.
@@ -286,22 +284,22 @@ function CustomizationTab({ guildId }: { guildId: string }) {
               <option value="LISTENING">Listening to</option>
               <option value="COMPETING">Competing in</option>
             </select>
-            <input
+            <Input
               type="text"
               value={activityText}
               onChange={e => setActivityText(e.target.value)}
-              className="input flex-1"
+              className="flex-1"
               placeholder="your server"
               maxLength={128}
             />
-            <button
+            <Button
               onClick={saveActivity}
               disabled={activitySaving}
-              className="btn btn-primary flex items-center gap-2 shrink-0"
+              className="flex items-center gap-2 shrink-0"
             >
               {activitySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save
-            </button>
+            </Button>
           </div>
           <p className="text-sm text-discord-light mt-1">
             Sets the bot's status line (e.g. "Playing your server"). Leave text blank to clear.
@@ -321,21 +319,21 @@ function CustomizationTab({ guildId }: { guildId: string }) {
             <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">Global — applies to all servers</span>
           </label>
           <div className="flex items-center gap-3 max-w-lg">
-            <input
+            <Input
               type="url"
               value={avatarUrl}
               onChange={e => setAvatarUrl(e.target.value)}
-              className="input flex-1"
+              className="flex-1"
               placeholder="https://example.com/avatar.png"
             />
-            <button
+            <Button
               onClick={saveAvatar}
               disabled={avatarSaving || !avatarUrl.trim()}
-              className="btn btn-primary flex items-center gap-2 shrink-0"
+              className="flex items-center gap-2 shrink-0"
             >
               {avatarSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Apply
-            </button>
+            </Button>
           </div>
           <p className="text-sm text-discord-light mt-1">
             Paste a direct link to a PNG, JPG, or GIF (max 8MB). Discord rate-limits avatar changes to ~2 per hour.
@@ -449,20 +447,20 @@ function DashboardAccessTab({ guildId }: { guildId: string }) {
 
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
             {rolesError ? (
-              <input
+              <Input
                 type="text"
                 value={addingRoleId}
                 onChange={e => setAddingRoleId(e.target.value)}
                 placeholder="Enter role ID…"
-                className="input flex-1"
+                className="flex-1"
               />
             ) : guildRoles.length === 0 ? (
-              <input
+              <Input
                 type="text"
                 value={addingRoleId}
                 onChange={e => setAddingRoleId(e.target.value)}
                 placeholder="Enter role ID…"
-                className="input flex-1"
+                className="flex-1"
               />
             ) : availableRoles.length === 0 ? (
               <p className="text-discord-light text-sm self-center">All roles have been added.</p>
@@ -479,14 +477,14 @@ function DashboardAccessTab({ guildId }: { guildId: string }) {
               </select>
             )}
             {(!rolesError && guildRoles.length > 0 && availableRoles.length === 0) ? null : (
-              <button
+              <Button
                 onClick={() => addingRoleId && addMutation.mutate(addingRoleId)}
                 disabled={!addingRoleId || addMutation.isPending}
-                className="btn btn-primary flex items-center gap-2 shrink-0"
+                className="flex items-center gap-2 shrink-0"
               >
                 {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Add Role
-              </button>
+              </Button>
             )}
           </div>
         </div>

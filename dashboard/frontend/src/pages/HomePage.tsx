@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Star, MessageSquare, Settings, Bot, Zap, Plus, LogIn } from 'lucide-react';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // Bot invite URL with required permissions
 // Kick, Ban, Manage Channels/Roles/Webhooks, Moderate Members, Messages, Reactions, Embeds
@@ -81,33 +83,33 @@ export default function HomePage() {
                 href={inviteUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-primary text-lg px-8 py-3 flex items-center gap-2"
+                className={cn(buttonVariants(), 'text-lg px-8 py-3 flex items-center gap-2')}
               >
                 <Plus className="w-5 h-5" />
                 Add to Server
               </a>
             ) : (
-              <button
+              <Button
                 disabled
-                className="btn btn-primary text-lg px-8 py-3 opacity-50 cursor-not-allowed"
+                className="text-lg px-8 py-3 opacity-50 cursor-not-allowed"
                 title="Discord Client ID not configured"
               >
                 <Plus className="w-5 h-5 inline mr-2" />
                 Add to Server
-              </button>
+              </Button>
             )}
             
             {/* Dashboard Access */}
             {user ? (
-              <Link to="/dashboard" className="btn btn-secondary text-lg px-8 py-3 flex items-center gap-2">
+              <Link to="/dashboard" className={cn(buttonVariants({ variant: 'secondary' }), 'text-lg px-8 py-3 flex items-center gap-2')}>
                 <Settings className="w-5 h-5" />
                 Dashboard
               </Link>
             ) : (
-              <button onClick={login} className="btn btn-secondary text-lg px-8 py-3 flex items-center gap-2">
+              <Button variant="secondary" onClick={login} className="text-lg px-8 py-3 flex items-center gap-2">
                 <LogIn className="w-5 h-5" />
                 Login to Dashboard
-              </button>
+              </Button>
             )}
           </div>
           

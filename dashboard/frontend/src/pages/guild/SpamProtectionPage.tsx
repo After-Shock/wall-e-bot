@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Zap, Save, CheckCircle, Clock } from 'lucide-react';
+import { Zap, Save, Clock } from 'lucide-react';
 import { AutoModConfig } from '@wall-e/shared';
 import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 
 export default function SpamProtectionPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const [localConfig, setLocalConfig] = useState<AutoModConfig | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   const {
     data,
@@ -17,12 +20,10 @@ export default function SpamProtectionPage() {
     error,
     update,
     isUpdating,
-    updateError,
-    updateWarning,
     refetch
   } = useGuildConfig<AutoModConfig>(guildId, 'automod');
 
-  const errorMessage = useErrorMessage(error || updateError);
+  const errorMessage = useErrorMessage(error);
 
   useEffect(() => {
     if (data) {
@@ -81,8 +82,6 @@ export default function SpamProtectionPage() {
         ignoredChannels: localConfig.ignoredChannels,
         ignoredRoles: localConfig.ignoredRoles,
       });
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save config:', err);
     }
@@ -99,20 +98,15 @@ export default function SpamProtectionPage() {
             <p className="text-discord-light">Automatically detect and handle spam messages</p>
           </div>
         </div>
-        <button
+        <Button
           onClick={handleSave}
           disabled={isUpdating || !!localConfigIssue}
-          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               Saving...
-            </>
-          ) : showSuccess ? (
-            <>
-              <CheckCircle className="w-4 h-4" />
-              Saved!
             </>
           ) : (
             <>
@@ -120,31 +114,11 @@ export default function SpamProtectionPage() {
               Save Changes
             </>
           )}
-        </button>
+        </Button>
       </div>
-
-      {/* Update Error Alert */}
-      {updateError && (
-        <ErrorAlert
-          message="Failed to save configuration"
-          details={errorMessage || undefined}
-          onRetry={handleSave}
-          variant="error"
-        />
-      )}
-
-      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {localConfigIssue && (
         <ErrorAlert message="Unsupported spam protection configuration" details={localConfigIssue} variant="error" />
-      )}
-
-      {/* Success Message */}
-      {showSuccess && (
-        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <p className="text-green-400">Configuration saved successfully!</p>
-        </div>
       )}
 
       {/* Enable Toggle */}
@@ -156,18 +130,7 @@ export default function SpamProtectionPage() {
               Automatically detect and take action on spam messages
             </p>
           </div>
-          <button
-            onClick={() => updateAntiSpam({ enabled: !localConfig.antiSpam.enabled })}
-            className={`relative w-12 h-6 rounded-full transition-colors ${
-              localConfig.antiSpam.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
-            }`}
-          >
-            <span
-              className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                localConfig.antiSpam.enabled ? 'translate-x-7' : 'translate-x-1'
-              }`}
-            />
-          </button>
+          <Switch checked={localConfig.antiSpam.enabled} onCheckedChange={() => updateAntiSpam({ enabled: !localConfig.antiSpam.enabled })} />
         </div>
       </div>
 
@@ -183,11 +146,11 @@ export default function SpamProtectionPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Max Messages</label>
-                <input
+                <Input
                   type="number"
                   value={localConfig.antiSpam.maxMessages}
                   onChange={e => updateAntiSpam({ maxMessages: parseInt(e.target.value) || 1 })}
-                  className="input w-full"
+                  className="w-full"
                   min="2"
                   max="50"
                 />
@@ -200,11 +163,11 @@ export default function SpamProtectionPage() {
                   <Clock className="w-4 h-4" />
                   Time Window (seconds)
                 </label>
-                <input
+                <Input
                   type="number"
                   value={localConfig.antiSpam.interval}
                   onChange={e => updateAntiSpam({ interval: parseInt(e.target.value) || 1 })}
-                  className="input w-full"
+                  className="w-full"
                   min="1"
                   max="60"
                 />
@@ -248,14 +211,14 @@ export default function SpamProtectionPage() {
               {localConfig.antiSpam.action === 'mute' && (
                 <div>
                   <label className="block text-sm font-medium mb-2">Mute Duration (minutes)</label>
-                  <input
+                  <Input
                     type="number"
                     value={localConfig.antiSpam.muteDuration ?? ''}
                     onChange={e => {
                       const duration = Number.parseInt(e.target.value, 10);
                       updateAntiSpam({ muteDuration: Number.isFinite(duration) ? duration : undefined });
                     }}
-                    className="input w-full"
+                    className="w-full"
                     min="1"
                     max="10080"
                   />
@@ -277,13 +240,13 @@ export default function SpamProtectionPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Ignored Channels (IDs)</label>
-                <textarea
+                <Textarea
                   value={(localConfig.ignoredChannels || []).join('\n')}
                   onChange={e => setLocalConfig(prev => prev ? {
                     ...prev,
                     ignoredChannels: e.target.value.split('\n').filter(id => id.trim())
                   } : null)}
-                  className="input w-full h-24 resize-none font-mono text-sm"
+                  className="w-full h-24 resize-none font-mono text-sm"
                   placeholder="123456789012345678&#10;987654321098765432"
                 />
                 <p className="text-xs text-discord-light mt-1">
@@ -292,13 +255,13 @@ export default function SpamProtectionPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Ignored Roles (IDs)</label>
-                <textarea
+                <Textarea
                   value={(localConfig.ignoredRoles || []).join('\n')}
                   onChange={e => setLocalConfig(prev => prev ? {
                     ...prev,
                     ignoredRoles: e.target.value.split('\n').filter(id => id.trim())
                   } : null)}
-                  className="input w-full h-24 resize-none font-mono text-sm"
+                  className="w-full h-24 resize-none font-mono text-sm"
                   placeholder="123456789012345678&#10;987654321098765432"
                 />
                 <p className="text-xs text-discord-light mt-1">

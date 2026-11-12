@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export interface ServerEmoji {
   id: string;
@@ -92,23 +94,23 @@ export function EmojiPicker({ value, onChange, serverEmojis, fallback = '🎫', 
               </div>
             </div>
             <div className="flex gap-2">
-              <input
+              <Input
                 value={typed}
                 onChange={e => setTyped(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && typed.trim()) pick(typed.trim()); }}
                 maxLength={100}
-                className="input flex-1 text-xs"
+                className="flex-1 text-xs"
                 placeholder="Any emoji (Win + . to browse)"
                 aria-label="Type or paste an emoji"
               />
-              <button
+              <Button
                 type="button"
                 onClick={() => typed.trim() && pick(typed.trim())}
                 disabled={!typed.trim()}
-                className="btn btn-primary text-xs"
+                className="text-xs"
               >
                 Use
-              </button>
+              </Button>
             </div>
             {value && (
               <button type="button" onClick={() => pick('')} className="text-xs text-discord-light hover:text-red-400">

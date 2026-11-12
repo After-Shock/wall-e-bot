@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Shield, Save, Hash, AlertTriangle, CheckCircle, MessageSquare } from 'lucide-react';
+import { Shield, Save, Hash, AlertTriangle, MessageSquare } from 'lucide-react';
 import { ModerationConfig } from '@wall-e/shared';
 import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 
 export default function ModerationPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const [localConfig, setLocalConfig] = useState<ModerationConfig | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   // Fetch and update moderation config
   const {
@@ -18,12 +20,10 @@ export default function ModerationPage() {
     error,
     update,
     isUpdating,
-    updateError,
-    updateWarning,
     refetch
   } = useGuildConfig<ModerationConfig>(guildId, 'moderation');
 
-  const errorMessage = useErrorMessage(error || updateError);
+  const errorMessage = useErrorMessage(error);
 
   // Initialize local config when data loads
   useEffect(() => {
@@ -63,8 +63,6 @@ export default function ModerationPage() {
 
     try {
       await update(localConfig);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save config:', err);
     }
@@ -81,20 +79,15 @@ export default function ModerationPage() {
             <p className="text-discord-light">Configure moderation tools and automatic actions</p>
           </div>
         </div>
-        <button
+        <Button
           onClick={handleSave}
           disabled={isUpdating}
-          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               Saving...
-            </>
-          ) : showSuccess ? (
-            <>
-              <CheckCircle className="w-4 h-4" />
-              Saved!
             </>
           ) : (
             <>
@@ -102,28 +95,8 @@ export default function ModerationPage() {
               Save Changes
             </>
           )}
-        </button>
+        </Button>
       </div>
-
-      {/* Update Error Alert */}
-      {updateError && (
-        <ErrorAlert
-          message="Failed to save configuration"
-          details={errorMessage || undefined}
-          onRetry={handleSave}
-          variant="error"
-        />
-      )}
-
-      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
-
-      {/* Success Message */}
-      {showSuccess && (
-        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <p className="text-green-400">Configuration saved successfully!</p>
-        </div>
-      )}
 
       {/* Mute Role Configuration */}
       <div className="card space-y-4">
@@ -137,11 +110,11 @@ export default function ModerationPage() {
 
         <div>
           <label className="block text-sm font-medium mb-2">Mute Role ID</label>
-          <input
+          <Input
             type="text"
             value={localConfig.muteRoleId || ''}
             onChange={e => updateConfig({ muteRoleId: e.target.value })}
-            className="input w-full font-mono"
+            className="w-full font-mono"
             placeholder="Enter role ID (e.g., 1234567890123456789)"
           />
           <p className="text-xs text-discord-light mt-1">
@@ -162,11 +135,11 @@ export default function ModerationPage() {
 
         <div>
           <label className="block text-sm font-medium mb-2">Log Channel ID</label>
-          <input
+          <Input
             type="text"
             value={localConfig.modLogChannelId || ''}
             onChange={e => updateConfig({ modLogChannelId: e.target.value })}
-            className="input w-full font-mono"
+            className="w-full font-mono"
             placeholder="Enter channel ID (e.g., 1234567890123456789)"
           />
           <p className="text-xs text-discord-light mt-1">
@@ -188,7 +161,7 @@ export default function ModerationPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-2">Kick Threshold</label>
-            <input
+            <Input
               type="number"
               value={localConfig.warnThresholds.kick}
               onChange={e => updateConfig({
@@ -197,7 +170,7 @@ export default function ModerationPage() {
                   kick: parseInt(e.target.value) || 1
                 }
               })}
-              className="input w-full"
+              className="w-full"
               min="1"
               max="100"
             />
@@ -208,7 +181,7 @@ export default function ModerationPage() {
 
           <div>
             <label className="block text-sm font-medium mb-2">Ban Threshold</label>
-            <input
+            <Input
               type="number"
               value={localConfig.warnThresholds.ban}
               onChange={e => updateConfig({
@@ -217,7 +190,7 @@ export default function ModerationPage() {
                   ban: parseInt(e.target.value) || 1
                 }
               })}
-              className="input w-full"
+              className="w-full"
               min="1"
               max="100"
             />
@@ -240,18 +213,7 @@ export default function ModerationPage() {
                 Automatically delete moderation commands after execution
               </p>
             </div>
-            <button
-              onClick={() => updateConfig({ autoDeleteModCommands: !localConfig.autoDeleteModCommands })}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                localConfig.autoDeleteModCommands ? 'bg-discord-blurple' : 'bg-discord-dark'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                  localConfig.autoDeleteModCommands ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
+            <Switch checked={localConfig.autoDeleteModCommands} onCheckedChange={() => updateConfig({ autoDeleteModCommands: !localConfig.autoDeleteModCommands })} />
           </label>
 
           <label className="flex items-center justify-between cursor-pointer">
@@ -261,18 +223,7 @@ export default function ModerationPage() {
                 Send a direct message to members when they are warned, muted, kicked, or banned
               </p>
             </div>
-            <button
-              onClick={() => updateConfig({ dmOnAction: !localConfig.dmOnAction })}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                localConfig.dmOnAction ? 'bg-discord-blurple' : 'bg-discord-dark'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                  localConfig.dmOnAction ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
+            <Switch checked={localConfig.dmOnAction} onCheckedChange={() => updateConfig({ dmOnAction: !localConfig.dmOnAction })} />
           </label>
         </div>
       </div>

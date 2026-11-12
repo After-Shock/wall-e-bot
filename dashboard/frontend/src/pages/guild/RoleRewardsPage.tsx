@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Award, Plus, Trash2, Save, CheckCircle } from 'lucide-react';
+import { Award, Plus, Trash2, Save } from 'lucide-react';
 import { LevelingConfig } from '@wall-e/shared';
 import { api } from '../../services/api';
 import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 
 type RoleReward = LevelingConfig['roleRewards'][number];
 
@@ -22,9 +25,8 @@ const roleHex = (color: number) => (color ? `#${color.toString(16).padStart(6, '
 export default function RoleRewardsPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const [rewards, setRewards] = useState<RoleReward[] | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
 
-  const { data, isLoading, error, update, isUpdating, updateError, updateWarning, refetch } =
+  const { data, isLoading, error, update, isUpdating, refetch } =
     useGuildConfig<LevelingConfig>(guildId, 'leveling');
 
   const { data: guildRoles = [] } = useQuery<GuildRole[]>({
@@ -32,7 +34,7 @@ export default function RoleRewardsPage() {
     queryFn: () => api.get(`/api/guilds/${guildId}/roles`).then(r => r.data),
   });
 
-  const errorMessage = useErrorMessage(error || updateError);
+  const errorMessage = useErrorMessage(error);
 
   useEffect(() => {
     if (data) setRewards([...(data.roleRewards ?? [])].sort((a, b) => a.level - b.level));
@@ -84,8 +86,6 @@ export default function RoleRewardsPage() {
       // remain untouched by the section PATCH contract.
       await update({ roleRewards: sorted } as Partial<LevelingConfig>);
       setRewards(sorted);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save role rewards:', err);
     }
@@ -106,20 +106,15 @@ export default function RoleRewardsPage() {
             <p className="text-discord-light">Assign roles when members reach certain levels</p>
           </div>
         </div>
-        <button
+        <Button
           onClick={handleSave}
           disabled={isUpdating || invalid}
-          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               Saving...
-            </>
-          ) : showSuccess ? (
-            <>
-              <CheckCircle className="w-4 h-4" />
-              Saved!
             </>
           ) : (
             <>
@@ -127,19 +122,8 @@ export default function RoleRewardsPage() {
               Save Changes
             </>
           )}
-        </button>
+        </Button>
       </div>
-
-      {updateError && (
-        <ErrorAlert
-          message="Failed to save role rewards"
-          details={errorMessage || undefined}
-          onRetry={handleSave}
-          variant="error"
-        />
-      )}
-
-      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
 
       {/* Info */}
       <div className="bg-discord-blurple/20 border border-discord-blurple/50 rounded-lg p-4">
@@ -154,14 +138,14 @@ export default function RoleRewardsPage() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Level Rewards ({rewards.length})</h3>
-          <button
+          <Button variant="secondary"
             onClick={addReward}
             disabled={guildRoles.length === 0}
-            className="btn btn-secondary flex items-center gap-2"
+            className="flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Add Reward
-          </button>
+          </Button>
         </div>
 
         {rewards.length === 0 ? (
@@ -176,13 +160,13 @@ export default function RoleRewardsPage() {
               <div key={index} className="bg-discord-dark rounded-lg p-4 flex items-end gap-4 flex-wrap">
                 <div className="w-24">
                   <label className="block text-xs text-discord-light mb-1">Level</label>
-                  <input
+                  <Input
                     type="number"
                     min={1}
                     max={1000}
                     value={reward.level}
                     onChange={e => updateReward(index, { level: parseInt(e.target.value) || 1 })}
-                    className="input w-full"
+                    className="w-full"
                   />
                 </div>
                 <div className="flex-1 min-w-[12rem]">
@@ -205,12 +189,7 @@ export default function RoleRewardsPage() {
                   </select>
                 </div>
                 <label className="flex items-center gap-2 text-sm pb-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={reward.removeOnHigherLevel}
-                    onChange={e => updateReward(index, { removeOnHigherLevel: e.target.checked })}
-                    className="w-4 h-4"
-                  />
+                  <Checkbox checked={reward.removeOnHigherLevel} onCheckedChange={checked => updateReward(index, { removeOnHigherLevel: checked === true })} />
                   Remove at higher levels
                 </label>
                 <button

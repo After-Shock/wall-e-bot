@@ -4,6 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import { EmojiPicker, EmojiPreview, type ServerEmoji } from '../../components/EmojiPicker';
 import { Smile, Plus, Trash2, Save, Hash, Edit } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 interface ReactionRole {
   emoji: string;
@@ -143,10 +146,10 @@ export default function ReactionRolesPage() {
           </div>
         </div>
         {!editing && (
-          <button onClick={() => { setEditing(blank()); setError(null); }} className="btn btn-primary flex items-center gap-2">
+          <Button onClick={() => { setEditing(blank()); setError(null); }} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Create Message
-          </button>
+          </Button>
         )}
       </div>
 
@@ -164,9 +167,9 @@ export default function ReactionRolesPage() {
               <p className="text-discord-light mb-4">
                 Create a reaction role message to let members self-assign roles
               </p>
-              <button onClick={() => { setEditing(blank()); setError(null); }} className="btn btn-primary">
+              <Button onClick={() => { setEditing(blank()); setError(null); }}>
                 Create Your First Message
-              </button>
+              </Button>
             </div>
           ) : (
             messages.map(message => (
@@ -192,19 +195,18 @@ export default function ReactionRolesPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button
+                    <Button variant="secondary"
                       onClick={() => { setEditing({ ...message, roles: [...message.roles] }); setError(null); }}
-                      className="btn btn-secondary"
                     >
                       <Edit className="w-4 h-4" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="ghost"
                       onClick={() => message.id !== null && deleteMutation.mutate(message.id)}
                       disabled={deleteMutation.isPending}
-                      className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                      className="bg-red-500/20 text-red-400 hover:bg-red-500/30"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -249,11 +251,11 @@ export default function ReactionRolesPage() {
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Embed Title</label>
-                <input
+                <Input
                   type="text"
                   value={editing.title}
                   onChange={e => setEditing({ ...editing, title: e.target.value })}
-                  className="input w-full"
+                  className="w-full"
                 />
               </div>
               <div>
@@ -265,11 +267,11 @@ export default function ReactionRolesPage() {
                     onChange={e => setEditing({ ...editing, color: e.target.value })}
                     className="w-10 h-10 rounded cursor-pointer"
                   />
-                  <input
+                  <Input
                     type="text"
                     value={editing.color}
                     onChange={e => setEditing({ ...editing, color: e.target.value })}
-                    className="input flex-1"
+                    className="flex-1"
                   />
                 </div>
               </div>
@@ -277,10 +279,10 @@ export default function ReactionRolesPage() {
 
             <div>
               <label className="block text-sm font-medium mb-2">Description</label>
-              <textarea
+              <Textarea
                 value={editing.description}
                 onChange={e => setEditing({ ...editing, description: e.target.value })}
-                className="input w-full h-20 resize-none"
+                className="w-full h-20 resize-none"
               />
             </div>
           </div>
@@ -289,14 +291,14 @@ export default function ReactionRolesPage() {
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">Roles ({editing.roles.length})</h3>
-              <button
+              <Button variant="secondary"
                 onClick={() => setEditing({ ...editing, roles: [...editing.roles, { emoji: '🎮', role_id: '', label: '' }] })}
                 disabled={editing.roles.length >= 25}
-                className="btn btn-secondary flex items-center gap-2"
+                className="flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 Add Role
-              </button>
+              </Button>
             </div>
 
             {editing.roles.length === 0 ? (
@@ -337,11 +339,11 @@ export default function ReactionRolesPage() {
                     </div>
                     <div className="flex-1">
                       <label className="block text-xs text-discord-light mb-1">Label</label>
-                      <input
+                      <Input
                         type="text"
                         value={role.label}
                         onChange={e => updateRole(index, { label: e.target.value })}
-                        className="input w-full"
+                        className="w-full"
                       />
                     </div>
                     <button
@@ -384,21 +386,21 @@ export default function ReactionRolesPage() {
 
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-3">
-            <button onClick={() => { setEditing(null); setError(null); }} className="btn btn-secondary">
+            <Button variant="secondary" onClick={() => { setEditing(null); setError(null); }}>
               {editing.message_id ? 'Cancel' : 'Close'}
-            </button>
+            </Button>
             {!editing.message_id && (
-              <button
+              <Button variant="secondary"
                 onClick={() => draftMutation.mutate(editing)}
                 disabled={draftMutation.isPending}
-                className="btn btn-secondary flex items-center gap-2"
+                className="flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
                 {draftMutation.isPending ? 'Saving…' : 'Save draft'}
-              </button>
+              </Button>
             )}
             {draftSaved && <span className="text-sm text-green-400">Draft saved ✓</span>}
-            <button
+            <Button
               onClick={() => saveMutation.mutate(editing)}
               disabled={
                 saveMutation.isPending ||
@@ -406,11 +408,11 @@ export default function ReactionRolesPage() {
                 editing.roles.length === 0 ||
                 editing.roles.some(r => !r.role_id || !r.emoji.trim() || !r.label.trim())
               }
-              className="btn btn-primary flex items-center gap-2"
+              className="flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
               {saveMutation.isPending ? 'Posting...' : !editing.message_id ? 'Post to Discord' : 'Update Message'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

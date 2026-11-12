@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Shield, Server, Users, Clock, CheckCircle, XCircle, LogOut, CalendarClock, Infinity } from 'lucide-react';
+import { confirm } from '@/components/ConfirmDialog';
 
 interface AdminGuild {
   id: string;
@@ -265,8 +266,8 @@ export default function AdminPage() {
                     )}
                     {guild.status !== 'blacklisted' && (
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Blacklist "${guild.name}"? The bot will leave immediately.`)) {
+                        onClick={async () => {
+                          if (await confirm({ title: `Blacklist "${guild.name}"?`, description: 'The bot will leave immediately.', confirmText: 'Blacklist' })) {
                             blacklist.mutate(guild.id);
                           }
                         }}
@@ -279,8 +280,8 @@ export default function AdminPage() {
                     )}
                     {guild.status === 'approved' && (
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Leave "${guild.name}"? The server will stay approved.`)) {
+                        onClick={async () => {
+                          if (await confirm({ title: `Leave "${guild.name}"?`, description: 'The server will stay approved.', confirmText: 'Leave' })) {
                             leave.mutate(guild.id);
                           }
                         }}

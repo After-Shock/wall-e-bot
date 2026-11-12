@@ -3,6 +3,10 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import { Plus, Clock, Trash2, Play, Pencil } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { confirm } from '@/components/ConfirmDialog';
 
 interface AutoDeleteConfig {
   id: number;
@@ -155,10 +159,10 @@ export default function AutoDeletePage() {
         </div>
         <div className="flex items-center gap-2">
           {configs.some(c => c.enabled) && (
-            <button
+            <Button variant="secondary"
               onClick={() => runAllMutation.mutate()}
               disabled={runAllMutation.isPending || runOneMutation.isPending}
-              className="btn btn-secondary flex items-center gap-2"
+              className="flex items-center gap-2"
               title="Run all enabled auto-delete configs now"
             >
               {runAllMutation.isPending ? (
@@ -167,12 +171,12 @@ export default function AutoDeletePage() {
                 <Play className="w-4 h-4" />
               )}
               {runAllDone ? 'Done ✓' : 'Run All Now'}
-            </button>
+            </Button>
           )}
-          <button onClick={() => { setShowAdd(true); setFormError(null); }} className="btn btn-primary flex items-center gap-2">
+          <Button onClick={() => { setShowAdd(true); setFormError(null); }} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Add Channel
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -191,12 +195,12 @@ export default function AutoDeletePage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Max age (hours)</label>
-              <input type="number" min="1" max="8760" value={form.max_age_hours} onChange={e => setForm(f => ({ ...f, max_age_hours: e.target.value }))} className="input w-full" placeholder="e.g. 24" />
+              <Input type="number" min="1" max="8760" value={form.max_age_hours} onChange={e => setForm(f => ({ ...f, max_age_hours: e.target.value }))} className="w-full" placeholder="e.g. 24" />
               <p className="text-xs text-discord-light mt-1">Delete messages older than this</p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Max messages</label>
-              <input type="number" min="1" max="10000" value={form.max_messages} onChange={e => setForm(f => ({ ...f, max_messages: e.target.value }))} className="input w-full" placeholder="e.g. 50" />
+              <Input type="number" min="1" max="10000" value={form.max_messages} onChange={e => setForm(f => ({ ...f, max_messages: e.target.value }))} className="w-full" placeholder="e.g. 50" />
               <p className="text-xs text-discord-light mt-1">Keep only this many recent messages</p>
             </div>
           </div>
@@ -226,10 +230,10 @@ export default function AutoDeletePage() {
           {formError && <p className="text-sm text-red-400">{formError}</p>}
 
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setShowAdd(false); setFormError(null); }} className="btn btn-secondary">Cancel</button>
-            <button onClick={handleAdd} disabled={addMutation.isPending} className="btn btn-primary">
+            <Button variant="secondary" onClick={() => { setShowAdd(false); setFormError(null); }}>Cancel</Button>
+            <Button onClick={handleAdd} disabled={addMutation.isPending}>
               {addMutation.isPending ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -256,16 +260,11 @@ export default function AutoDeletePage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => toggleMutation.mutate({ id: config.id, enabled: !config.enabled })}
-                  className={`toggle ${config.enabled ? 'toggle-enabled' : 'toggle-disabled'}`}
-                >
-                  <span className={`toggle-dot ${config.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
-                </button>
-                <button
+                <Switch checked={config.enabled} onCheckedChange={() => toggleMutation.mutate({ id: config.id, enabled: !config.enabled })} />
+                <Button variant="secondary"
                   onClick={() => runOneMutation.mutate(config.id)}
                   disabled={runOneMutation.isPending || runAllMutation.isPending}
-                  className="btn btn-secondary p-1.5"
+                  className="p-1.5"
                   title="Run auto-delete for this channel now"
                 >
                   {runOneMutation.isPending && runOneMutation.variables === config.id ? (
@@ -275,20 +274,20 @@ export default function AutoDeletePage() {
                   ) : (
                     <Play className="w-4 h-4" />
                   )}
-                </button>
-                <button
+                </Button>
+                <Button variant="secondary"
                   onClick={() => editingId === config.id ? setEditingId(null) : startEdit(config)}
-                  className="btn btn-secondary p-1.5"
+                  className="p-1.5"
                   title="Edit configuration"
                 >
                   <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => window.confirm(`Remove auto-delete for #${channelName(config.channel_id)}?`) && deleteMutation.mutate(config.id)}
-                  className="btn bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
+                </Button>
+                <Button variant="ghost"
+                  onClick={async () => (await confirm({ title: `Remove auto-delete for #${channelName(config.channel_id)}?`, confirmText: 'Remove' })) && deleteMutation.mutate(config.id)}
+                  className="bg-red-500/20 text-red-400 hover:bg-red-500/30 p-1.5"
                 >
                   <Trash2 className="w-4 h-4" />
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -298,12 +297,12 @@ export default function AutoDeletePage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Max age (hours)</label>
-                    <input type="number" min="1" max="8760" value={editForm.max_age_hours} onChange={e => setEditForm(f => ({ ...f, max_age_hours: e.target.value }))} className="input w-full" placeholder="e.g. 24" />
+                    <Input type="number" min="1" max="8760" value={editForm.max_age_hours} onChange={e => setEditForm(f => ({ ...f, max_age_hours: e.target.value }))} className="w-full" placeholder="e.g. 24" />
                     <p className="text-xs text-discord-light mt-1">Delete messages older than this</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Max messages</label>
-                    <input type="number" min="1" max="10000" value={editForm.max_messages} onChange={e => setEditForm(f => ({ ...f, max_messages: e.target.value }))} className="input w-full" placeholder="e.g. 50" />
+                    <Input type="number" min="1" max="10000" value={editForm.max_messages} onChange={e => setEditForm(f => ({ ...f, max_messages: e.target.value }))} className="w-full" placeholder="e.g. 50" />
                     <p className="text-xs text-discord-light mt-1">Keep only this many recent messages</p>
                   </div>
                 </div>
@@ -330,10 +329,10 @@ export default function AutoDeletePage() {
                 </div>
                 {editError && <p className="text-sm text-red-400">{editError}</p>}
                 <div className="flex gap-2 justify-end">
-                  <button onClick={() => { setEditingId(null); setEditError(null); }} className="btn btn-secondary">Cancel</button>
-                  <button onClick={() => handleEdit(config.id)} disabled={editMutation.isPending} className="btn btn-primary">
+                  <Button variant="secondary" onClick={() => { setEditingId(null); setEditError(null); }}>Cancel</Button>
+                  <Button onClick={() => handleEdit(config.id)} disabled={editMutation.isPending}>
                     {editMutation.isPending ? 'Saving…' : 'Save Changes'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

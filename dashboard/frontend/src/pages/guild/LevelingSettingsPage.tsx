@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { TrendingUp, Save, Hash, Volume2, Gift, CheckCircle, Info } from 'lucide-react';
+import { TrendingUp, Save, Hash, Volume2, Gift, Info } from 'lucide-react';
 import { LevelingConfig } from '@wall-e/shared';
 import { useGuildConfig, useErrorMessage } from '../../hooks/useGuildConfig';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorAlert from '../../components/ErrorAlert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 
 export default function LevelingSettingsPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const [localConfig, setLocalConfig] = useState<LevelingConfig | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   // Fetch and update leveling config
   const {
@@ -18,12 +21,10 @@ export default function LevelingSettingsPage() {
     error,
     update,
     isUpdating,
-    updateError,
-    updateWarning,
     refetch
   } = useGuildConfig<LevelingConfig>(guildId, 'leveling');
 
-  const errorMessage = useErrorMessage(error || updateError);
+  const errorMessage = useErrorMessage(error);
 
   // Initialize local config when data loads
   useEffect(() => {
@@ -63,8 +64,6 @@ export default function LevelingSettingsPage() {
 
     try {
       await update(localConfig);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save config:', err);
     }
@@ -81,20 +80,15 @@ export default function LevelingSettingsPage() {
             <p className="text-discord-light">Configure XP gain and level-up announcements</p>
           </div>
         </div>
-        <button
+        <Button
           onClick={handleSave}
           disabled={isUpdating}
-          className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               Saving...
-            </>
-          ) : showSuccess ? (
-            <>
-              <CheckCircle className="w-4 h-4" />
-              Saved!
             </>
           ) : (
             <>
@@ -102,28 +96,8 @@ export default function LevelingSettingsPage() {
               Save Changes
             </>
           )}
-        </button>
+        </Button>
       </div>
-
-      {/* Update Error Alert */}
-      {updateError && (
-        <ErrorAlert
-          message="Failed to save configuration"
-          details={errorMessage || undefined}
-          onRetry={handleSave}
-          variant="error"
-        />
-      )}
-
-      {updateWarning && <ErrorAlert message="Configuration saved; bot visibility is delayed" details={updateWarning} variant="warning" />}
-
-      {/* Success Message */}
-      {showSuccess && (
-        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-4 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <p className="text-green-400">Configuration saved successfully!</p>
-        </div>
-      )}
 
       {/* Enable Toggle */}
       <div className="card">
@@ -134,18 +108,7 @@ export default function LevelingSettingsPage() {
               Members earn XP by chatting and level up over time
             </p>
           </div>
-          <button
-            onClick={() => updateConfig({ enabled: !localConfig.enabled })}
-            className={`relative w-12 h-6 rounded-full transition-colors ${
-              localConfig.enabled ? 'bg-discord-blurple' : 'bg-discord-dark'
-            }`}
-          >
-            <span
-              className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                localConfig.enabled ? 'translate-x-7' : 'translate-x-1'
-              }`}
-            />
-          </button>
+          <Switch checked={localConfig.enabled} onCheckedChange={() => updateConfig({ enabled: !localConfig.enabled })} />
         </div>
       </div>
 
@@ -161,13 +124,13 @@ export default function LevelingSettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Min XP Per Message</label>
-                <input
+                <Input
                   type="number"
                   value={localConfig.xpPerMessage.min}
                   onChange={e => updateConfig({
                     xpPerMessage: { ...localConfig.xpPerMessage, min: parseInt(e.target.value) || 0 }
                   })}
-                  className="input w-full"
+                  className="w-full"
                   min="0"
                   max="100"
                 />
@@ -176,13 +139,13 @@ export default function LevelingSettingsPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-2">Max XP Per Message</label>
-                <input
+                <Input
                   type="number"
                   value={localConfig.xpPerMessage.max}
                   onChange={e => updateConfig({
                     xpPerMessage: { ...localConfig.xpPerMessage, max: parseInt(e.target.value) || 0 }
                   })}
-                  className="input w-full"
+                  className="w-full"
                   min="0"
                   max="100"
                 />
@@ -192,11 +155,11 @@ export default function LevelingSettingsPage() {
 
             <div>
               <label className="block text-sm font-medium mb-2">XP Cooldown (seconds)</label>
-              <input
+              <Input
                 type="number"
                 value={localConfig.xpCooldown}
                 onChange={e => updateConfig({ xpCooldown: parseInt(e.target.value) || 0 })}
-                className="input w-full"
+                className="w-full"
                 min="0"
                 max="300"
               />
@@ -229,11 +192,11 @@ export default function LevelingSettingsPage() {
               {localConfig.levelUpChannel &&
                localConfig.levelUpChannel !== 'current' &&
                localConfig.levelUpChannel !== 'dm' && (
-                <input
+                <Input
                   type="text"
                   value={localConfig.levelUpChannel}
                   onChange={e => updateConfig({ levelUpChannel: e.target.value })}
-                  className="input w-full mt-2"
+                  className="w-full mt-2"
                   placeholder="Enter channel ID (e.g., 1234567890123456789)"
                 />
               )}
@@ -241,10 +204,10 @@ export default function LevelingSettingsPage() {
 
             <div>
               <label className="block text-sm font-medium mb-2">Announcement Message</label>
-              <textarea
+              <Textarea
                 value={localConfig.levelUpMessage}
                 onChange={e => updateConfig({ levelUpMessage: e.target.value })}
-                className="input w-full h-24 resize-none"
+                className="w-full h-24 resize-none"
                 placeholder="Congratulations {user}!"
               />
               <div className="mt-2 flex flex-wrap gap-2">
@@ -265,12 +228,12 @@ export default function LevelingSettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Ignored Channels (IDs)</label>
-                <textarea
+                <Textarea
                   value={(localConfig.ignoredChannels || []).join('\n')}
                   onChange={e => updateConfig({
                     ignoredChannels: e.target.value.split('\n').filter(id => id.trim())
                   })}
-                  className="input w-full h-24 resize-none font-mono text-sm"
+                  className="w-full h-24 resize-none font-mono text-sm"
                   placeholder="123456789012345678&#10;987654321098765432"
                 />
                 <p className="text-xs text-discord-light mt-1">
@@ -280,12 +243,12 @@ export default function LevelingSettingsPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-2">Ignored Roles (IDs)</label>
-                <textarea
+                <Textarea
                   value={(localConfig.ignoredRoles || []).join('\n')}
                   onChange={e => updateConfig({
                     ignoredRoles: e.target.value.split('\n').filter(id => id.trim())
                   })}
-                  className="input w-full h-24 resize-none font-mono text-sm"
+                  className="w-full h-24 resize-none font-mono text-sm"
                   placeholder="123456789012345678&#10;987654321098765432"
                 />
                 <p className="text-xs text-discord-light mt-1">

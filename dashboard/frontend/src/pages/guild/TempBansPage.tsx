@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ban, Clock, ShieldCheck } from 'lucide-react';
 import { api } from '../../services/api';
+import { Button } from '@/components/ui/button';
 
 interface TempBan {
   id: number;
@@ -86,13 +87,13 @@ export default function TempBansPage() {
                   <Clock className="w-3 h-3" /> expires {formatExpiry(ban.unban_at)}
                 </div>
               </div>
-              <button
+              <Button variant="secondary"
                 onClick={() => liftMutation.mutate(ban.id)}
                 disabled={liftMutation.isPending}
-                className="btn btn-secondary shrink-0 disabled:opacity-50"
+                className="shrink-0 disabled:opacity-50"
               >
                 Lift now
-              </button>
+              </Button>
             </div>
           ))}
         </div>

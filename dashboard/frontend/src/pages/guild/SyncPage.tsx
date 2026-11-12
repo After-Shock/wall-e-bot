@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Copy } from 'lucide-react';
 import { api } from '../../services/api';
 import SyncModal from './SyncModal';
+import { Button } from '@/components/ui/button';
 
 interface Guild {
   id: string;
@@ -86,14 +87,14 @@ export default function SyncPage() {
               </select>
             </div>
 
-            <button
-              className="btn btn-primary flex items-center gap-2"
+            <Button
+              className="flex items-center gap-2"
               disabled={!selectedSourceId}
               onClick={() => setModalOpen(true)}
             >
               <Copy className="w-4 h-4" />
               Copy Settings…
-            </button>
+            </Button>
           </>
         )}
       </div>

@@ -3,6 +3,10 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UsersRound, Play, XCircle } from 'lucide-react';
 import { api } from '../../services/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { confirm } from '@/components/ConfirmDialog';
+import { Checkbox } from '@/components/ui/checkbox';
 
 type FilterType = 'all' | 'humans' | 'bots' | 'has_roles' | 'missing_roles' | 'joined_after' | 'joined_before';
 
@@ -98,11 +102,17 @@ export default function BulkRolePage() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['bulk-role', guildId] }),
   });
 
-  const start = () => {
+  const start = async () => {
     const who = FILTERS.find(f => f.value === filterType)!.label.toLowerCase();
-    const summary = `${operation === 'add' ? 'Add' : 'Remove'} @${roleName(roleId)} ${operation === 'add' ? 'to' : 'from'} ${who}` +
-      (dateFilter ? ` (${joinedDate})` : '') + '?\n\nThis changes roles for real and can take a while on large servers.';
-    if (window.confirm(summary)) startMutation.mutate();
+    const title = `${operation === 'add' ? 'Add' : 'Remove'} @${roleName(roleId)} ${operation === 'add' ? 'to' : 'from'} ${who}` +
+      (dateFilter ? ` (${joinedDate})` : '') + '?';
+    const ok = await confirm({
+      title,
+      description: 'This changes roles for real and can take a while on large servers.',
+      confirmText: operation === 'add' ? 'Add role' : 'Remove role',
+      destructive: operation !== 'add',
+    });
+    if (ok) startMutation.mutate();
   };
 
   return (
@@ -164,7 +174,7 @@ export default function BulkRolePage() {
             </select>
             <p className="text-xs text-discord-light">Hold Ctrl (Cmd on Mac) to pick several.</p>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={requireAll} onChange={e => setRequireAll(e.target.checked)} />
+              <Checkbox checked={requireAll} onCheckedChange={checked => setRequireAll(checked === true)} />
               Require all selected roles
             </label>
             <p className="text-xs text-discord-light">Matches: {roleFilterMeaning(filterType, requireAll)}</p>
@@ -174,7 +184,7 @@ export default function BulkRolePage() {
         {dateFilter && (
           <div>
             <label className="block text-sm font-medium mb-1" htmlFor="bulk-date">Join date</label>
-            <input id="bulk-date" type="date" value={joinedDate} onChange={e => setJoinedDate(e.target.value)} className="input" />
+            <Input id="bulk-date" type="date" value={joinedDate} onChange={e => setJoinedDate(e.target.value)} />
           </div>
         )}
 
@@ -184,14 +194,14 @@ export default function BulkRolePage() {
           <p className="text-xs text-discord-light">
             Wall-E&apos;s role must be above the role you pick. One job runs at a time per server.
           </p>
-          <button
+          <Button
             onClick={start}
             disabled={!ready || !!activeJob || startMutation.isPending}
             title={activeJob ? 'A job is already running' : undefined}
-            className="btn btn-primary flex items-center gap-2"
+            className="flex items-center gap-2"
           >
             <Play className="w-4 h-4" /> {startMutation.isPending ? 'Starting…' : 'Start'}
-          </button>
+          </Button>
         </div>
       </div>
 

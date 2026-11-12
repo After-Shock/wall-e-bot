@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Search } from 'lucide-react';
 import { api } from '../../services/api';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface Warning {
   id: number;
@@ -51,15 +53,15 @@ export default function WarningsPage() {
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-discord-light" />
-          <input
+          <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by user or reason..."
-            className="input w-full pl-9"
+            className="w-full pl-9"
           />
         </div>
         <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
-          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="w-4 h-4" />
+          <Checkbox checked={showInactive} onCheckedChange={checked => setShowInactive(checked === true)} />
           Show removed
         </label>
       </div>
